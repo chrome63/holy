@@ -68257,6 +68257,14 @@ local ServerAutoJoinBox =
         "zap"
     )
 
+local ServerAutoJoinFilterBox =
+    HolyAddLeftGroupbox(
+        Tabs.Sniper,
+        "Sniper.ServerAutoJoinFilters",
+        "Auto Join Filters",
+        "list-filter"
+    )
+
 local ServerAutoJoinWatchlistBox =
     HolyAddRightGroupbox(
         Tabs.Sniper,
@@ -69738,6 +69746,53 @@ function HolyServerFinderNormalizeAutoJoinRarityName(value)
     return text
 end
 
+function HolyServerFinderNormalizeAutoJoinPriority(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find(
+        "high",
+        1,
+        true
+    ) then
+
+        return "High"
+    end
+
+    if text:find(
+        "low",
+        1,
+        true
+    ) then
+
+        return "Low"
+    end
+
+    return "Medium"
+end
+
+function HolyServerFinderAutoJoinPriorityRank(value)
+
+    value =
+        HolyServerFinderNormalizeAutoJoinPriority(
+            value
+        )
+
+    if value == "High" then
+        return 1
+    end
+
+    if value == "Low" then
+        return 3
+    end
+
+    return 2
+end
+
 function HolyServerFinderNormalizeAutoJoinRule(rule)
 
     rule =
@@ -69821,14 +69876,13 @@ function HolyServerFinderNormalizeAutoJoinRule(rule)
             rarities,
 
         MatchMode =
-            HolyServerFinderNormalizeAutoJoinMatchMode(
-                rule.MatchMode
-                or rule.Match
-                or "Any Selected"
-            ),
+            "All Selected",
 
-        Enabled =
-            rule.Enabled ~= false,
+        Priority =
+            HolyServerFinderNormalizeAutoJoinPriority(
+                rule.Priority
+                or "Medium"
+            ),
     }
 end
 
@@ -70749,7 +70803,6 @@ end
 function HolyServerFinderAutoJoinRuleMatchesRow(rule, row)
 
     if type(rule) ~= "table"
-    or rule.Enabled == false
     or type(row) ~= "table" then
 
         return false
@@ -70990,7 +71043,49 @@ function HolyServerFinderFindAutoJoinTarget(rows)
         )
         or 30
 
-    for ruleIndex, rule in ipairs(HOLY_SERVER_FINDER_STATE.AutoJoinRules or {}) do
+    local orderedFilters =
+        {}
+
+    for sourceIndex, filter in ipairs(
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        or {}
+    ) do
+
+        table.insert(
+            orderedFilters,
+            {
+                SourceIndex =
+                    sourceIndex,
+
+                Filter =
+                    HolyServerFinderNormalizeAutoJoinRule(
+                        filter
+                    ),
+            }
+        )
+    end
+
+    table.sort(orderedFilters, function(a, b)
+
+        local rankA =
+            HolyServerFinderAutoJoinPriorityRank(
+                a.Filter.Priority
+            )
+
+        local rankB =
+            HolyServerFinderAutoJoinPriorityRank(
+                b.Filter.Priority
+            )
+
+        if rankA ~= rankB then
+            return rankA < rankB
+        end
+
+        return a.SourceIndex
+            < b.SourceIndex
+    end)
+
+    for _, entry in ipairs(orderedFilters) do
 
         local candidates =
             {}
@@ -71002,16 +71097,19 @@ function HolyServerFinderFindAutoJoinTarget(rows)
                 row,
                 minLife
             ) == true
-            and HolyServerFinderAutoJoinRuleMatchesRow(rule, row) == true then
+            and HolyServerFinderAutoJoinRuleMatchesRow(
+                entry.Filter,
+                row
+            ) == true then
 
                 table.insert(
                     candidates,
                     {
                         RuleIndex =
-                            ruleIndex,
+                            entry.SourceIndex,
 
                         Rule =
-                            rule,
+                            entry.Filter,
 
                         Row =
                             row,
@@ -71033,8 +71131,13 @@ function HolyServerFinderFindAutoJoinTarget(rows)
                     return a.Score > b.Score
                 end
 
-                return tostring(a.Row.DisplayName or "")
-                    < tostring(b.Row.DisplayName or "")
+                return tostring(
+                    a.Row.DisplayName
+                    or ""
+                ) < tostring(
+                    b.Row.DisplayName
+                    or ""
+                )
             end)
 
             return candidates[1]
@@ -71841,7 +71944,41 @@ end
 
 HOLY_SERVER_FINDER_MAIN_UI = {
     Lock = false,
-    TargetMap = {},
+
+    SelectedIndex =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+        ),
+
+    EditingIndex =
+        nil,
+
+    SearchText =
+        "",
+
+    WatchlistPage =
+        1,
+
+    WatchlistPageSize =
+        7,
+
+    BuilderPet =
+        "Any Pet",
+
+    BuilderSizes = {
+        "Any",
+    },
+
+    BuilderVariants = {
+        "Any",
+    },
+
+    BuilderRarities = {
+        "Any",
+    },
+
+    BuilderPriority =
+        "Medium",
 }
 
 function HolyServerFinderReadSingleValue(value)
@@ -71866,45 +72003,6 @@ function HolyServerFinderReadSingleValue(value)
     return HolyCleanText(
         value[1]
     )
-end
-
-function HolyServerFinderCloneTarget(target)
-
-    target =
-        HolyServerFinderNormalizeAutoJoinRule(
-            target
-        )
-
-    return {
-        PetScope =
-            target.PetScope,
-
-        Pets =
-            table.clone(
-                target.Pets
-            ),
-
-        Sizes =
-            table.clone(
-                target.Sizes
-            ),
-
-        Variants =
-            table.clone(
-                target.Variants
-            ),
-
-        Rarities =
-            table.clone(
-                target.Rarities
-            ),
-
-        MatchMode =
-            target.MatchMode,
-
-        Enabled =
-            target.Enabled ~= false,
-    }
 end
 
 function HolyServerFinderTargetSelectionList(value, anyLabel)
@@ -72001,113 +72099,607 @@ function HolyServerFinderTargetSelectionList(value, anyLabel)
     return output
 end
 
-function HolyServerFinderTargetSummary(target, index)
+function HolyServerFinderBuildPetOptions()
 
-    target =
-        HolyServerFinderNormalizeAutoJoinRule(
-            target
-        )
+    local values = {
+        "Any Pet",
+    }
 
-    local petText =
-        HolyServerFinderAutoJoinRulePetText(
-            target
-        )
+    local seen = {
+        ["any pet"] = true,
+    }
 
-    local detailText =
-        HolyServerFinderAutoJoinRuleDetailText(
-            target
-        )
+    local options =
+        HolyServerFinderBuildFilterOptions()
 
-    local stateText =
-        target.Enabled ~= false
-        and "ON"
-        or "OFF"
+    for _, petName in ipairs(
+        options.Pets
+        or {}
+    ) do
 
-    return tostring(index)
-        .. ". "
-        .. tostring(petText)
-        .. " · "
-        .. tostring(detailText)
-        .. " · "
-        .. stateText
+        local text =
+            HolyCleanText(
+                petName
+            )
+
+        local key =
+            text:lower()
+
+        if text ~= ""
+        and seen[key] ~= true then
+
+            seen[key] =
+                true
+
+            table.insert(
+                values,
+                text
+            )
+        end
+    end
+
+    return values
 end
 
-function HolyServerFinderMoveSelectedTarget(delta)
+function HolyServerFinderShortFilterList(values, fallback)
+
+    if HolyServerFinderAutoJoinListHasAny(
+        values
+    ) == true then
+
+        return fallback
+            or "Any"
+    end
+
+    local shortNames = {
+        Normal = "Norm",
+        Regular = "Reg",
+        Rainbow = "Rb",
+        Common = "Com",
+        Uncommon = "Unc",
+        Legendary = "Leg",
+        Mythic = "Myth",
+    }
+
+    local output =
+        {}
+
+    for _, value in ipairs(values or {}) do
+
+        local text =
+            HolyCleanText(
+                value
+            )
+
+        table.insert(
+            output,
+            shortNames[text]
+            or text
+        )
+    end
+
+    return #output > 0
+        and table.concat(
+            output,
+            "+"
+        )
+        or (
+            fallback
+            or "Any"
+        )
+end
+
+function HolyServerFinderFilterKey(filter)
+
+    filter =
+        HolyServerFinderNormalizeAutoJoinRule(
+            filter
+        )
+
+    local function sortedText(values)
+
+        local copy =
+            table.clone(
+                values
+                or {}
+            )
+
+        table.sort(copy, function(a, b)
+
+            return tostring(a):lower()
+                < tostring(b):lower()
+        end)
+
+        return table.concat(
+            copy,
+            "+"
+        )
+        :lower()
+    end
+
+    return table.concat({
+        tostring(
+            filter.PetScope
+        ):lower(),
+
+        sortedText(
+            filter.Pets
+        ),
+
+        sortedText(
+            filter.Sizes
+        ),
+
+        sortedText(
+            filter.Variants
+        ),
+
+        sortedText(
+            filter.Rarities
+        ),
+    }, "|")
+end
+
+function HolyServerFinderBuildAllWatchlistRows()
 
     HolyServerFinderEnsureAutoJoinState()
 
-    local targets =
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+    local rows =
+        {}
 
-    local currentIndex =
-        tonumber(
-            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+    local searchText =
+        HolyCleanText(
+            HOLY_SERVER_FINDER_MAIN_UI.SearchText
+            or ""
         )
-        or 1
+        :lower()
 
-    local newIndex =
-        math.clamp(
-            currentIndex
-            + (
-                tonumber(delta)
-                or 0
-            ),
+    for sourceIndex, sourceFilter in ipairs(
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        or {}
+    ) do
+
+        local filter =
+            HolyServerFinderNormalizeAutoJoinRule(
+                sourceFilter
+            )
+
+        local petText =
+            filter.PetScope == "Any Pet"
+            and "Any Pet"
+            or table.concat(
+                filter.Pets,
+                "+"
+            )
+
+        local row = {
+            SourceIndex =
+                sourceIndex,
+
+            Pet =
+                petText,
+
+            Size =
+                HolyServerFinderShortFilterList(
+                    filter.Sizes,
+                    "Any"
+                ),
+
+            Variant =
+                HolyServerFinderShortFilterList(
+                    filter.Variants,
+                    "Any"
+                ),
+
+            Rarity =
+                HolyServerFinderShortFilterList(
+                    filter.Rarities,
+                    "Any"
+                ),
+
+            Priority =
+                HolyServerFinderNormalizeAutoJoinPriority(
+                    filter.Priority
+                ),
+
+            Filter =
+                filter,
+        }
+
+        local haystack =
+            table.concat({
+                row.Pet,
+                row.Size,
+                row.Variant,
+                row.Rarity,
+                row.Priority,
+            }, " ")
+            :lower()
+
+        if searchText == ""
+        or haystack:find(
+            searchText,
             1,
-            math.max(
-                1,
-                #targets
+            true
+        ) then
+
+            table.insert(
+                rows,
+                row
+            )
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        local rankA =
+            HolyServerFinderAutoJoinPriorityRank(
+                a.Priority
+            )
+
+        local rankB =
+            HolyServerFinderAutoJoinPriorityRank(
+                b.Priority
+            )
+
+        if rankA ~= rankB then
+            return rankA < rankB
+        end
+
+        return a.SourceIndex
+            < b.SourceIndex
+    end)
+
+    return rows
+end
+
+function HolyServerFinderBuildWatchlistPage()
+
+    local allRows =
+        HolyServerFinderBuildAllWatchlistRows()
+
+    local pageSize =
+        math.clamp(
+            tonumber(
+                HOLY_SERVER_FINDER_MAIN_UI.WatchlistPageSize
+            )
+            or 7,
+            1,
+            16
+        )
+
+    local pageCount =
+        math.max(
+            1,
+            math.ceil(
+                #allRows
+                / pageSize
             )
         )
 
-    if targets[currentIndex] == nil
-    or newIndex == currentIndex then
-
-        return false
-    end
-
-    local target =
-        table.remove(
-            targets,
-            currentIndex
+    HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage =
+        math.clamp(
+            tonumber(
+                HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage
+            )
+            or 1,
+            1,
+            pageCount
         )
 
-    table.insert(
-        targets,
-        newIndex,
-        target
-    )
+    local firstIndex =
+        (
+            (
+                HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage
+                - 1
+            )
+            * pageSize
+        )
+        + 1
 
-    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-        newIndex
+    local lastIndex =
+        math.min(
+            #allRows,
+            firstIndex
+            + pageSize
+            - 1
+        )
 
-    HolyQueueSaveServerFinderSettings()
+    local pageRows =
+        {}
+
+    for index = firstIndex, lastIndex do
+
+        if type(allRows[index]) == "table" then
+
+            table.insert(
+                pageRows,
+                allRows[index]
+            )
+        end
+    end
+
+    return pageRows,
+        HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage,
+        pageCount
+end
+
+function HolyServerFinderSetWatchlistPage(page)
+
+    HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage =
+        tonumber(page)
+        or 1
+
+    HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex =
+        nil
 
     if type(HolyServerFinderRefreshMainUI) == "function" then
 
         HolyServerFinderRefreshMainUI()
     end
+end
+
+function HolyServerFinderResetFilterBuilder(refresh)
+
+    HOLY_SERVER_FINDER_MAIN_UI.EditingIndex =
+        nil
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderPet =
+        "Any Pet"
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderSizes = {
+        "Any",
+    }
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderVariants = {
+        "Any",
+    }
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderRarities = {
+        "Any",
+    }
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderPriority =
+        "Medium"
+
+    if refresh ~= false
+    and type(HolyServerFinderRefreshMainUI) == "function" then
+
+        HolyServerFinderRefreshMainUI()
+    end
+end
+
+function HolyServerFinderLoadSelectedFilter()
+
+    local index =
+        tonumber(
+            HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex
+        )
+
+    local source =
+        index
+        and HOLY_SERVER_FINDER_STATE.AutoJoinRules[index]
+        or nil
+
+    if type(source) ~= "table" then
+
+        HolyNotify(
+            "Auto Join Watchlist",
+            "Select a filter first.",
+            3
+        )
+
+        return false
+    end
+
+    local filter =
+        HolyServerFinderNormalizeAutoJoinRule(
+            source
+        )
+
+    HOLY_SERVER_FINDER_MAIN_UI.EditingIndex =
+        index
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderPet =
+        filter.PetScope == "Any Pet"
+        and "Any Pet"
+        or tostring(
+            filter.Pets[1]
+            or "Any Pet"
+        )
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderSizes =
+        table.clone(
+            filter.Sizes
+        )
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderVariants =
+        table.clone(
+            filter.Variants
+        )
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderRarities =
+        table.clone(
+            filter.Rarities
+        )
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderPriority =
+        HolyServerFinderNormalizeAutoJoinPriority(
+            filter.Priority
+        )
+
+    HolyServerFinderRefreshMainUI()
 
     return true
 end
 
-function HolyServerFinderRemoveSelectedTarget()
+function HolyServerFinderSaveFilterBuilder()
 
-    HolyServerFinderEnsureAutoJoinState()
+    if HolyAuthRequireServerSniper(
+        "Auto Join Filters",
+        true
+    ) ~= true then
 
-    local targets =
+        return false
+    end
+
+    local petName =
+        HolyCleanText(
+            HOLY_SERVER_FINDER_MAIN_UI.BuilderPet
+            or "Any Pet"
+        )
+
+    local anyPet =
+        petName == ""
+        or petName:lower() == "any pet"
+        or petName:lower() == "any"
+
+    local filter =
+        HolyServerFinderNormalizeAutoJoinRule({
+            PetScope =
+                anyPet
+                and "Any Pet"
+                or "Selected Pets",
+
+            Pets =
+                anyPet
+                and {
+                    "Any",
+                }
+                or {
+                    petName,
+                },
+
+            Sizes =
+                HolyServerFinderTargetSelectionList(
+                    HOLY_SERVER_FINDER_MAIN_UI.BuilderSizes,
+                    "Any"
+                ),
+
+            Variants =
+                HolyServerFinderTargetSelectionList(
+                    HOLY_SERVER_FINDER_MAIN_UI.BuilderVariants,
+                    "Any"
+                ),
+
+            Rarities =
+                HolyServerFinderTargetSelectionList(
+                    HOLY_SERVER_FINDER_MAIN_UI.BuilderRarities,
+                    "Any"
+                ),
+
+            Priority =
+                HolyServerFinderNormalizeAutoJoinPriority(
+                    HOLY_SERVER_FINDER_MAIN_UI.BuilderPriority
+                ),
+
+            MatchMode =
+                "All Selected",
+        })
+
+    local filters =
         HOLY_SERVER_FINDER_STATE.AutoJoinRules
+
+    local editingIndex =
+        tonumber(
+            HOLY_SERVER_FINDER_MAIN_UI.EditingIndex
+        )
+
+    local savedIndex =
+        nil
+
+    local updated =
+        false
+
+    if editingIndex
+    and filters[editingIndex] ~= nil then
+
+        filters[editingIndex] =
+            filter
+
+        savedIndex =
+            editingIndex
+
+        updated =
+            true
+
+    else
+
+        local newKey =
+            HolyServerFinderFilterKey(
+                filter
+            )
+
+        for index, existing in ipairs(filters) do
+
+            if HolyServerFinderFilterKey(
+                existing
+            ) == newKey then
+
+                filters[index] =
+                    filter
+
+                savedIndex =
+                    index
+
+                updated =
+                    true
+
+                break
+            end
+        end
+
+        if savedIndex == nil then
+
+            table.insert(
+                filters,
+                filter
+            )
+
+            savedIndex =
+                #filters
+        end
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex =
+        savedIndex
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        savedIndex
+        or 1
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyNotify(
+        "Auto Join Filters",
+        updated
+        and "Filter updated."
+        or "Filter added.",
+        3
+    )
+
+    HolyServerFinderResetFilterBuilder(
+        false
+    )
+
+    HolyServerFinderRefreshMainUI()
+
+    return true
+end
+
+function HolyServerFinderRemoveSelectedFilter()
 
     local index =
         tonumber(
-            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+            HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex
         )
-        or 1
 
-    if targets[index] == nil then
+    if not index
+    or HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] == nil then
 
         HolyNotify(
             "Auto Join Watchlist",
-            "Select a target first.",
+            "Select a filter first.",
             3
         )
 
@@ -72115,427 +72707,48 @@ function HolyServerFinderRemoveSelectedTarget()
     end
 
     table.remove(
-        targets,
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules,
         index
     )
 
+    HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex =
+        nil
+
     HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-        math.clamp(
-            index,
-            1,
-            math.max(
-                1,
-                #targets
-            )
-        )
+        1
+
+    HolyServerFinderResetFilterBuilder(
+        false
+    )
 
     HolyQueueSaveServerFinderSettings()
 
-    if type(HolyServerFinderRefreshMainUI) == "function" then
-
-        HolyServerFinderRefreshMainUI()
-    end
+    HolyServerFinderRefreshMainUI()
 
     return true
 end
 
-function HolyServerFinderOpenTargetDialog(targetIndex)
+function HolyServerFinderClearFilters()
 
-    if HolyAuthRequireServerSniper(
-        "Auto Join Watchlist",
-        true
-    ) ~= true then
-
-        return false
-    end
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    targetIndex =
-        tonumber(
-            targetIndex
-        )
-
-    local editing =
-        targetIndex ~= nil
-        and HOLY_SERVER_FINDER_STATE.AutoJoinRules[targetIndex] ~= nil
-
-    local target =
-        editing
-        and HolyServerFinderCloneTarget(
-            HOLY_SERVER_FINDER_STATE.AutoJoinRules[targetIndex]
-        )
-        or HolyServerFinderNormalizeAutoJoinRule({
-            PetScope = "Any Pet",
-            Pets = {
-                "Any",
-            },
-            Sizes = {
-                "Any",
-            },
-            Variants = {
-                "Any",
-            },
-            Rarities = {
-                "Any",
-            },
-            MatchMode = "All Selected",
-            Enabled = true,
-        })
-
-    local filterOptions =
-        HolyServerFinderBuildFilterOptions()
-
-    local petOptions = {
-        "Any Pet",
-    }
-
-    for _, petName in ipairs(filterOptions.Pets or {}) do
-
-        table.insert(
-            petOptions,
-            petName
-        )
-    end
-
-    local rarityOptions =
-        table.clone(
-            HOLY_SERVER_FINDER_AUTO_JOIN_RARITY_CHOICES
-        )
-
-    local seenRarities =
+    HOLY_SERVER_FINDER_STATE.AutoJoinRules =
         {}
 
-    for _, rarityName in ipairs(rarityOptions) do
+    HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex =
+        nil
 
-        seenRarities[
-            tostring(rarityName):lower()
-        ] =
-            true
-    end
+    HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage =
+        1
 
-    for _, rarityName in ipairs(filterOptions.Rarities or {}) do
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        1
 
-        local key =
-            tostring(rarityName):lower()
+    HolyServerFinderResetFilterBuilder(
+        false
+    )
 
-        if seenRarities[key] ~= true then
+    HolyQueueSaveServerFinderSettings()
 
-            seenRarities[key] =
-                true
-
-            table.insert(
-                rarityOptions,
-                rarityName
-            )
-        end
-    end
-
-    local selectedPets =
-        target.PetScope == "Any Pet"
-        and {
-            "Any Pet",
-        }
-        or table.clone(
-            target.Pets
-        )
-
-    local selectedSizes =
-        table.clone(
-            target.Sizes
-        )
-
-    local selectedVariants =
-        table.clone(
-            target.Variants
-        )
-
-    local selectedRarities =
-        table.clone(
-            target.Rarities
-        )
-
-    local selectedEnabled =
-        target.Enabled ~= false
-
-    local dialog
-
-    dialog =
-        Window:AddDialog(
-            "HolyServerFinderTargetDialog",
-            {
-                Title =
-                    editing
-                    and "Edit Auto Join Target"
-                    or "Add Auto Join Target",
-
-                Description =
-                    "Choose which pets and traits HOLY should watch for.",
-
-                AutoDismiss =
-                    false,
-
-                OutsideClickDismiss =
-                    true,
-
-                FooterButtons = {
-                    Cancel = {
-                        Title =
-                            "Cancel",
-
-                        Variant =
-                            "Ghost",
-
-                        Order =
-                            1,
-
-                        Callback =
-                            function()
-
-                                dialog:Dismiss()
-                            end,
-                    },
-
-                    Save = {
-                        Title =
-                            editing
-                            and "Save Target"
-                            or "Add Target",
-
-                        Variant =
-                            "Primary",
-
-                        Order =
-                            2,
-
-                        Callback =
-                            function()
-
-                                local pets =
-                                    HolyServerFinderTargetSelectionList(
-                                        selectedPets,
-                                        "Any Pet"
-                                    )
-
-                                local anyPet =
-                                    HolyServerFinderAutoJoinListHasAny(
-                                        pets
-                                    )
-
-                                local savedTarget =
-                                    HolyServerFinderNormalizeAutoJoinRule({
-                                        PetScope =
-                                            anyPet
-                                            and "Any Pet"
-                                            or "Selected Pets",
-
-                                        Pets =
-                                            anyPet
-                                            and {
-                                                "Any",
-                                            }
-                                            or pets,
-
-                                        Sizes =
-                                            HolyServerFinderTargetSelectionList(
-                                                selectedSizes,
-                                                "Any"
-                                            ),
-
-                                        Variants =
-                                            HolyServerFinderTargetSelectionList(
-                                                selectedVariants,
-                                                "Any"
-                                            ),
-
-                                        Rarities =
-                                            HolyServerFinderTargetSelectionList(
-                                                selectedRarities,
-                                                "Any"
-                                            ),
-
-                                        MatchMode =
-                                            "All Selected",
-
-                                        Enabled =
-                                            selectedEnabled,
-                                    })
-
-                                if editing then
-
-                                    HOLY_SERVER_FINDER_STATE.AutoJoinRules[targetIndex] =
-                                        savedTarget
-
-                                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-                                        targetIndex
-
-                                else
-
-                                    table.insert(
-                                        HOLY_SERVER_FINDER_STATE.AutoJoinRules,
-                                        savedTarget
-                                    )
-
-                                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-                                        #HOLY_SERVER_FINDER_STATE.AutoJoinRules
-                                end
-
-                                HolyServerFinderEnsureAutoJoinState()
-
-                                HolyQueueSaveServerFinderSettings()
-
-                                if type(HolyServerFinderRefreshMainUI) == "function" then
-
-                                    HolyServerFinderRefreshMainUI()
-                                end
-
-                                dialog:Dismiss()
-                            end,
-                    },
-                },
-            }
-        )
-
-    dialog:AddToggle(
-        "HolyServerFinderTargetEnabled",
-        {
-            Text =
-                "Enabled",
-
-            Default =
-                selectedEnabled,
-
-            Tooltip =
-                "Controls whether this target can trigger an alert or auto join.",
-        }
-    ):OnChanged(function(value)
-
-        selectedEnabled =
-            value == true
-    end)
-
-    dialog:AddDropdown(
-        "HolyServerFinderTargetPets",
-        {
-            Text =
-                "Pets",
-
-            Values =
-                petOptions,
-
-            Default =
-                selectedPets,
-
-            Multi =
-                true,
-
-            Searchable =
-                true,
-
-            AllowNull =
-                false,
-
-            MaxVisibleDropdownItems =
-                8,
-
-            Tooltip =
-                "Select Any Pet or choose specific pets.",
-        }
-    ):OnChanged(function(value)
-
-        selectedPets =
-            value
-    end)
-
-    dialog:AddDropdown(
-        "HolyServerFinderTargetSizes",
-        {
-            Text =
-                "Sizes",
-
-            Values =
-                HOLY_SERVER_FINDER_AUTO_JOIN_SIZE_CHOICES,
-
-            Default =
-                selectedSizes,
-
-            Multi =
-                true,
-
-            Searchable =
-                false,
-
-            AllowNull =
-                false,
-
-            MaxVisibleDropdownItems =
-                4,
-        }
-    ):OnChanged(function(value)
-
-        selectedSizes =
-            value
-    end)
-
-    dialog:AddDropdown(
-        "HolyServerFinderTargetVariants",
-        {
-            Text =
-                "Variants",
-
-            Values =
-                HOLY_SERVER_FINDER_AUTO_JOIN_VARIANT_CHOICES,
-
-            Default =
-                selectedVariants,
-
-            Multi =
-                true,
-
-            Searchable =
-                false,
-
-            AllowNull =
-                false,
-
-            MaxVisibleDropdownItems =
-                3,
-        }
-    ):OnChanged(function(value)
-
-        selectedVariants =
-            value
-    end)
-
-    dialog:AddDropdown(
-        "HolyServerFinderTargetRarities",
-        {
-            Text =
-                "Rarities",
-
-            Values =
-                rarityOptions,
-
-            Default =
-                selectedRarities,
-
-            Multi =
-                true,
-
-            Searchable =
-                false,
-
-            AllowNull =
-                false,
-
-            MaxVisibleDropdownItems =
-                8,
-        }
-    ):OnChanged(function(value)
-
-        selectedRarities =
-            value
-    end)
+    HolyServerFinderRefreshMainUI()
 
     return true
 end
@@ -76771,6 +76984,11 @@ function HolySniperSetPageMode(value)
     )
 
     HolySetGroupboxVisible(
+        ServerAutoJoinFilterBox,
+        serverVisible
+    )
+
+    HolySetGroupboxVisible(
         ServerAutoJoinWatchlistBox,
         serverVisible
     )
@@ -78356,19 +78574,18 @@ HOLY_SERVER_FINDER_MAIN_UI.AutoJoinStatus =
         "Mode: Off"
     )
 
-HOLY_SERVER_FINDER_MAIN_UI.TargetDropdown =
-    ServerAutoJoinWatchlistBox:AddDropdown(
-        "HolyServerFinderSelectedTarget",
+HOLY_SERVER_FINDER_MAIN_UI.BuilderPetDropdown =
+    ServerAutoJoinFilterBox:AddDropdown(
+        "HolyServerFinderFilterPet",
         {
             Text =
-                "Selected Target",
+                "Pet",
 
-            Values = {
-                "Loading targets...",
-            },
+            Values =
+                HolyServerFinderBuildPetOptions(),
 
             Default =
-                1,
+                HOLY_SERVER_FINDER_MAIN_UI.BuilderPet,
 
             Multi =
                 false,
@@ -78383,125 +78600,344 @@ HOLY_SERVER_FINDER_MAIN_UI.TargetDropdown =
                 8,
 
             Tooltip =
-                "Select a target to edit, reorder, or remove.",
+                "Choose a pet or select Any Pet.",
         }
     )
 
-HOLY_SERVER_FINDER_MAIN_UI.TargetStatus =
-    HolySniperAddLabel(
-        ServerAutoJoinWatchlistBox,
-        "Loading watchlist..."
+HOLY_SERVER_FINDER_MAIN_UI.BuilderSizeDropdown =
+    ServerAutoJoinFilterBox:AddDropdown(
+        "HolyServerFinderFilterSizes",
+        {
+            Text =
+                "Sizes",
+
+            Values =
+                HOLY_SERVER_FINDER_AUTO_JOIN_SIZE_CHOICES,
+
+            Default =
+                HOLY_SERVER_FINDER_MAIN_UI.BuilderSizes,
+
+            Multi =
+                true,
+
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                4,
+        }
     )
 
-ServerAutoJoinWatchlistBox:AddActionRow(
-    "HolyServerFinderTargetPrimaryActions",
-    {
-        Buttons = {
-            {
-                Id =
-                    "Add",
+HOLY_SERVER_FINDER_MAIN_UI.BuilderVariantDropdown =
+    ServerAutoJoinFilterBox:AddDropdown(
+        "HolyServerFinderFilterVariants",
+        {
+            Text =
+                "Variants",
 
-                Text =
-                    "Add Target",
+            Values =
+                HOLY_SERVER_FINDER_AUTO_JOIN_VARIANT_CHOICES,
 
-                Tooltip =
-                    "Add a new auto join target.",
+            Default =
+                HOLY_SERVER_FINDER_MAIN_UI.BuilderVariants,
 
-                Callback =
-                    function()
+            Multi =
+                true,
 
-                        HolyServerFinderOpenTargetDialog(
-                            nil
-                        )
-                    end,
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                3,
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderRarityDropdown =
+    ServerAutoJoinFilterBox:AddDropdown(
+        "HolyServerFinderFilterRarities",
+        {
+            Text =
+                "Rarities",
+
+            Values =
+                HOLY_SERVER_FINDER_AUTO_JOIN_RARITY_CHOICES,
+
+            Default =
+                HOLY_SERVER_FINDER_MAIN_UI.BuilderRarities,
+
+            Multi =
+                true,
+
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                8,
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderPriorityDropdown =
+    ServerAutoJoinFilterBox:AddDropdown(
+        "HolyServerFinderFilterPriority",
+        {
+            Text =
+                "Priority",
+
+            Values = {
+                "High",
+                "Medium",
+                "Low",
             },
 
-            {
-                Id =
-                    "Edit",
+            Default =
+                HOLY_SERVER_FINDER_MAIN_UI.BuilderPriority,
 
-                Text =
-                    "Edit Target",
+            Multi =
+                false,
 
-                Tooltip =
-                    "Edit the selected target.",
+            Searchable =
+                false,
 
-                Callback =
-                    function()
+            AllowNull =
+                false,
 
-                        local index =
-                            tonumber(
-                                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+            MaxVisibleDropdownItems =
+                3,
+
+            Tooltip =
+                "High-priority filters are checked first.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderActions =
+    ServerAutoJoinFilterBox:AddActionRow(
+        "HolyServerFinderFilterActions",
+        {
+            Buttons = {
+                {
+                    Id =
+                        "Reset",
+
+                    Text =
+                        "Reset",
+
+                    Tooltip =
+                        "Clear the filter builder.",
+
+                    Callback =
+                        function()
+
+                            HolyServerFinderResetFilterBuilder()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Save",
+
+                    Text =
+                        "Save Filter",
+
+                    Tooltip =
+                        "Add this filter to the watchlist.",
+
+                    Callback =
+                        function()
+
+                            HolyServerFinderSaveFilterBuilder()
+                        end,
+                },
+            },
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.SearchInput =
+    ServerAutoJoinWatchlistBox:AddInput(
+        "HolyServerFinderWatchlistSearch",
+        {
+            Text =
+                "Search",
+
+            Default =
+                "",
+
+            Placeholder =
+                "Search filters...",
+
+            Finished =
+                false,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Search saved auto join filters.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.WatchlistTable =
+    ServerAutoJoinWatchlistBox:AddSniperWatchlist(
+        "HolyServerFinderWatchlistTable",
+        {
+            Layout =
+                "AutoJoin",
+
+            Rows =
+                7,
+
+            RowHeight =
+                25,
+
+            Callback =
+                function(_rowIndex, rowData)
+
+                    local sourceIndex =
+                        type(rowData) == "table"
+                        and tonumber(
+                            rowData.SourceIndex
+                        )
+                        or nil
+
+                    HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex =
+                        sourceIndex
+
+                    if sourceIndex then
+
+                        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+                            sourceIndex
+
+                        HolyQueueSaveServerFinderSettings()
+                    end
+
+                    HolyServerFinderRefreshMainUI()
+                end,
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.WatchlistPager =
+    ServerAutoJoinWatchlistBox:AddActionRow(
+        "HolyServerFinderWatchlistPager",
+        {
+            Buttons = {
+                {
+                    Id =
+                        "Prev",
+
+                    Text =
+                        "<",
+
+                    Tooltip =
+                        "Previous page.",
+
+                    Callback =
+                        function()
+
+                            HolyServerFinderSetWatchlistPage(
+                                (
+                                    tonumber(
+                                        HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage
+                                    )
+                                    or 1
+                                )
+                                - 1
                             )
+                        end,
+                },
 
-                        if HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] == nil then
+                {
+                    Id =
+                        "Page",
 
-                            HolyNotify(
-                                "Auto Join Watchlist",
-                                "Select a target first.",
-                                3
+                    Text =
+                        "Page 1/1",
+
+                    Callback =
+                        function()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Next",
+
+                    Text =
+                        ">",
+
+                    Tooltip =
+                        "Next page.",
+
+                    Callback =
+                        function()
+
+                            HolyServerFinderSetWatchlistPage(
+                                (
+                                    tonumber(
+                                        HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage
+                                    )
+                                    or 1
+                                )
+                                + 1
                             )
-
-                            return
-                        end
-
-                        HolyServerFinderOpenTargetDialog(
-                            index
-                        )
-                    end,
+                        end,
+                },
             },
-        },
-    }
-)
+        }
+    )
 
-ServerAutoJoinWatchlistBox:AddActionRow(
-    "HolyServerFinderTargetOrderActions",
-    {
-        Buttons = {
-            {
-                Id =
-                    "Up",
+HOLY_SERVER_FINDER_MAIN_UI.WatchlistActions =
+    ServerAutoJoinWatchlistBox:AddActionRow(
+        "HolyServerFinderWatchlistActions",
+        {
+            Buttons = {
+                {
+                    Id =
+                        "Edit",
 
-                Text =
-                    "Move Up",
+                    Text =
+                        "Edit Selected",
 
-                Tooltip =
-                    "Give the selected target higher priority.",
+                    Tooltip =
+                        "Load the selected filter into Auto Join Filters.",
 
-                Callback =
-                    function()
+                    Callback =
+                        function()
 
-                        HolyServerFinderMoveSelectedTarget(
-                            -1
-                        )
-                    end,
+                            HolyServerFinderLoadSelectedFilter()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Remove",
+
+                    Text =
+                        "Remove Selected",
+
+                    Tooltip =
+                        "Remove the selected filter.",
+
+                    Callback =
+                        function()
+
+                            HolyServerFinderRemoveSelectedFilter()
+                        end,
+                },
             },
-
-            {
-                Id =
-                    "Down",
-
-                Text =
-                    "Move Down",
-
-                Tooltip =
-                    "Give the selected target lower priority.",
-
-                Callback =
-                    function()
-
-                        HolyServerFinderMoveSelectedTarget(
-                            1
-                        )
-                    end,
-            },
-        },
-    }
-)
+        }
+    )
 
 ServerAutoJoinWatchlistBox:AddButton({
     Text =
-        "Remove Target",
+        "Clear Watchlist",
 
     Risky =
         true,
@@ -78510,14 +78946,90 @@ ServerAutoJoinWatchlistBox:AddButton({
         true,
 
     Tooltip =
-        "Double click to remove the selected target.",
+        "Double click to remove every auto join filter.",
 
     Func =
         function()
 
-            HolyServerFinderRemoveSelectedTarget()
+            HolyServerFinderClearFilters()
         end,
 })
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderPetDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderPet =
+        HolyServerFinderReadSingleValue(
+            value
+        )
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderSizeDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderSizes =
+        value
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderVariantDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderVariants =
+        value
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderRarityDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderRarities =
+        value
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.BuilderPriorityDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.BuilderPriority =
+        HolyServerFinderNormalizeAutoJoinPriority(
+            HolyServerFinderReadSingleValue(
+                value
+            )
+        )
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.SearchInput:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_MAIN_UI.SearchText =
+        HolyCleanText(
+            value
+        )
+
+    HOLY_SERVER_FINDER_MAIN_UI.WatchlistPage =
+        1
+
+    HOLY_SERVER_FINDER_MAIN_UI.SelectedIndex =
+        nil
+
+    HolyServerFinderRefreshMainUI()
+end)
 
 function HolyServerFinderRefreshMainUI()
 
@@ -78588,86 +79100,134 @@ function HolyServerFinderRefreshMainUI()
         )
     )
 
-    local targetValues =
-        {}
+    setValue(
+        ui.BuilderPetDropdown,
+        ui.BuilderPet
+    )
 
-    local targetMap =
-        {}
+    setValue(
+        ui.BuilderSizeDropdown,
+        ui.BuilderSizes
+    )
 
-    for index, target in ipairs(
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules
-        or {}
-    ) do
+    setValue(
+        ui.BuilderVariantDropdown,
+        ui.BuilderVariants
+    )
 
-        local display =
-            HolyServerFinderTargetSummary(
-                target,
-                index
-            )
+    setValue(
+        ui.BuilderRarityDropdown,
+        ui.BuilderRarities
+    )
 
-        targetValues[index] =
-            display
+    setValue(
+        ui.BuilderPriorityDropdown,
+        ui.BuilderPriority
+    )
 
-        targetMap[display] =
-            index
+    local pageRows,
+        page,
+        pageCount =
+        HolyServerFinderBuildWatchlistPage()
+
+    if type(ui.WatchlistTable) == "table" then
+
+        ui.WatchlistTable:SetRows(
+            pageRows
+        )
+
+        local selectedRow =
+            nil
+
+        for rowIndex, rowData in ipairs(pageRows) do
+
+            if tonumber(
+                rowData.SourceIndex
+            ) == tonumber(
+                ui.SelectedIndex
+            ) then
+
+                selectedRow =
+                    rowIndex
+
+                break
+            end
+        end
+
+        ui.WatchlistTable:SetSelected(
+            selectedRow
+        )
     end
 
-    if #targetValues == 0 then
+    if type(ui.WatchlistPager) == "table" then
 
-        targetValues[1] =
-            "No targets added"
+        ui.WatchlistPager:SetVisible(
+            pageCount > 1
+        )
+
+        ui.WatchlistPager:SetText(
+            "Page",
+            "Page "
+                .. tostring(page)
+                .. "/"
+                .. tostring(pageCount)
+        )
+
+        ui.WatchlistPager:SetDisabled(
+            "Prev",
+            page <= 1
+        )
+
+        ui.WatchlistPager:SetDisabled(
+            "Next",
+            page >= pageCount
+        )
     end
 
-    ui.TargetMap =
-        targetMap
+    local selectedExists =
+        tonumber(ui.SelectedIndex) ~= nil
+        and HOLY_SERVER_FINDER_STATE.AutoJoinRules[
+            tonumber(ui.SelectedIndex)
+        ] ~= nil
 
-    if type(ui.TargetDropdown) == "table" then
+    if type(ui.WatchlistActions) == "table" then
 
-        pcall(function()
+        ui.WatchlistActions:SetDisabled(
+            "Edit",
+            selectedExists ~= true
+        )
 
-            ui.TargetDropdown:SetValues(
-                targetValues
-            )
-        end)
+        ui.WatchlistActions:SetDisabled(
+            "Remove",
+            selectedExists ~= true
+        )
+    end
 
-        local selectedIndex =
-            math.clamp(
-                tonumber(
-                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
-                )
-                or 1,
-                1,
-                math.max(
-                    1,
-                    #targetValues
-                )
-            )
+    if type(ui.BuilderActions) == "table" then
 
-        pcall(function()
+        local editing =
+            tonumber(ui.EditingIndex) ~= nil
+            and HOLY_SERVER_FINDER_STATE.AutoJoinRules[
+                tonumber(ui.EditingIndex)
+            ] ~= nil
 
-            ui.TargetDropdown:SetValue(
-                targetValues[selectedIndex]
-            )
-        end)
+        ui.BuilderActions:SetText(
+            "Reset",
+            editing
+            and "Cancel Edit"
+            or "Reset"
+        )
+
+        ui.BuilderActions:SetText(
+            "Save",
+            editing
+            and "Save Changes"
+            or "Save Filter"
+        )
     end
 
     ui.Lock =
         false
-
-    local enabledTargets =
-        0
-
-    for _, target in ipairs(
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules
-        or {}
-    ) do
-
-        if target.Enabled ~= false then
-
-            enabledTargets +=
-                1
-        end
-    end
 
     HolySniperSetLabel(
         ui.FinderStatus,
@@ -78698,34 +79258,13 @@ function HolyServerFinderRefreshMainUI()
                 HOLY_SERVER_FINDER_STATE.AutoJoinMode
             )
             .. " · "
-            .. tostring(enabledTargets)
-            .. " enabled"
-    )
-
-    local selectedTarget =
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules[
-            tonumber(
-                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
-            )
-            or 1
-        ]
-
-    HolySniperSetLabel(
-        ui.TargetStatus,
-        selectedTarget
-        and (
-            "Priority "
             .. tostring(
-                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+                #(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinRules
+                    or {}
+                )
             )
-            .. " · "
-            .. (
-                selectedTarget.Enabled ~= false
-                and "Enabled"
-                or "Disabled"
-            )
-        )
-        or "No targets added."
+            .. " filters"
     )
 
     return true
@@ -78860,33 +79399,6 @@ HOLY_SERVER_FINDER_MAIN_UI.CooldownInput:OnChanged(function(value)
     HolyQueueSaveServerFinderSettings()
 
     HolyServerFinderRefreshMainUI()
-end)
-
-HOLY_SERVER_FINDER_MAIN_UI.TargetDropdown:OnChanged(function(value)
-
-    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
-        return
-    end
-
-    local display =
-        HolyServerFinderReadSingleValue(
-            value
-        )
-
-    local index =
-        HOLY_SERVER_FINDER_MAIN_UI.TargetMap[
-            display
-        ]
-
-    if index then
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-            index
-
-        HolyQueueSaveServerFinderSettings()
-
-        HolyServerFinderRefreshMainUI()
-    end
 end)
 
 HolyServerFinderRefreshMainUI()
