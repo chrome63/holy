@@ -399,6 +399,10 @@ local DEV_PERSISTENCE_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyDevPersistenceTest.json"
 
+local DEV_PACKET_WATCHER_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevPacketWatcher.json"
+
 local DEV_TOOLS = {
     {
         Name = "Remote Spy",
@@ -808,6 +812,10 @@ HOLY_DEV_SUITE_STATE = {
     PersistenceTarget = "",
     ActionScope = "Player Tools",
     DataModule = "",
+
+    PacketDirection = "Both",
+    PacketFilter = "",
+    PacketMaxEvents = 300,
 }
 
 HOLY_DEV_SUITE_RUNTIME = {
@@ -835,6 +843,32 @@ HOLY_DEV_SUITE_RUNTIME = {
     Errors = {},
     ErrorOrder = {},
     ErrorConnection = nil,
+
+    PacketActive = false,
+    PacketStartedAt = nil,
+    PacketStartedClock = 0,
+    PacketStatusClock = 0,
+
+    PacketEvents = {},
+    PacketConnections = {},
+    PacketWrappers = {},
+    PacketRegistry = {},
+
+    PacketCounts = {
+        Sent = 0,
+        Received = 0,
+    },
+
+    PacketObserved = {
+        Sent = 0,
+        Received = 0,
+    },
+
+    PacketFiltered = 0,
+    PacketSkipped = 0,
+    PacketLastName = "",
+    PacketCoverage = {},
+    LastPacketReport = nil,
 
     Stop = nil,
 }
@@ -67918,6 +67952,1330 @@ function HolyDevClearErrors()
     return true
 end
 
+function HolyDevPacketLimit(value)
+
+    return math.clamp(
+        math.floor(
+            tonumber(value)
+            or 300
+        ),
+        10,
+        10000
+    )
+end
+
+function HolyDevPacketDirection(value)
+
+    value =
+        tostring(
+            value
+            or "Both"
+        )
+
+    if value == "Sent"
+    or value == "Received" then
+
+        return value
+    end
+
+    return "Both"
+end
+
+function HolyDevPacketId(packet)
+
+    for _, key in ipairs({
+        "PacketId",
+        "PacketID",
+        "Id",
+        "ID",
+        "id",
+    }) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return packet[key]
+            end)
+
+        value =
+            ok == true
+            and tonumber(value)
+            or nil
+
+        if value
+        and value >= 0
+        and value <= 65535
+        and value % 1 == 0 then
+
+            return value
+        end
+    end
+
+    return nil
+end
+
+function HolyDevPacketSafeValue(value, depth, seen)
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    local valueType =
+        typeof(value)
+
+    if valueType == "string" then
+
+        local valid,
+            length =
+            pcall(
+                utf8.len,
+                value
+            )
+
+        if valid == true
+        and length ~= nil then
+
+            if #value > 2000 then
+
+                return value:sub(1, 2000)
+                    .. "...<truncated>"
+            end
+
+            return value
+        end
+
+        local preview =
+            {}
+
+        local previewLength =
+            math.min(
+                #value,
+                96
+            )
+
+        for index = 1, previewLength do
+
+            preview[index] =
+                string.format(
+                    "%02X",
+                    string.byte(
+                        value,
+                        index
+                    )
+                )
+        end
+
+        return {
+            Type = "binary-string",
+            Length = #value,
+
+            HexPreview =
+                table.concat(
+                    preview,
+                    " "
+                ),
+
+            Truncated =
+                #value > previewLength,
+        }
+    end
+
+    if valueType == "buffer" then
+
+        local length =
+            buffer.len(value)
+
+        local preview =
+            {}
+
+        local previewLength =
+            math.min(
+                length,
+                96
+            )
+
+        for index = 0, previewLength - 1 do
+
+            preview[#preview + 1] =
+                string.format(
+                    "%02X",
+                    buffer.readu8(
+                        value,
+                        index
+                    )
+                )
+        end
+
+        return {
+            Type = "buffer",
+            Length = length,
+
+            HexPreview =
+                table.concat(
+                    preview,
+                    " "
+                ),
+
+            Truncated =
+                length > previewLength,
+        }
+    end
+
+    if valueType == "Instance" then
+
+        local output = {
+            Type = "Instance",
+        }
+
+        pcall(function()
+
+            output.Name =
+                value.Name
+
+            output.ClassName =
+                value.ClassName
+
+            output.FullName =
+                value:GetFullName()
+        end)
+
+        return output
+    end
+
+    if valueType == "table" then
+
+        if seen[value] == true then
+            return "<cycle>"
+        end
+
+        if depth >= 5 then
+            return "<maximum depth>"
+        end
+
+        seen[value] =
+            true
+
+        local output =
+            {}
+
+        local count =
+            0
+
+        for key, child in pairs(value) do
+
+            count +=
+                1
+
+            if count > 150 then
+
+                output.__Truncated =
+                    true
+
+                break
+            end
+
+            local outputKey =
+                tostring(key)
+
+            local compactKey =
+                outputKey
+                    :lower()
+                    :gsub(
+                        "[^%w]",
+                        ""
+                    )
+
+            if compactKey:find(
+                "password",
+                1,
+                true
+            )
+            or compactKey:find(
+                "secret",
+                1,
+                true
+            )
+            or compactKey:find(
+                "token",
+                1,
+                true
+            )
+            or compactKey:find(
+                "cookie",
+                1,
+                true
+            )
+            or compactKey:find(
+                "authorization",
+                1,
+                true
+            )
+            or compactKey:find(
+                "apikey",
+                1,
+                true
+            ) then
+
+                output[outputKey] =
+                    "<redacted>"
+
+            else
+
+                output[outputKey] =
+                    HolyDevPacketSafeValue(
+                        child,
+                        depth + 1,
+                        seen
+                    )
+            end
+        end
+
+        seen[value] =
+            nil
+
+        return output
+    end
+
+    return HolyDevSafeValue(
+        value
+    )
+end
+
+function HolyDevPacketArguments(...)
+
+    local packed =
+        table.pack(...)
+
+    local output =
+        {}
+
+    for index = 1, packed.n do
+
+        output[index] =
+            HolyDevPacketSafeValue(
+                packed[index]
+            )
+    end
+
+    return output
+end
+
+function HolyDevPacketMatches(direction, entry)
+
+    local wantedDirection =
+        HolyDevPacketDirection(
+            HOLY_DEV_SUITE_STATE.PacketDirection
+        )
+
+    if wantedDirection ~= "Both"
+    and wantedDirection ~= direction then
+
+        return false
+    end
+
+    local filter =
+        tostring(
+            HOLY_DEV_SUITE_STATE.PacketFilter
+            or ""
+        ):lower()
+
+    if filter == "" then
+        return true
+    end
+
+    local searchable =
+        (
+            tostring(
+                entry.Path
+                or ""
+            )
+            .. " "
+            .. tostring(
+                entry.PacketId
+                or ""
+            )
+        ):lower()
+
+    return searchable:find(
+        filter,
+        1,
+        true
+    ) ~= nil
+end
+
+function HolyDevPacketRefreshStatus(force)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local now =
+        os.clock()
+
+    if force ~= true
+    and now - (
+        runtime.PacketStatusClock
+        or 0
+    ) < 0.15 then
+
+        return
+    end
+
+    runtime.PacketStatusClock =
+        now
+
+    local count =
+        #(
+            runtime.PacketEvents
+            or {}
+        )
+
+    local limit =
+        HolyDevPacketLimit(
+            HOLY_DEV_SUITE_STATE.PacketMaxEvents
+        )
+
+    local text =
+        runtime.PacketActive == true
+        and "Capturing"
+        or "Ready"
+
+    text =
+        text
+        .. " · "
+        .. tostring(count)
+        .. "/"
+        .. tostring(limit)
+
+    if (
+        runtime.PacketSkipped
+        or 0
+    ) > 0 then
+
+        text =
+            text
+            .. " · "
+            .. tostring(
+                runtime.PacketSkipped
+            )
+            .. " skipped"
+    end
+
+    if tostring(
+        runtime.PacketLastName
+        or ""
+    ) ~= "" then
+
+        text =
+            text
+            .. " · "
+            .. tostring(
+                runtime.PacketLastName
+            )
+    end
+
+    HolyDevSetStatus(
+        "PacketStatusLabel",
+        text
+    )
+end
+
+function HolyDevPacketRecord(direction, entry, ...)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.PacketActive ~= true then
+        return
+    end
+
+    runtime.PacketObserved[direction] =
+        (
+            runtime.PacketObserved[direction]
+            or 0
+        )
+        + 1
+
+    if HolyDevPacketMatches(
+        direction,
+        entry
+    ) ~= true then
+
+        runtime.PacketFiltered +=
+            1
+
+        return
+    end
+
+    runtime.PacketCounts[direction] =
+        (
+            runtime.PacketCounts[direction]
+            or 0
+        )
+        + 1
+
+    runtime.PacketLastName =
+        entry.Path
+
+    local limit =
+        HolyDevPacketLimit(
+            HOLY_DEV_SUITE_STATE.PacketMaxEvents
+        )
+
+    if #runtime.PacketEvents >= limit then
+
+        runtime.PacketSkipped +=
+            1
+
+        HolyDevPacketRefreshStatus(
+            false
+        )
+
+        return
+    end
+
+    runtime.PacketEvents[
+        #runtime.PacketEvents + 1
+    ] = {
+        Index =
+            #runtime.PacketEvents + 1,
+
+        Time =
+            os.clock()
+            - runtime.PacketStartedClock,
+
+        Direction =
+            direction,
+
+        Packet =
+            entry.Path,
+
+        PacketId =
+            entry.PacketId,
+
+        Arguments =
+            HolyDevPacketArguments(...),
+    }
+
+    HolyDevPacketRefreshStatus(
+        false
+    )
+end
+
+function HolyDevPacketCleanup()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    for _, connection in ipairs(
+        runtime.PacketConnections
+        or {}
+    ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    runtime.PacketConnections =
+        {}
+
+    for index = #(
+        runtime.PacketWrappers
+        or {}
+    ), 1, -1 do
+
+        local row =
+            runtime.PacketWrappers[index]
+
+        pcall(function()
+
+            if row.Packet[row.Method]
+            == row.Wrapper then
+
+                row.Packet[row.Method] =
+                    row.Original
+            end
+        end)
+    end
+
+    runtime.PacketWrappers =
+        {}
+end
+
+function HolyDevPacketNetworking()
+
+    if type(HolyShopRequireModule)
+    == "function" then
+
+        local result =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+
+        if type(result) == "table" then
+            return result
+        end
+    end
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local module =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "Networking"
+        )
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local ok,
+        result =
+        pcall(
+            require,
+            module
+        )
+
+    if ok == true
+    and type(result) == "table" then
+
+        return result
+    end
+
+    return nil
+end
+
+function HolyDevPacketStart()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.PacketActive == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Packet capture is already running.",
+            3
+        )
+
+        return false
+    end
+
+    HolyDevPacketCleanup()
+
+    local networking =
+        HolyDevPacketNetworking()
+
+    if type(networking) ~= "table" then
+
+        HolyDevSetStatus(
+            "PacketStatusLabel",
+            "Networking module unavailable."
+        )
+
+        HolyNotify(
+            "HOLY Dev",
+            "Networking module unavailable.",
+            5
+        )
+
+        return false
+    end
+
+    HOLY_DEV_SUITE_STATE.PacketMaxEvents =
+        HolyDevPacketLimit(
+            HOLY_DEV_SUITE_STATE.PacketMaxEvents
+        )
+
+    runtime.PacketActive =
+        true
+
+    runtime.PacketStartedAt =
+        os.time()
+
+    runtime.PacketStartedClock =
+        os.clock()
+
+    runtime.PacketEvents =
+        {}
+
+    runtime.PacketConnections =
+        {}
+
+    runtime.PacketWrappers =
+        {}
+
+    runtime.PacketRegistry =
+        {}
+
+    runtime.PacketCounts = {
+        Sent = 0,
+        Received = 0,
+    }
+
+    runtime.PacketObserved = {
+        Sent = 0,
+        Received = 0,
+    }
+
+    runtime.PacketFiltered =
+        0
+
+    runtime.PacketSkipped =
+        0
+
+    runtime.PacketLastName =
+        ""
+
+    runtime.PacketStatusClock =
+        0
+
+    local direction =
+        HolyDevPacketDirection(
+            HOLY_DEV_SUITE_STATE.PacketDirection
+        )
+
+    local seen =
+        {}
+
+    local packetSeen =
+        {}
+
+    local nodes =
+        0
+
+    local coverage = {
+        PacketTables = 0,
+        SentHooks = 0,
+        ReceivedHooks = 0,
+        FailedSentHooks = 0,
+        FailedReceivedHooks = 0,
+        NodesScanned = 0,
+        Truncated = false,
+    }
+
+    local function installSent(entry, methodName)
+
+        local packet =
+            entry.Packet
+
+        local original =
+            packet[methodName]
+
+        if type(original) ~= "function" then
+            return false
+        end
+
+        local wrapper
+
+        wrapper =
+            function(self, ...)
+
+                HolyDevPacketRecord(
+                    "Sent",
+                    entry,
+                    ...
+                )
+
+                return original(
+                    self,
+                    ...
+                )
+            end
+
+        local ok =
+            pcall(function()
+
+                packet[methodName] =
+                    wrapper
+            end)
+
+        if ok ~= true
+        or packet[methodName] ~= wrapper then
+
+            return false
+        end
+
+        runtime.PacketWrappers[
+            #runtime.PacketWrappers + 1
+        ] = {
+            Packet = packet,
+            Method = methodName,
+            Original = original,
+            Wrapper = wrapper,
+        }
+
+        entry.SentMethods[
+            #entry.SentMethods + 1
+        ] =
+            methodName
+
+        return true
+    end
+
+    local function installReceived(entry)
+
+        local signal
+
+        pcall(function()
+
+            signal =
+                entry.Packet.OnClientEvent
+        end)
+
+        if signal == nil then
+            return false
+        end
+
+        local ok,
+            connection =
+            pcall(function()
+
+                return signal:Connect(function(...)
+
+                    HolyDevPacketRecord(
+                        "Received",
+                        entry,
+                        ...
+                    )
+                end)
+            end)
+
+        if ok ~= true
+        or connection == nil then
+
+            return false
+        end
+
+        runtime.PacketConnections[
+            #runtime.PacketConnections + 1
+        ] =
+            connection
+
+        entry.Received =
+            true
+
+        return true
+    end
+
+    local function scan(node, path, depth)
+
+        if type(node) ~= "table"
+        or seen[node] == true
+        or depth > 12 then
+
+            return
+        end
+
+        if nodes >= 30000 then
+
+            coverage.Truncated =
+                true
+
+            return
+        end
+
+        seen[node] =
+            true
+
+        nodes +=
+            1
+
+        local hasSent =
+            type(node.Fire) == "function"
+            or type(node.Invoke) == "function"
+
+        local hasReceived =
+            false
+
+        pcall(function()
+
+            hasReceived =
+                node.OnClientEvent ~= nil
+        end)
+
+        if hasSent == true
+        or hasReceived == true then
+
+            if packetSeen[node] ~= true then
+
+                packetSeen[node] =
+                    true
+
+                local entry = {
+                    Packet = node,
+
+                    Path =
+                        path ~= ""
+                        and path
+                        or "<root>",
+
+                    PacketId =
+                        HolyDevPacketId(node),
+
+                    SentMethods = {},
+                    Received = false,
+                }
+
+                runtime.PacketRegistry[
+                    #runtime.PacketRegistry + 1
+                ] =
+                    entry
+
+                coverage.PacketTables +=
+                    1
+
+                if direction == "Both"
+                or direction == "Sent" then
+
+                    for _, methodName in ipairs({
+                        "Fire",
+                        "Invoke",
+                    }) do
+
+                        if type(node[methodName])
+                        == "function" then
+
+                            if installSent(
+                                entry,
+                                methodName
+                            ) then
+
+                                coverage.SentHooks +=
+                                    1
+
+                            else
+
+                                coverage.FailedSentHooks +=
+                                    1
+                            end
+                        end
+                    end
+                end
+
+                if hasReceived == true
+                and (
+                    direction == "Both"
+                    or direction == "Received"
+                ) then
+
+                    if installReceived(entry) then
+
+                        coverage.ReceivedHooks +=
+                            1
+
+                    else
+
+                        coverage.FailedReceivedHooks +=
+                            1
+                    end
+                end
+            end
+
+            return
+        end
+
+        local children =
+            {}
+
+        pcall(function()
+
+            for key, child in pairs(node) do
+
+                if type(child) == "table" then
+
+                    children[
+                        #children + 1
+                    ] = {
+                        Key = key,
+                        Value = child,
+                    }
+                end
+            end
+        end)
+
+        table.sort(
+            children,
+            function(left, right)
+
+                return tostring(left.Key)
+                    < tostring(right.Key)
+            end
+        )
+
+        for _, child in ipairs(children) do
+
+            local childPath =
+                path == ""
+                and tostring(child.Key)
+                or path
+                    .. "."
+                    .. tostring(child.Key)
+
+            scan(
+                child.Value,
+                childPath,
+                depth + 1
+            )
+        end
+    end
+
+    scan(
+        networking,
+        "",
+        0
+    )
+
+    coverage.NodesScanned =
+        nodes
+
+    runtime.PacketCoverage =
+        coverage
+
+    if coverage.PacketTables <= 0 then
+
+        runtime.PacketActive =
+            false
+
+        HolyDevPacketCleanup()
+
+        HolyDevSetStatus(
+            "PacketStatusLabel",
+            "No packet tables found."
+        )
+
+        HolyNotify(
+            "HOLY Dev",
+            "No packet tables were found.",
+            5
+        )
+
+        return false
+    end
+
+    HolyDevPacketRefreshStatus(
+        true
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        "Packet capture started.",
+        3
+    )
+
+    return true
+end
+
+function HolyDevPacketBuildReport(reason)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local registry =
+        {}
+
+    local placeVersion
+
+    pcall(function()
+
+        placeVersion =
+            game.PlaceVersion
+    end)
+
+    for _, entry in ipairs(
+        runtime.PacketRegistry
+        or {}
+    ) do
+
+        registry[
+            #registry + 1
+        ] = {
+            Path = entry.Path,
+            PacketId = entry.PacketId,
+            SentMethods = entry.SentMethods,
+            Received = entry.Received,
+        }
+    end
+
+    return {
+        Version =
+            "HOLY_PACKET_WATCHER_V1",
+
+        PlaceId =
+            game.PlaceId,
+
+        PlaceVersion =
+            placeVersion,
+
+        JobId =
+            game.JobId,
+
+        StartedAt =
+            runtime.PacketStartedAt,
+
+        FinishedAt =
+            os.time(),
+
+        Runtime =
+            os.clock()
+            - (
+                runtime.PacketStartedClock
+                or os.clock()
+            ),
+
+        FinishReason =
+            tostring(
+                reason
+                or "manual stop"
+            ),
+
+        Config = {
+            Direction =
+                HolyDevPacketDirection(
+                    HOLY_DEV_SUITE_STATE.PacketDirection
+                ),
+
+            Filter =
+                tostring(
+                    HOLY_DEV_SUITE_STATE.PacketFilter
+                    or ""
+                ),
+
+            MaxEvents =
+                HolyDevPacketLimit(
+                    HOLY_DEV_SUITE_STATE.PacketMaxEvents
+                ),
+        },
+
+        Counts =
+            runtime.PacketCounts,
+
+        ObservedCounts =
+            runtime.PacketObserved,
+
+        FilteredEvents =
+            runtime.PacketFiltered,
+
+        StoredEvents =
+            #runtime.PacketEvents,
+
+        SkippedAtLimit =
+            runtime.PacketSkipped,
+
+        Coverage =
+            runtime.PacketCoverage,
+
+        Registry =
+            registry,
+
+        Events =
+            runtime.PacketEvents,
+
+        Safety = {
+            Passive = true,
+            PacketsFiredByWatcher = 0,
+        },
+    }
+end
+
+function HolyDevPacketStop(copyResult, reason)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.PacketActive ~= true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Packet capture is not running.",
+            3
+        )
+
+        return false
+    end
+
+    runtime.PacketActive =
+        false
+
+    local report =
+        HolyDevPacketBuildReport(
+            reason
+        )
+
+    HolyDevPacketCleanup()
+
+    runtime.LastPacketReport =
+        report
+
+    local saved =
+        HolyDevWriteJson(
+            DEV_PACKET_WATCHER_FILE,
+            report
+        )
+
+    local copied =
+        copyResult == true
+        and HolyDevCopyReport(
+            report
+        )
+        or false
+
+    local status =
+        "Stopped · "
+        .. tostring(
+            report.StoredEvents
+        )
+        .. " events"
+
+    if report.SkippedAtLimit > 0 then
+
+        status =
+            status
+            .. " · "
+            .. tostring(
+                report.SkippedAtLimit
+            )
+            .. " skipped"
+    end
+
+    if copied == true then
+
+        status =
+            status
+            .. " · copied"
+    end
+
+    if saved == true then
+
+        status =
+            status
+            .. " · saved"
+    end
+
+    HolyDevSetStatus(
+        "PacketStatusLabel",
+        status
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        status,
+        5
+    )
+
+    return true
+end
+
+function HolyDevPacketCopyLast()
+
+    local report =
+        HOLY_DEV_SUITE_RUNTIME.LastPacketReport
+        or HolyDevReadJson(
+            DEV_PACKET_WATCHER_FILE
+        )
+
+    if type(report) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "No packet report is available yet.",
+            4
+        )
+
+        return false
+    end
+
+    local copied =
+        HolyDevCopyReport(
+            report
+        )
+
+    if copied == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Packet report copied.",
+            4
+        )
+    end
+
+    return copied
+end
+
+function HolyDevPacketClear()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.PacketEvents =
+        {}
+
+    runtime.PacketCounts = {
+        Sent = 0,
+        Received = 0,
+    }
+
+    runtime.PacketObserved = {
+        Sent = 0,
+        Received = 0,
+    }
+
+    runtime.PacketFiltered =
+        0
+
+    runtime.PacketSkipped =
+        0
+
+    runtime.PacketLastName =
+        ""
+
+    runtime.LastPacketReport =
+        nil
+
+    if runtime.PacketActive == true then
+
+        runtime.PacketStartedAt =
+            os.time()
+
+        runtime.PacketStartedClock =
+            os.clock()
+    end
+
+    if HolyCanUseFiles() == true
+    and type(delfile) == "function" then
+
+        pcall(function()
+
+            if isfile(
+                DEV_PACKET_WATCHER_FILE
+            ) then
+
+                delfile(
+                    DEV_PACKET_WATCHER_FILE
+                )
+            end
+        end)
+    end
+
+    HolyDevPacketRefreshStatus(
+        true
+    )
+
+    return true
+end
+
 function HolyDevAutoCheckUpdate()
 
     local baseline =
@@ -67986,6 +69344,11 @@ HOLY_DEV_SUITE_RUNTIME.Stop =
             runtime.ErrorConnection =
                 nil
         end
+
+        runtime.PacketActive =
+            false
+
+        HolyDevPacketCleanup()
 
         if type(HolyRollbackSetOwner) == "function" then
 
@@ -72640,6 +74003,9 @@ local DevDataBox =
 local DevAuctionBox =
     nil
 
+local DevPacketBox =
+    nil
+
 if Tabs.Dev then
 
     DevToolsBox =
@@ -72696,6 +74062,14 @@ if Tabs.Dev then
             "Dev.AuctionInspector",
             "Auction Inspector",
             "shopping-basket"
+        )
+
+    DevPacketBox =
+        HolyAddRightGroupbox(
+            Tabs.Dev,
+            "Dev.PacketWatcher",
+            "Packet Watcher",
+            "network"
         )
 end
 
@@ -91628,6 +93002,233 @@ if DevAuctionBox then
                 HolyDevCopyAuctionBootstrapResult()
             end,
     })
+end
+
+if DevPacketBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketDirectionDropdown =
+        DevPacketBox:AddDropdown(
+            "HolyDevPacketDirection",
+            {
+                Text =
+                    "Direction",
+
+                Values = {
+                    "Both",
+                    "Sent",
+                    "Received",
+                },
+
+                Default =
+                    HOLY_DEV_SUITE_STATE.PacketDirection,
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                AllowNull =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    3,
+
+                Tooltip =
+                    "Choose which packet events are captured.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketFilterInput =
+        DevPacketBox:AddInput(
+            "HolyDevPacketFilter",
+            {
+                Text =
+                    "Packet Filter",
+
+                Default =
+                    HOLY_DEV_SUITE_STATE.PacketFilter,
+
+                Placeholder =
+                    "Blank captures all packets",
+
+                Numeric =
+                    false,
+
+                Finished =
+                    false,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Only capture packet names or IDs containing this text.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketMaxEventsInput =
+        DevPacketBox:AddInput(
+            "HolyDevPacketMaxEvents",
+            {
+                Text =
+                    "Max Events",
+
+                Default =
+                    tostring(
+                        HOLY_DEV_SUITE_STATE.PacketMaxEvents
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Maximum events stored in one capture. Default is 300.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketStatusLabel =
+        HolySniperAddLabel(
+            DevPacketBox,
+            "Ready · 0/"
+                .. tostring(
+                    HOLY_DEV_SUITE_STATE.PacketMaxEvents
+                )
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketDirectionDropdown:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.PacketDirection =
+            HolyDevPacketDirection(
+                value
+            )
+
+        if HOLY_DEV_SUITE_RUNTIME.PacketActive == true then
+
+            HolyNotify(
+                "HOLY Dev",
+                "Restart capture to apply the new direction.",
+                4
+            )
+        end
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketFilterInput:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.PacketFilter =
+            tostring(
+                value
+                or ""
+            )
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PacketMaxEventsInput:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.PacketMaxEvents =
+            HolyDevPacketLimit(
+                value
+            )
+
+        HolyDevPacketRefreshStatus(
+            true
+        )
+    end)
+
+    DevPacketBox:AddActionRow(
+        "HolyDevPacketCaptureActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Start",
+
+                    Text =
+                        "Start Capture",
+
+                    Tooltip =
+                        "Begin capturing matching packet events.",
+
+                    Callback =
+                        function()
+
+                            HolyDevPacketStart()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Stop",
+
+                    Text =
+                        "Stop + Copy",
+
+                    Tooltip =
+                        "Stop capturing, save the report, and copy it.",
+
+                    Callback =
+                        function()
+
+                            HolyDevPacketStop(
+                                true,
+                                "manual stop"
+                            )
+                        end,
+                },
+            },
+        }
+    )
+
+    DevPacketBox:AddActionRow(
+        "HolyDevPacketReportActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Copy",
+
+                    Text =
+                        "Copy Last",
+
+                    Tooltip =
+                        "Copy the latest saved packet report.",
+
+                    Callback =
+                        function()
+
+                            HolyDevPacketCopyLast()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Clear",
+
+                    Text =
+                        "Clear",
+
+                    Tooltip =
+                        "Clear the current capture and saved report.",
+
+                    Callback =
+                        function()
+
+                            HolyDevPacketClear()
+                        end,
+                },
+            },
+        }
+    )
 end
 
 
