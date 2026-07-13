@@ -45588,20 +45588,11 @@ function HolyAuctionHudCreateUI()
         HolyAuctionHudCreate(
             "ScreenGui",
             {
-                Name =
-                    "HolyAuctionNetworkHud",
-
-                ResetOnSpawn =
-                    false,
-
-                IgnoreGuiInset =
-                    true,
-
-                ZIndexBehavior =
-                    Enum.ZIndexBehavior.Sibling,
-
-                Parent =
-                    playerGui,
+                Name = "HolyAuctionFloatingHud",
+                ResetOnSpawn = false,
+                IgnoreGuiInset = true,
+                ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+                Parent = playerGui,
             }
         )
 
@@ -45616,21 +45607,29 @@ function HolyAuctionHudCreateUI()
     local minimized =
         HOLY_SHOP_STATE.AuctionHudMinimized == true
 
+    local expandedHeight =
+        315
+
     local holder =
         HolyAuctionHudCreate(
             "Frame",
             {
-                Active =
-                    true,
+                Active = true,
 
                 BackgroundColor3 =
-                    Color3.fromRGB(7, 8, 11),
+                    Color3.fromRGB(
+                        8,
+                        10,
+                        14
+                    ),
 
-                BorderSizePixel =
-                    0,
+                BackgroundTransparency =
+                    minimized
+                    and 1
+                    or 0.38,
 
-                ClipsDescendants =
-                    true,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
 
                 Position =
                     UDim2.fromOffset(
@@ -45641,32 +45640,51 @@ function HolyAuctionHudCreateUI()
                     ),
 
                 Size =
-                    UDim2.fromOffset(
-                        390,
-                        minimized
-                        and 36
-                        or 290
+                    minimized
+                    and UDim2.fromOffset(
+                        34,
+                        34
+                    )
+                    or UDim2.fromOffset(
+                        480,
+                        expandedHeight
                     ),
 
-                Parent =
-                    screenGui,
+                Parent = screenGui,
             }
         )
 
     HOLY_AUCTION_HUD.Holder =
         holder
 
+    HOLY_AUCTION_HUD.ExpandedHeight =
+        expandedHeight
+
     HolyAuctionHudCorner(
         holder,
-        UDim.new(0, 9)
+        UDim.new(
+            0,
+            13
+        )
     )
 
-    HolyAuctionHudStroke(
-        holder,
-        Color3.fromRGB(92, 24, 35),
-        0.05,
-        1
-    )
+    local holderStroke =
+        HolyAuctionHudStroke(
+            holder,
+            Color3.fromRGB(
+                255,
+                255,
+                255
+            ),
+            0.84,
+            1
+        )
+
+    holderStroke.Enabled =
+        not minimized
+
+    HOLY_AUCTION_HUD.HolderStroke =
+        holderStroke
 
     HOLY_AUCTION_HUD.ScaleObject =
         HolyAuctionHudCreate(
@@ -45677,8 +45695,7 @@ function HolyAuctionHudCreateUI()
                         HOLY_SHOP_STATE.AuctionHudScale
                     ) / 100,
 
-                Parent =
-                    holder,
+                Parent = holder,
             }
         )
 
@@ -45686,23 +45703,29 @@ function HolyAuctionHudCreateUI()
         HolyAuctionHudCreate(
             "Frame",
             {
-                Active =
-                    true,
+                Active = true,
 
                 BackgroundColor3 =
-                    Color3.fromRGB(10, 11, 15),
+                    Color3.fromRGB(
+                        9,
+                        12,
+                        17
+                    ),
 
-                BorderSizePixel =
-                    0,
+                BackgroundTransparency = 0.14,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
 
                 Size =
                     UDim2.fromOffset(
-                        390,
-                        36
+                        480,
+                        38
                     ),
 
-                Parent =
-                    holder,
+                Visible =
+                    not minimized,
+
+                Parent = holder,
             }
         )
 
@@ -45711,58 +45734,204 @@ function HolyAuctionHudCreateUI()
 
     HolyAuctionHudCorner(
         top,
-        UDim.new(0, 9)
+        UDim.new(
+            0,
+            12
+        )
     )
 
-    HolyAuctionHudCreate(
-        "Frame",
-        {
-            BackgroundColor3 =
-                Color3.fromRGB(240, 38, 65),
-
-            BorderSizePixel =
-                0,
-
-            Position =
-                UDim2.fromOffset(
-                    0,
-                    35
-                ),
-
-            Size =
-                UDim2.fromOffset(
-                    390,
-                    1
-                ),
-
-            Parent =
-                top,
-        }
+    HolyAuctionHudStroke(
+        top,
+        Color3.fromRGB(
+            255,
+            255,
+            255
+        ),
+        0.86,
+        1
     )
+
+    local logo =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        255,
+                        70,
+                        153
+                    ),
+
+                BackgroundTransparency = 0.76,
+                BorderSizePixel = 0,
+
+                Position =
+                    UDim2.fromOffset(
+                        10,
+                        8
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        22,
+                        22
+                    ),
+
+                Parent = top,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        logo,
+        UDim.new(
+            0,
+            7
+        )
+    )
+
+    HolyAuctionHudStroke(
+        logo,
+        Color3.fromRGB(
+            255,
+            104,
+            177
+        ),
+        0.48,
+        1
+    )
+
+    local logoLabel =
+        HolyAuctionHudLabel(
+            logo,
+            "H",
+            0,
+            0,
+            22,
+            22,
+            10,
+            Color3.fromRGB(
+                255,
+                104,
+                177
+            ),
+            true
+        )
+
+    logoLabel.TextXAlignment =
+        Enum.TextXAlignment.Center
 
     HOLY_AUCTION_HUD.TitleLabel =
         HolyAuctionHudLabel(
             top,
-            "HOLY PRO · AUCTIONEER",
-            12,
+            "AUCTION",
+            40,
             0,
-            172,
-            36,
+            66,
+            38,
             12,
-            Color3.fromRGB(245, 245, 248),
+            Color3.fromRGB(
+                242,
+                244,
+                248
+            ),
             true
         )
 
+    local healthDot =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        105,
+                        229,
+                        160
+                    ),
+
+                BorderSizePixel = 0,
+
+                Position =
+                    UDim2.fromOffset(
+                        107,
+                        16
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        6,
+                        6
+                    ),
+
+                Parent = top,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        healthDot,
+        UDim.new(
+            1,
+            0
+        )
+    )
+
+    HOLY_AUCTION_HUD.HealthDot =
+        healthDot
+
+    local autoPill =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        255,
+                        61,
+                        145
+                    ),
+
+                BackgroundTransparency = 0.78,
+                BorderSizePixel = 0,
+
+                Position =
+                    UDim2.fromOffset(
+                        325,
+                        7
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        78,
+                        24
+                    ),
+
+                Parent = top,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        autoPill,
+        UDim.new(
+            1,
+            0
+        )
+    )
+
+    HOLY_AUCTION_HUD.AutoPill =
+        autoPill
+
     HOLY_AUCTION_HUD.AutoBadge =
         HolyAuctionHudLabel(
-            top,
+            autoPill,
             "AUTO OFF",
-            190,
-            7,
-            88,
-            22,
-            10,
-            Color3.fromRGB(165, 170, 181),
+            0,
+            0,
+            78,
+            24,
+            9,
+            Color3.fromRGB(
+                165,
+                171,
+                183
+            ),
             true
         )
 
@@ -45772,99 +45941,406 @@ function HolyAuctionHudCreateUI()
     local minimizeButton =
         HolyAuctionHudButton(
             top,
-            minimized
-            and "+"
-            or "—",
-            326,
+            "-",
+            414,
             7,
             25,
-            22
+            24
         )
 
     minimizeButton.BackgroundColor3 =
-        Color3.fromRGB(18, 19, 24)
+        Color3.fromRGB(
+            14,
+            17,
+            23
+        )
+
+    minimizeButton.BackgroundTransparency =
+        0.26
 
     local closeButton =
         HolyAuctionHudButton(
             top,
             "X",
-            356,
+            445,
             7,
             25,
-            22
+            24
         )
 
     closeButton.BackgroundColor3 =
-        Color3.fromRGB(42, 13, 20)
+        Color3.fromRGB(
+            31,
+            15,
+            22
+        )
+
+    closeButton.BackgroundTransparency =
+        0.18
 
     local body =
         HolyAuctionHudCreate(
             "Frame",
             {
-                BackgroundTransparency =
-                    1,
+                BackgroundTransparency = 1,
 
                 Position =
                     UDim2.fromOffset(
                         0,
-                        36
+                        46
                     ),
 
                 Size =
                     UDim2.fromOffset(
-                        390,
-                        254
+                        480,
+                        expandedHeight - 46
                     ),
 
                 Visible =
                     not minimized,
 
-                Parent =
-                    holder,
+                Parent = holder,
             }
         )
 
     HOLY_AUCTION_HUD.Body =
         body
 
-    HOLY_AUCTION_HUD.SyncLabel =
+    local summarySurface =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        10,
+                        13,
+                        18
+                    ),
+
+                BackgroundTransparency = 0.31,
+                BorderSizePixel = 0,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        480,
+                        44
+                    ),
+
+                Parent = body,
+            }
+        )
+
+    HOLY_AUCTION_HUD.SummarySurface =
+        summarySurface
+
+    HolyAuctionHudCorner(
+        summarySurface,
+        UDim.new(
+            0,
+            11
+        )
+    )
+
+    HolyAuctionHudStroke(
+        summarySurface,
+        Color3.fromRGB(
+            255,
+            255,
+            255
+        ),
+        0.86,
+        1
+    )
+
+    for _, xPosition in ipairs({
+        156,
+        326,
+    }) do
+
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        255,
+                        255,
+                        255
+                    ),
+
+                BackgroundTransparency = 0.90,
+                BorderSizePixel = 0,
+
+                Position =
+                    UDim2.fromOffset(
+                        xPosition,
+                        9
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        1,
+                        26
+                    ),
+
+                Parent = summarySurface,
+            }
+        )
+    end
+
+    HolyAuctionHudLabel(
+        summarySurface,
+        "TARGETS",
+        13,
+        4,
+        120,
+        15,
+        8,
+        Color3.fromRGB(
+            113,
+            121,
+            136
+        ),
+        true
+    )
+
+    HOLY_AUCTION_HUD.TargetsValue =
         HolyAuctionHudLabel(
-            body,
-            "SYNCING NETWORK",
-            12,
-            5,
-            180,
-            17,
+            summarySurface,
+            "0 selected",
+            13,
+            19,
+            130,
+            18,
             10,
-            Color3.fromRGB(245, 183, 73),
+            Color3.fromRGB(
+                242,
+                244,
+                248
+            ),
             true
         )
 
-    HOLY_AUCTION_HUD.SummaryLabel =
+    HolyAuctionHudLabel(
+        summarySurface,
+        "PRICE LIMIT",
+        170,
+        4,
+        130,
+        15,
+        8,
+        Color3.fromRGB(
+            113,
+            121,
+            136
+        ),
+        true
+    )
+
+    HOLY_AUCTION_HUD.LimitValue =
         HolyAuctionHudLabel(
-            body,
-            "Max: not set · Selected: 0",
-            12,
-            23,
-            366,
-            16,
+            summarySurface,
+            "Not set",
+            170,
+            19,
+            145,
+            18,
             10,
-            Color3.fromRGB(184, 187, 198),
+            Color3.fromRGB(
+                242,
+                244,
+                248
+            ),
+            true
+        )
+
+    HolyAuctionHudLabel(
+        summarySurface,
+        "READY",
+        340,
+        4,
+        120,
+        15,
+        8,
+        Color3.fromRGB(
+            113,
+            121,
+            136
+        ),
+        true
+    )
+
+    HOLY_AUCTION_HUD.ReadyValue =
+        HolyAuctionHudLabel(
+            summarySurface,
+            "0 auctions",
+            340,
+            19,
+            125,
+            18,
+            10,
+            Color3.fromRGB(
+                145,
+                151,
+                164
+            ),
+            true
+        )
+
+    local listSurface =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        8,
+                        11,
+                        15
+                    ),
+
+                BackgroundTransparency = 0.43,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        52
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        480,
+                        217
+                    ),
+
+                Parent = body,
+            }
+        )
+
+    HOLY_AUCTION_HUD.ListSurface =
+        listSurface
+
+    HolyAuctionHudCorner(
+        listSurface,
+        UDim.new(
+            0,
+            11
+        )
+    )
+
+    HolyAuctionHudStroke(
+        listSurface,
+        Color3.fromRGB(
+            255,
+            255,
+            255
+        ),
+        0.86,
+        1
+    )
+
+    local itemHeader =
+        HolyAuctionHudLabel(
+            listSurface,
+            "ITEM",
+            20,
+            4,
+            180,
+            16,
+            8,
+            Color3.fromRGB(
+                108,
+                117,
+                132
+            ),
+            true
+        )
+
+    local priceHeader =
+        HolyAuctionHudLabel(
+            listSurface,
+            "PRICE",
+            238,
+            4,
+            80,
+            16,
+            8,
+            Color3.fromRGB(
+                108,
+                117,
+                132
+            ),
+            true
+        )
+
+    priceHeader.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    local stockHeader =
+        HolyAuctionHudLabel(
+            listSurface,
+            "QTY",
+            324,
+            4,
+            44,
+            16,
+            8,
+            Color3.fromRGB(
+                108,
+                117,
+                132
+            ),
+            true
+        )
+
+    stockHeader.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local stateHeader =
+        HolyAuctionHudLabel(
+            listSurface,
+            "STATE",
+            382,
+            4,
+            78,
+            16,
+            8,
+            Color3.fromRGB(
+                108,
+                117,
+                132
+            ),
+            true
+        )
+
+    stateHeader.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    HOLY_AUCTION_HUD.EmptyLabel =
+        HolyAuctionHudLabel(
+            listSurface,
+            "Waiting for auction data",
+            12,
+            27,
+            456,
+            32,
+            10,
+            Color3.fromRGB(
+                133,
+                141,
+                155
+            ),
             false
         )
 
-    HOLY_AUCTION_HUD.StatusLabel =
-        HolyAuctionHudLabel(
-            body,
-            "Loading auctions...",
-            12,
-            41,
-            366,
-            17,
-            10,
-            Color3.fromRGB(139, 143, 154),
-            false
-        )
+    HOLY_AUCTION_HUD.EmptyLabel.TextXAlignment =
+        Enum.TextXAlignment.Center
 
     HOLY_AUCTION_HUD.RowFrames =
         {}
@@ -45876,54 +46352,92 @@ function HolyAuctionHudCreateUI()
                 "Frame",
                 {
                     BackgroundColor3 =
-                        Color3.fromRGB(12, 13, 17),
+                        Color3.fromRGB(
+                            15,
+                            18,
+                            24
+                        ),
 
-                    BorderSizePixel =
-                        0,
+                    BackgroundTransparency = 0.32,
+                    BorderSizePixel = 0,
 
                     Position =
                         UDim2.fromOffset(
                             10,
-                            64 + ((index - 1) * 31)
+                            26 + ((index - 1) * 31)
                         ),
 
                     Size =
                         UDim2.fromOffset(
-                            370,
+                            460,
                             27
                         ),
 
-                    Visible =
-                        false,
-
-                    Parent =
-                        body,
+                    Visible = false,
+                    Parent = listSurface,
                 }
             )
 
         HolyAuctionHudCorner(
             rowHolder,
-            UDim.new(0, 6)
+            UDim.new(
+                0,
+                8
+            )
         )
 
-        local rowStroke =
-            HolyAuctionHudStroke(
-                rowHolder,
-                Color3.fromRGB(39, 41, 49),
-                0.25,
-                1
+        local accent =
+            HolyAuctionHudCreate(
+                "Frame",
+                {
+                    BackgroundColor3 =
+                        Color3.fromRGB(
+                            255,
+                            79,
+                            157
+                        ),
+
+                    BorderSizePixel = 0,
+
+                    Position =
+                        UDim2.fromOffset(
+                            0,
+                            6
+                        ),
+
+                    Size =
+                        UDim2.fromOffset(
+                            3,
+                            15
+                        ),
+
+                    Visible = false,
+                    Parent = rowHolder,
+                }
             )
+
+        HolyAuctionHudCorner(
+            accent,
+            UDim.new(
+                1,
+                0
+            )
+        )
 
         local nameLabel =
             HolyAuctionHudLabel(
                 rowHolder,
                 "--",
-                8,
+                10,
                 0,
-                166,
+                216,
                 27,
                 10,
-                Color3.fromRGB(232, 233, 239),
+                Color3.fromRGB(
+                    236,
+                    239,
+                    245
+                ),
                 true
             )
 
@@ -45931,12 +46445,16 @@ function HolyAuctionHudCreateUI()
             HolyAuctionHudLabel(
                 rowHolder,
                 "--",
-                177,
+                228,
                 0,
-                76,
+                80,
                 27,
                 10,
-                Color3.fromRGB(210, 212, 220),
+                Color3.fromRGB(
+                    225,
+                    228,
+                    235
+                ),
                 true
             )
 
@@ -45946,29 +46464,75 @@ function HolyAuctionHudCreateUI()
         local stockLabel =
             HolyAuctionHudLabel(
                 rowHolder,
-                "x0",
-                258,
+                "--",
+                314,
                 0,
-                42,
+                44,
                 27,
                 9,
-                Color3.fromRGB(151, 155, 166),
+                Color3.fromRGB(
+                    155,
+                    162,
+                    175
+                ),
                 false
             )
 
         stockLabel.TextXAlignment =
             Enum.TextXAlignment.Center
 
+        local decisionPill =
+            HolyAuctionHudCreate(
+                "Frame",
+                {
+                    BackgroundColor3 =
+                        Color3.fromRGB(
+                            25,
+                            29,
+                            38
+                        ),
+
+                    BackgroundTransparency = 0.52,
+                    BorderSizePixel = 0,
+
+                    Position =
+                        UDim2.fromOffset(
+                            372,
+                            5
+                        ),
+
+                    Size =
+                        UDim2.fromOffset(
+                            78,
+                            17
+                        ),
+
+                    Parent = rowHolder,
+                }
+            )
+
+        HolyAuctionHudCorner(
+            decisionPill,
+            UDim.new(
+                1,
+                0
+            )
+        )
+
         local decisionLabel =
             HolyAuctionHudLabel(
-                rowHolder,
-                "SYNC",
-                301,
+                decisionPill,
+                "LIVE",
                 0,
-                61,
-                27,
+                0,
+                78,
+                17,
                 8,
-                Color3.fromRGB(245, 183, 73),
+                Color3.fromRGB(
+                    155,
+                    162,
+                    175
+                ),
                 true
             )
 
@@ -45976,54 +46540,156 @@ function HolyAuctionHudCreateUI()
             Enum.TextXAlignment.Center
 
         HOLY_AUCTION_HUD.RowFrames[index] = {
-            Holder =
-                rowHolder,
-
-            Stroke =
-                rowStroke,
-
-            Name =
-                nameLabel,
-
-            Price =
-                priceLabel,
-
-            Stock =
-                stockLabel,
-
-            Decision =
-                decisionLabel,
+            Holder = rowHolder,
+            Accent = accent,
+            Name = nameLabel,
+            Price = priceLabel,
+            Stock = stockLabel,
+            DecisionPill = decisionPill,
+            Decision = decisionLabel,
         }
+    end
+
+    local miniButton =
+        HolyAuctionHudButton(
+            holder,
+            "H",
+            0,
+            0,
+            34,
+            34
+        )
+
+    miniButton.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            10,
+            14
+        )
+
+    miniButton.BackgroundTransparency =
+        0.25
+
+    miniButton.TextColor3 =
+        Color3.fromRGB(
+            255,
+            91,
+            167
+        )
+
+    miniButton.TextSize =
+        11
+
+    miniButton.Visible =
+        minimized
+
+    miniButton.ZIndex =
+        20
+
+    HOLY_AUCTION_HUD.MiniButton =
+        miniButton
+
+    local miniDot =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        105,
+                        229,
+                        160
+                    ),
+
+                BorderSizePixel = 0,
+
+                Position =
+                    UDim2.fromOffset(
+                        25,
+                        2
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        6,
+                        6
+                    ),
+
+                Visible = false,
+                ZIndex = 21,
+                Parent = miniButton,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        miniDot,
+        UDim.new(
+            1,
+            0
+        )
+    )
+
+    HOLY_AUCTION_HUD.MiniDot =
+        miniDot
+
+    local function applyMinimizedState(isMinimized)
+
+        HOLY_SHOP_STATE.AuctionHudMinimized =
+            isMinimized == true
+
+        local currentMinimized =
+            HOLY_SHOP_STATE.AuctionHudMinimized == true
+
+        top.Visible =
+            not currentMinimized
+
+        body.Visible =
+            not currentMinimized
+
+        miniButton.Visible =
+            currentMinimized
+
+        holder.BackgroundTransparency =
+            currentMinimized
+            and 1
+            or 0.38
+
+        holderStroke.Enabled =
+            not currentMinimized
+
+        holder.Size =
+            currentMinimized
+            and UDim2.fromOffset(
+                34,
+                34
+            )
+            or UDim2.fromOffset(
+                480,
+                tonumber(
+                    HOLY_AUCTION_HUD.ExpandedHeight
+                )
+                or expandedHeight
+            )
+
+        HolySaveShopSettings()
+
+        HolyAuctionHudRefresh()
     end
 
     HolyAuctionHudAddConnection(
         minimizeButton.MouseButton1Click:Connect(function()
 
-            HOLY_SHOP_STATE.AuctionHudMinimized =
-                HOLY_SHOP_STATE.AuctionHudMinimized ~= true
+            applyMinimizedState(
+                true
+            )
+        end)
+    )
 
-            local nowMinimized =
-                HOLY_SHOP_STATE.AuctionHudMinimized == true
+    HolyAuctionHudAddConnection(
+        miniButton.MouseButton1Click:Connect(function()
 
-            body.Visible =
-                not nowMinimized
-
-            holder.Size =
-                UDim2.fromOffset(
-                    390,
-                    nowMinimized
-                    and 36
-                    or 290
-                )
-
-            minimizeButton.Text =
-                nowMinimized
-                and "+"
-                or "—"
-
-            HolySaveShopSettings()
-
-            HolyAuctionHudRefresh()
+            applyMinimizedState(
+                false
+            )
         end)
     )
 
@@ -46072,12 +46738,9 @@ function HolyAuctionHudRefresh(rows)
         or HOLY_SHOP_STATE.AuctionLastLots
         or {}
 
-    local ready =
+    local networkHealthy =
         HOLY_SHOP_STATE.AuctionNetworkReady == true
         and HolyAuctionStockAge() < 40
-
-    local hasRows =
-        #rows > 0
 
     local selected =
         HolyShopSelectionArray(
@@ -46089,104 +46752,336 @@ function HolyAuctionHudRefresh(rows)
             HOLY_SHOP_STATE.AuctionMaxPrice
             or "0"
         )
-    
+
+    local function readDecision(row)
+
+        local selectedRow =
+            HolyAuctionSelectionAllows(
+                row.Name
+            )
+
+        if row.Expired == true then
+
+            return {
+                Text = "ENDED",
+                TextColor = Color3.fromRGB(126, 133, 148),
+                PillColor = Color3.fromRGB(28, 31, 39),
+                PillTransparency = 0.52,
+                Selected = selectedRow,
+                Inactive = true,
+            }
+        end
+
+        if row.StockKnown == true
+        and (
+            tonumber(row.Stock)
+            or 0
+        ) <= 0 then
+
+            return {
+                Text = "SOLD",
+                TextColor = Color3.fromRGB(126, 133, 148),
+                PillColor = Color3.fromRGB(28, 31, 39),
+                PillTransparency = 0.52,
+                Selected = selectedRow,
+                Inactive = true,
+            }
+        end
+
+        if selectedRow == true
+        and maxPrice <= 0 then
+
+            return {
+                Text = "NO LIMIT",
+                TextColor = Color3.fromRGB(245, 199, 100),
+                PillColor = Color3.fromRGB(55, 40, 15),
+                PillTransparency = 0.28,
+                Selected = true,
+                Inactive = false,
+            }
+        end
+
+        if selectedRow == true
+        and (
+            tonumber(row.Price)
+            or math.huge
+        ) > maxPrice then
+
+            return {
+                Text = "OVER CAP",
+                TextColor = Color3.fromRGB(245, 199, 100),
+                PillColor = Color3.fromRGB(55, 40, 15),
+                PillTransparency = 0.28,
+                Selected = true,
+                Inactive = false,
+            }
+        end
+
+        if selectedRow == true
+        and networkHealthy == true
+        and row.NetworkReady == true then
+
+            return {
+                Text = "READY",
+                TextColor = Color3.fromRGB(105, 229, 160),
+                PillColor = Color3.fromRGB(22, 69, 44),
+                PillTransparency = 0.20,
+                Selected = true,
+                Inactive = false,
+            }
+        end
+
+        if selectedRow == true then
+
+            return {
+                Text = "WAIT",
+                TextColor = Color3.fromRGB(245, 199, 100),
+                PillColor = Color3.fromRGB(55, 40, 15),
+                PillTransparency = 0.34,
+                Selected = true,
+                Inactive = false,
+            }
+        end
+
+        return {
+            Text = "LIVE",
+            TextColor = Color3.fromRGB(155, 162, 175),
+            PillColor = Color3.fromRGB(25, 29, 38),
+            PillTransparency = 0.52,
+            Selected = false,
+            Inactive = false,
+        }
+    end
+
+    local readyCount =
+        0
+
+    for _, row in ipairs(rows) do
+
+        if type(row) == "table" then
+
+            local decision =
+                readDecision(
+                    row
+                )
+
+            if decision.Text == "READY" then
+
+                readyCount =
+                    readyCount + 1
+            end
+        end
+    end
+
+    local visibleRows =
+        math.min(
+            6,
+            #rows
+        )
+
+    local layoutRows =
+        math.max(
+            1,
+            visibleRows
+        )
+
+    local listHeight =
+        31
+        + (layoutRows * 31)
+
+    local bodyHeight =
+        52
+        + listHeight
+
+    local expandedHeight =
+        46
+        + bodyHeight
+
+    hud.ExpandedHeight =
+        expandedHeight
 
     if HOLY_SHOP_STATE.AuctionHudMinimized ~= true then
 
-        local visibleRows =
-            math.min(
-                6,
-                #rows
-            )
-
         hud.Holder.Size =
             UDim2.fromOffset(
-                390,
-                104 + (visibleRows * 31)
+                480,
+                expandedHeight
+            )
+
+        if typeof(hud.Body) == "Instance" then
+
+            hud.Body.Size =
+                UDim2.fromOffset(
+                    480,
+                    bodyHeight
+                )
+        end
+
+        if typeof(hud.ListSurface) == "Instance" then
+
+            hud.ListSurface.Size =
+                UDim2.fromOffset(
+                    480,
+                    listHeight
+                )
+        end
+    end
+
+    if typeof(hud.HealthDot) == "Instance" then
+
+        hud.HealthDot.BackgroundColor3 =
+            networkHealthy == true
+            and Color3.fromRGB(
+                105,
+                229,
+                160
+            )
+            or Color3.fromRGB(
+                245,
+                199,
+                100
             )
     end
 
-    if typeof(hud.AutoBadge) == "Instance" then
+    if typeof(hud.AutoBadge) == "Instance"
+    and typeof(hud.AutoPill) == "Instance" then
 
-        hud.AutoBadge.Text =
-            HOLY_SHOP_STATE.AutoBuyAuctions == true
-            and (
-                HOLY_SHOP_STATE.AuctionDryRun == true
-                and "AUTO TEST"
-                or "AUTO ON"
-            )
-            or "AUTO OFF"
+        if HOLY_SHOP_STATE.AutoBuyAuctions == true then
 
-        hud.AutoBadge.TextColor3 =
-            HOLY_SHOP_STATE.AutoBuyAuctions == true
-            and Color3.fromRGB(255, 58, 85)
-            or Color3.fromRGB(155, 159, 170)
+            if HOLY_SHOP_STATE.AuctionDryRun == true then
+
+                hud.AutoBadge.Text =
+                    "AUTO TEST"
+
+                hud.AutoBadge.TextColor3 =
+                    Color3.fromRGB(
+                        245,
+                        199,
+                        100
+                    )
+
+                hud.AutoPill.BackgroundColor3 =
+                    Color3.fromRGB(
+                        157,
+                        103,
+                        255
+                    )
+
+                hud.AutoPill.BackgroundTransparency =
+                    0.76
+
+            else
+
+                hud.AutoBadge.Text =
+                    "AUTO ON"
+
+                hud.AutoBadge.TextColor3 =
+                    Color3.fromRGB(
+                        255,
+                        111,
+                        176
+                    )
+
+                hud.AutoPill.BackgroundColor3 =
+                    Color3.fromRGB(
+                        255,
+                        61,
+                        145
+                    )
+
+                hud.AutoPill.BackgroundTransparency =
+                    0.78
+            end
+
+        else
+
+            hud.AutoBadge.Text =
+                "AUTO OFF"
+
+            hud.AutoBadge.TextColor3 =
+                Color3.fromRGB(
+                    155,
+                    162,
+                    175
+                )
+
+            hud.AutoPill.BackgroundColor3 =
+                Color3.fromRGB(
+                    55,
+                    61,
+                    74
+                )
+
+            hud.AutoPill.BackgroundTransparency =
+                0.65
+        end
     end
 
-    if typeof(hud.TitleLabel) == "Instance" then
+    if typeof(hud.TargetsValue) == "Instance" then
 
-        hud.TitleLabel.Text =
-            HOLY_SHOP_STATE.AuctionHudMinimized == true
+        hud.TargetsValue.Text =
+            tostring(#selected)
+            .. (
+                #selected == 1
+                and " selected"
+                or " selected"
+            )
+    end
+
+    if typeof(hud.LimitValue) == "Instance" then
+
+        hud.LimitValue.Text =
+            maxPrice > 0
             and (
-                "AUCTIONEER · "
-                .. (
-                    hasRows
-                    and HolyAuctionRefreshHeaderText()
-                    or "LOADING"
+                "<= "
+                .. HolyAuctionFormatMoney(
+                    maxPrice
                 )
             )
-            or "HOLY PRO · AUCTIONEER"
+            or "Not set"
     end
 
-    if typeof(hud.SyncLabel) == "Instance" then
+    if typeof(hud.ReadyValue) == "Instance" then
 
-        hud.SyncLabel.Text =
-            ready
-            and (
-                HOLY_SHOP_STATE.AuctionDryRun == true
-                and "TEST MODE"
-                or "READY"
-            )
-            or (
-                hasRows
-                and "CURRENT AUCTIONS"
-                or "LOADING AUCTIONS"
-            )
-
-        hud.SyncLabel.TextColor3 =
-            ready
-            and Color3.fromRGB(61, 218, 121)
-            or Color3.fromRGB(245, 183, 73)
-    end
-
-    if typeof(hud.SummaryLabel) == "Instance" then
-
-        hud.SummaryLabel.Text =
-            "Max: "
+        hud.ReadyValue.Text =
+            tostring(readyCount)
             .. (
-                maxPrice > 0
-                and HolyAuctionFormatMoney(maxPrice)
-                or "not set"
+                readyCount == 1
+                and " auction"
+                or " auctions"
             )
-            .. " · Selected: "
-            .. tostring(#selected)
-            .. " · "
-            .. HolyAuctionRefreshHeaderText()
+
+        hud.ReadyValue.TextColor3 =
+            readyCount > 0
+            and Color3.fromRGB(
+                105,
+                229,
+                160
+            )
+            or Color3.fromRGB(
+                145,
+                151,
+                164
+            )
     end
 
-    if typeof(hud.StatusLabel) == "Instance" then
+    if typeof(hud.EmptyLabel) == "Instance" then
 
-        hud.StatusLabel.Text =
-            tostring(
-                HOLY_SHOP_STATE.AuctionStatus
-                or "Ready"
-            )
+        hud.EmptyLabel.Visible =
+            #rows <= 0
+
+        hud.EmptyLabel.Text =
+            networkHealthy == true
+            and "No active auction lots"
+            or "Waiting for auction data"
     end
 
     for index = 1, 6 do
 
         local rowUi =
-            hud.RowFrames[index]
+            hud.RowFrames
+            and hud.RowFrames[index]
+            or nil
 
         local row =
             rows[index]
@@ -46203,81 +47098,16 @@ function HolyAuctionHudRefresh(rows)
                 rowUi.Holder.Visible =
                     true
 
-                local selectedRow =
-                    HolyAuctionSelectionAllows(
-                        row.Name
+                local decision =
+                    readDecision(
+                        row
                     )
 
-                local decision =
-                    "LIVE"
-
-                local decisionColor =
-                    Color3.fromRGB(145, 149, 160)
-
-                if row.Expired == true then
-
-                    decision =
-                        "ENDED"
-
-                    decisionColor =
-                        Color3.fromRGB(255, 72, 93)
-
-                elseif row.StockKnown == true
-                and tonumber(row.Stock) <= 0 then
-
-                    decision =
-                        "SOLD"
-
-                    decisionColor =
-                        Color3.fromRGB(255, 72, 93)
-
-                elseif selectedRow == true
-                and maxPrice <= 0 then
-
-                    decision =
-                        "SET MAX"
-
-                    decisionColor =
-                        Color3.fromRGB(245, 183, 73)
-
-                elseif selectedRow == true
-                and tonumber(row.Price) > maxPrice then
-
-                    decision =
-                        "WAIT"
-
-                    decisionColor =
-                        Color3.fromRGB(245, 183, 73)
-
-                elseif selectedRow == true
-                and ready == true
-                and row.NetworkReady == true then
-
-                    decision =
-                        "READY"
-
-                    decisionColor =
-                        Color3.fromRGB(61, 218, 121)
-
-                elseif selectedRow == true then
-
-                    decision =
-                        "WAIT"
-
-                    decisionColor =
-                        Color3.fromRGB(245, 183, 73)
-
-                else
-
-                    decision =
-                        "LIVE"
-
-                    decisionColor =
-                        Color3.fromRGB(145, 149, 160)
-                end
-
                 local displayName =
-                    tostring(row.Name)
+                    tostring(
+                        row.Name
+                        or "--"
+                    )
 
                 if HolyCleanText(
                     row.AmountText
@@ -46286,20 +47116,27 @@ function HolyAuctionHudRefresh(rows)
                     displayName =
                         displayName
                         .. " "
-                        .. tostring(row.AmountText)
+                        .. tostring(
+                            row.AmountText
+                        )
                 end
 
                 rowUi.Name.Text =
                     displayName
 
                 rowUi.Price.Text =
-                    tostring(row.PriceText)
+                    tostring(
+                        row.PriceText
+                        or HolyAuctionFormatMoney(
+                            row.Price
+                        )
+                        or "--"
+                    )
 
                 rowUi.Stock.Text =
                     row.StockKnown == true
                     and (
-                        "x"
-                        .. tostring(
+                        tostring(
                             math.max(
                                 0,
                                 math.floor(
@@ -46312,34 +47149,129 @@ function HolyAuctionHudRefresh(rows)
                     or "--"
 
                 rowUi.Decision.Text =
-                    decision
+                    decision.Text
 
                 rowUi.Decision.TextColor3 =
-                    decisionColor
+                    decision.TextColor
 
-                if selectedRow == true then
+                rowUi.DecisionPill.BackgroundColor3 =
+                    decision.PillColor
+
+                rowUi.DecisionPill.BackgroundTransparency =
+                    decision.PillTransparency
+
+                if decision.Selected == true then
 
                     rowUi.Holder.BackgroundColor3 =
-                        Color3.fromRGB(24, 12, 17)
+                        Color3.fromRGB(
+                            50,
+                            21,
+                            39
+                        )
 
-                    rowUi.Stroke.Color =
-                        Color3.fromRGB(168, 31, 52)
+                    rowUi.Holder.BackgroundTransparency =
+                        0.18
+
+                    rowUi.Accent.Visible =
+                        true
 
                     rowUi.Name.TextColor3 =
-                        Color3.fromRGB(255, 225, 230)
+                        Color3.fromRGB(
+                            255,
+                            229,
+                            242
+                        )
 
                 else
 
                     rowUi.Holder.BackgroundColor3 =
-                        Color3.fromRGB(12, 13, 17)
+                        Color3.fromRGB(
+                            15,
+                            18,
+                            24
+                        )
 
-                    rowUi.Stroke.Color =
-                        Color3.fromRGB(39, 41, 49)
+                    rowUi.Holder.BackgroundTransparency =
+                        decision.Inactive == true
+                        and 0.48
+                        or 0.32
+
+                    rowUi.Accent.Visible =
+                        false
 
                     rowUi.Name.TextColor3 =
-                        Color3.fromRGB(232, 233, 239)
+                        decision.Inactive == true
+                        and Color3.fromRGB(
+                            143,
+                            150,
+                            163
+                        )
+                        or Color3.fromRGB(
+                            236,
+                            239,
+                            245
+                        )
                 end
+
+                rowUi.Price.TextColor3 =
+                    decision.Inactive == true
+                    and Color3.fromRGB(
+                        143,
+                        150,
+                        163
+                    )
+                    or Color3.fromRGB(
+                        225,
+                        228,
+                        235
+                    )
+
+                rowUi.Stock.TextColor3 =
+                    decision.Inactive == true
+                    and Color3.fromRGB(
+                        118,
+                        125,
+                        139
+                    )
+                    or Color3.fromRGB(
+                        155,
+                        162,
+                        175
+                    )
             end
+        end
+    end
+
+    if typeof(hud.MiniDot) == "Instance" then
+
+        if readyCount > 0 then
+
+            hud.MiniDot.Visible =
+                true
+
+            hud.MiniDot.BackgroundColor3 =
+                Color3.fromRGB(
+                    105,
+                    229,
+                    160
+                )
+
+        elseif networkHealthy ~= true then
+
+            hud.MiniDot.Visible =
+                true
+
+            hud.MiniDot.BackgroundColor3 =
+                Color3.fromRGB(
+                    245,
+                    199,
+                    100
+                )
+
+        else
+
+            hud.MiniDot.Visible =
+                false
         end
     end
 
