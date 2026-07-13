@@ -83313,7 +83313,7 @@ SettingsModeControl =
 
 HolySettingsRefreshDashboard()
 
-SettingsUIBox:AddDropdown(
+SettingsUIBox:AddThemePicker(
     "HolyInterfaceTheme",
     {
         Text =
@@ -83325,11 +83325,11 @@ SettingsUIBox:AddDropdown(
         Default =
             HOLY_DEV_UI_STATE.ThemeName,
 
-        Multi =
-            false,
+        Animate =
+            true,
 
-        Searchable =
-            false,
+        PopupTransparency =
+            0.08,
 
         Tooltip =
             "Changes the interface colors.",
