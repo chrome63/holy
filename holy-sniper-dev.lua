@@ -68021,6 +68021,9 @@ HOLY_MOON_PREDICTOR_STATE = {
     RowsPerPage = 6,
     Page = 1,
 
+    HudEnabled = false,
+    HudPosition = nil,
+
     SelectedMoons = {},
     HasSavedSelection = false,
 
@@ -68045,10 +68048,26 @@ HOLY_MOON_PREDICTOR_STATE = {
 HOLY_MOON_PREDICTOR_RUNTIME = {
     Running = false,
     Token = nil,
+
+    HudToken = nil,
+    HudScanGeneration = 0,
+    HudLastCycle = nil,
+    HudPredictions = {},
+    HudConnections = {},
+    HudCards = {},
+
+    HudScreenGui = nil,
+    HudHolder = nil,
+    HudHeader = nil,
+    HudCurrentIcon = nil,
+    HudCurrentLabel = nil,
+    HudEmptyLabel = nil,
+
     Stop = nil,
 }
 
 HOLY_MOON_PREDICTOR_UI = {
+    HudToggle = nil,
     FilterDropdown = nil,
     AmountInput = nil,
     Passthrough = nil,
@@ -68345,6 +68364,24 @@ function HolyMoonSaveSettings()
                 HOLY_MOON_PREDICTOR_STATE.Amount
             ),
 
+        HudEnabled =
+            HOLY_MOON_PREDICTOR_STATE.HudEnabled == true,
+
+        HudPosition =
+            type(HOLY_MOON_PREDICTOR_STATE.HudPosition) == "table"
+            and {
+                X =
+                    tonumber(
+                        HOLY_MOON_PREDICTOR_STATE.HudPosition.X
+                    ),
+
+                Y =
+                    tonumber(
+                        HOLY_MOON_PREDICTOR_STATE.HudPosition.Y
+                    ),
+            }
+            or nil,
+
         SelectedMoons =
             selected,
     }
@@ -68429,6 +68466,38 @@ function HolyMoonLoadSettings()
         HolyMoonReadAmount(
             data.Amount
         )
+
+    HOLY_MOON_PREDICTOR_STATE.HudEnabled =
+        data.HudEnabled == true
+
+    if type(data.HudPosition) == "table" then
+
+        local x =
+            tonumber(
+                data.HudPosition.X
+                or data.HudPosition.x
+                or data.HudPosition[1]
+            )
+
+        local y =
+            tonumber(
+                data.HudPosition.Y
+                or data.HudPosition.y
+                or data.HudPosition[2]
+            )
+
+        if x ~= nil
+        and y ~= nil then
+
+            HOLY_MOON_PREDICTOR_STATE.HudPosition = {
+                X =
+                    math.floor(x + 0.5),
+
+                Y =
+                    math.floor(y + 0.5),
+            }
+        end
+    end
 
     if type(data.SelectedMoons) == "table" then
 
@@ -70439,6 +70508,1418 @@ function HolyMoonCreateSurface()
     return surface
 end
 
+function HolyMoonHudAddConnection(connection)
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    runtime.HudConnections =
+        type(runtime.HudConnections) == "table"
+        and runtime.HudConnections
+        or {}
+
+    if connection ~= nil then
+
+        table.insert(
+            runtime.HudConnections,
+            connection
+        )
+    end
+
+    return connection
+end
+
+function HolyMoonHudDestroy()
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    runtime.HudToken =
+        nil
+
+    runtime.HudScanGeneration =
+        (tonumber(runtime.HudScanGeneration) or 0)
+        + 1
+
+    runtime.HudScanning =
+        false
+
+    if type(runtime.HudConnections) == "table" then
+
+        for _, connection in ipairs(
+            runtime.HudConnections
+        ) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    runtime.HudConnections =
+        {}
+
+    if typeof(runtime.HudScreenGui) == "Instance" then
+
+        pcall(function()
+
+            runtime.HudScreenGui:Destroy()
+        end)
+    end
+
+    runtime.HudScreenGui =
+        nil
+
+    runtime.HudHolder =
+        nil
+
+    runtime.HudHeader =
+        nil
+
+    runtime.HudCurrentIcon =
+        nil
+
+    runtime.HudCurrentLabel =
+        nil
+
+    runtime.HudEmptyLabel =
+        nil
+
+    runtime.HudCards =
+        {}
+
+    runtime.HudPredictions =
+        {}
+
+    return true
+end
+
+function HolyMoonHudGetParent()
+
+    if type(gethui) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return gethui()
+            end)
+
+        if ok == true
+        and typeof(result) == "Instance" then
+
+            return result
+        end
+    end
+
+    return CoreGui
+end
+
+function HolyMoonHudGetViewport()
+
+    local viewport =
+        Vector2.new(
+            1920,
+            1080
+        )
+
+    pcall(function()
+
+        local camera =
+            workspace.CurrentCamera
+
+        if camera then
+
+            viewport =
+                camera.ViewportSize
+        end
+    end)
+
+    return viewport
+end
+
+function HolyMoonHudReadPosition()
+
+    local saved =
+        HOLY_MOON_PREDICTOR_STATE.HudPosition
+
+    if type(saved) == "table" then
+
+        local x =
+            tonumber(
+                saved.X
+                or saved.x
+                or saved[1]
+            )
+
+        local y =
+            tonumber(
+                saved.Y
+                or saved.y
+                or saved[2]
+            )
+
+        if x ~= nil
+        and y ~= nil then
+
+            return UDim2.fromOffset(
+                math.floor(x + 0.5),
+                math.floor(y + 0.5)
+            )
+        end
+    end
+
+    local viewport =
+        HolyMoonHudGetViewport()
+
+    return UDim2.fromOffset(
+        math.max(
+            12,
+            viewport.X - 432
+        ),
+        math.max(
+            12,
+            viewport.Y - 190
+        )
+    )
+end
+
+function HolyMoonHudClampHolder()
+
+    local holder =
+        HOLY_MOON_PREDICTOR_RUNTIME.HudHolder
+
+    if typeof(holder) ~= "Instance" then
+        return false
+    end
+
+    local viewport =
+        HolyMoonHudGetViewport()
+
+    local width =
+        holder.AbsoluteSize.X
+
+    local height =
+        holder.AbsoluteSize.Y
+
+    if width <= 0 then
+        width = 420
+    end
+
+    if height <= 0 then
+        height = 112
+    end
+
+    local x =
+        math.clamp(
+            holder.Position.X.Offset,
+            0,
+            math.max(
+                0,
+                viewport.X - width
+            )
+        )
+
+    local y =
+        math.clamp(
+            holder.Position.Y.Offset,
+            0,
+            math.max(
+                0,
+                viewport.Y - height
+            )
+        )
+
+    holder.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
+
+    return true
+end
+
+function HolyMoonHudSavePosition()
+
+    local holder =
+        HOLY_MOON_PREDICTOR_RUNTIME.HudHolder
+
+    if typeof(holder) ~= "Instance" then
+        return false
+    end
+
+    HOLY_MOON_PREDICTOR_STATE.HudPosition = {
+        X =
+            math.floor(
+                holder.Position.X.Offset
+                + 0.5
+            ),
+
+        Y =
+            math.floor(
+                holder.Position.Y.Offset
+                + 0.5
+            ),
+    }
+
+    HolyMoonSaveSettings()
+
+    return true
+end
+
+function HolyMoonHudMakeDraggable(holder, handle)
+
+    if typeof(holder) ~= "Instance"
+    or typeof(handle) ~= "Instance" then
+
+        return false
+    end
+
+    local dragging =
+        false
+
+    local dragInput =
+        nil
+
+    local dragStart =
+        nil
+
+    local startPosition =
+        nil
+
+    handle.Active =
+        true
+
+    HolyMoonHudAddConnection(
+        handle.InputBegan:Connect(function(input)
+
+            local inputType =
+                input.UserInputType
+
+            if inputType ~= Enum.UserInputType.MouseButton1
+            and inputType ~= Enum.UserInputType.Touch then
+
+                return
+            end
+
+            dragging =
+                true
+
+            dragInput =
+                input
+
+            dragStart =
+                input.Position
+
+            startPosition =
+                holder.Position
+        end)
+    )
+
+    HolyMoonHudAddConnection(
+        UserInputService.InputChanged:Connect(function(input)
+
+            if dragging ~= true
+            or dragStart == nil
+            or startPosition == nil then
+
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType ~= Enum.UserInputType.MouseMovement
+            and inputType ~= Enum.UserInputType.Touch then
+
+                return
+            end
+
+            if dragInput
+            and dragInput.UserInputType == Enum.UserInputType.Touch
+            and input ~= dragInput then
+
+                return
+            end
+
+            local delta =
+                input.Position
+                - dragStart
+
+            holder.Position =
+                UDim2.fromOffset(
+                    startPosition.X.Offset
+                    + delta.X,
+                    startPosition.Y.Offset
+                    + delta.Y
+                )
+
+            HolyMoonHudClampHolder()
+        end)
+    )
+
+    HolyMoonHudAddConnection(
+        UserInputService.InputEnded:Connect(function(input)
+
+            if dragging ~= true then
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType == Enum.UserInputType.MouseButton1
+            or (
+                inputType == Enum.UserInputType.Touch
+                and input == dragInput
+            ) then
+
+                dragging =
+                    false
+
+                dragInput =
+                    nil
+
+                dragStart =
+                    nil
+
+                startPosition =
+                    nil
+
+                HolyMoonHudClampHolder()
+
+                HolyMoonHudSavePosition()
+            end
+        end)
+    )
+
+    return true
+end
+
+function HolyMoonHudRequestBuild(reason)
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    if state.HudEnabled ~= true
+    or HolyMoonEnsureReady() ~= true then
+
+        return false
+    end
+
+    runtime.HudScanGeneration =
+        (tonumber(runtime.HudScanGeneration) or 0)
+        + 1
+
+    local generation =
+        runtime.HudScanGeneration
+
+    runtime.HudPredictions =
+        {}
+
+    runtime.HudScanning =
+        true
+
+    local now =
+        HolyMoonGetNow()
+
+    local cycleInfo =
+        state.CycleInfo
+
+    local currentCycle =
+        math.floor(
+            now
+            / cycleInfo.FullCycle
+        )
+
+    runtime.HudLastCycle =
+        currentCycle
+
+    HolyMoonHudRender()
+
+    task.spawn(function()
+
+        for offset = 0, 5000 do
+
+            if runtime.HudScanGeneration
+            ~= generation
+            or state.HudEnabled ~= true then
+
+                return
+            end
+
+            local cycleIndex =
+                currentCycle
+                + offset
+
+            local nightStart =
+                cycleIndex
+                * cycleInfo.FullCycle
+                + cycleInfo.SecondsBeforeNight
+
+            if nightStart > now then
+
+                local moonName =
+                    HolyMoonPredict(
+                        cycleIndex
+                    )
+
+                local record =
+                    HolyMoonFindWeatherRecord(
+                        moonName
+                    )
+
+                if HolyMoonKey(moonName) ~= "moon"
+                and type(record) == "table" then
+
+                    table.insert(
+                        runtime.HudPredictions,
+                        {
+                            Moon =
+                                moonName,
+
+                            StartsAt =
+                                nightStart,
+
+                            CycleIndex =
+                                cycleIndex,
+                        }
+                    )
+
+                    if #runtime.HudPredictions >= 5 then
+                        break
+                    end
+                end
+            end
+
+            if offset % 75 == 0 then
+
+                HolyMoonHudRender()
+
+                task.wait()
+            end
+        end
+
+        if runtime.HudScanGeneration
+        ~= generation then
+
+            return
+        end
+
+        runtime.HudScanning =
+            false
+
+        HolyMoonHudRender()
+    end)
+
+    return true
+end
+
+function HolyMoonHudRender()
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    local holder =
+        runtime.HudHolder
+
+    if state.HudEnabled ~= true
+    or typeof(holder) ~= "Instance" then
+
+        return false
+    end
+
+    local activeWeather =
+        HolyCleanText(
+            workspace:GetAttribute(
+                "ActiveWeather"
+            )
+        )
+
+    if activeWeather == "" then
+        activeWeather = "Unknown"
+    end
+
+    local now =
+        HolyMoonGetNow()
+
+    local phaseEnd =
+        tonumber(
+            workspace:GetAttribute(
+                "PhaseDuration"
+            )
+        )
+        or now
+
+    local currentRecord =
+        HolyMoonFindWeatherRecord(
+            activeWeather
+        )
+
+    local currentData =
+        type(currentRecord) == "table"
+        and currentRecord.Data
+        or {}
+
+    local currentColor =
+        HolyMoonColor(
+            activeWeather,
+            currentData
+        )
+
+    if typeof(runtime.HudCurrentLabel) == "Instance" then
+
+        runtime.HudCurrentLabel.Text =
+            '<font color="rgb(226,232,240)"><b>Current:</b></font> '
+            .. '<font color="'
+            .. HolyMoonRichColor(currentColor)
+            .. '"><b>'
+            .. HolyMoonEscape(
+                HolyMoonDisplayName(
+                    activeWeather
+                )
+            )
+            .. '</b></font> '
+            .. '<font color="rgb(148,163,184)">· '
+            .. HolyMoonFormatSeconds(
+                math.max(
+                    0,
+                    phaseEnd - now
+                )
+            )
+            .. ' left</font>'
+    end
+
+    if typeof(runtime.HudCurrentIcon) == "Instance" then
+
+        local currentImage =
+            type(currentData) == "table"
+            and tostring(currentData.Image or "")
+            or ""
+
+        runtime.HudCurrentIcon.Image =
+            currentImage
+
+        runtime.HudCurrentIcon.Visible =
+            currentImage ~= ""
+    end
+
+    local predictions =
+        type(runtime.HudPredictions) == "table"
+        and runtime.HudPredictions
+        or {}
+
+    for index = 1, 5 do
+
+        local card =
+            runtime.HudCards[index]
+
+        local prediction =
+            predictions[index]
+
+        if type(card) == "table"
+        and typeof(card.Frame) == "Instance" then
+
+            if type(prediction) == "table" then
+
+                local record =
+                    HolyMoonFindWeatherRecord(
+                        prediction.Moon
+                    )
+
+                local weatherData =
+                    type(record) == "table"
+                    and record.Data
+                    or {}
+
+                card.Frame.Visible =
+                    true
+
+                card.Name.Text =
+                    HolyMoonDisplayName(
+                        prediction.Moon
+                    )
+
+                card.Name.TextColor3 =
+                    HolyMoonColor(
+                        prediction.Moon,
+                        weatherData
+                    )
+
+                card.Timer.Text =
+                    HolyMoonFormatSeconds(
+                        tonumber(prediction.StartsAt)
+                        - now
+                    )
+
+                local image =
+                    type(weatherData) == "table"
+                    and tostring(weatherData.Image or "")
+                    or ""
+
+                card.Icon.Image =
+                    image
+
+                card.Icon.Visible =
+                    image ~= ""
+
+            else
+
+                card.Frame.Visible =
+                    false
+            end
+        end
+    end
+
+    if typeof(runtime.HudEmptyLabel) == "Instance" then
+
+        runtime.HudEmptyLabel.Visible =
+            #predictions <= 0
+
+        runtime.HudEmptyLabel.Text =
+            runtime.HudScanning == true
+            and "Finding upcoming moons..."
+            or "No upcoming moons found."
+    end
+
+    HolyMoonHudClampHolder()
+
+    return true
+end
+
+function HolyMoonHudCreate()
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    if state.HudEnabled ~= true then
+        return false
+    end
+
+    if typeof(runtime.HudHolder) == "Instance"
+    and runtime.HudHolder.Parent ~= nil then
+
+        HolyMoonHudRender()
+
+        return true
+    end
+
+    HolyMoonHudDestroy()
+
+    local screenGui =
+        Instance.new(
+            "ScreenGui"
+        )
+
+    screenGui.Name =
+        "HolyMoonPredictorHud"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    screenGui.DisplayOrder =
+        50000
+
+    screenGui.Parent =
+        HolyMoonHudGetParent()
+
+    local holder =
+        Instance.new(
+            "Frame"
+        )
+
+    holder.Name =
+        "Holder"
+
+    holder.Active =
+        true
+
+    holder.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            9,
+            13
+        )
+
+    holder.BackgroundTransparency =
+        0.10
+
+    holder.BorderSizePixel =
+        0
+
+    holder.ClipsDescendants =
+        true
+
+    holder.Position =
+        HolyMoonHudReadPosition()
+
+    holder.Size =
+        UDim2.fromOffset(
+            420,
+            112
+        )
+
+    holder.Parent =
+        screenGui
+
+    local holderCorner =
+        Instance.new(
+            "UICorner"
+        )
+
+    holderCorner.CornerRadius =
+        UDim.new(
+            0,
+            7
+        )
+
+    holderCorner.Parent =
+        holder
+
+    local holderStroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    holderStroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    holderStroke.Color =
+        Color3.fromRGB(
+            232,
+            45,
+            67
+        )
+
+    holderStroke.Transparency =
+        0.18
+
+    holderStroke.Thickness =
+        1.2
+
+    holderStroke.Parent =
+        holder
+
+    local accent =
+        Instance.new(
+            "Frame"
+        )
+
+    accent.BackgroundColor3 =
+        Color3.fromRGB(
+            232,
+            45,
+            67
+        )
+
+    accent.BackgroundTransparency =
+        0.05
+
+    accent.BorderSizePixel =
+        0
+
+    accent.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            2
+        )
+
+    accent.Parent =
+        holder
+
+    local header =
+        Instance.new(
+            "Frame"
+        )
+
+    header.Name =
+        "DragHeader"
+
+    header.Active =
+        true
+
+    header.BackgroundColor3 =
+        Color3.fromRGB(
+            11,
+            12,
+            17
+        )
+
+    header.BackgroundTransparency =
+        0.08
+
+    header.BorderSizePixel =
+        0
+
+    header.Position =
+        UDim2.fromOffset(
+            0,
+            2
+        )
+
+    header.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            28
+        )
+
+    header.Parent =
+        holder
+
+    local currentIcon =
+        Instance.new(
+            "ImageLabel"
+        )
+
+    currentIcon.BackgroundTransparency =
+        1
+
+    currentIcon.Position =
+        UDim2.fromOffset(
+            8,
+            4
+        )
+
+    currentIcon.Size =
+        UDim2.fromOffset(
+            20,
+            20
+        )
+
+    currentIcon.ScaleType =
+        Enum.ScaleType.Fit
+
+    currentIcon.ZIndex =
+        3
+
+    currentIcon.Parent =
+        header
+
+    local currentLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    currentLabel.BackgroundTransparency =
+        1
+
+    currentLabel.Position =
+        UDim2.fromOffset(
+            34,
+            0
+        )
+
+    currentLabel.Size =
+        UDim2.new(
+            1,
+            -72,
+            1,
+            0
+        )
+
+    currentLabel.FontFace =
+        Library.Scheme.Font
+
+    currentLabel.RichText =
+        true
+
+    currentLabel.Text =
+        "Current: Loading..."
+
+    currentLabel.TextColor3 =
+        Library.Scheme.FontColor
+
+    currentLabel.TextSize =
+        11
+
+    currentLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    currentLabel.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    currentLabel.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    currentLabel.ZIndex =
+        3
+
+    currentLabel.Parent =
+        header
+
+    local grip =
+        Instance.new(
+            "TextLabel"
+        )
+
+    grip.BackgroundTransparency =
+        1
+
+    grip.Position =
+        UDim2.new(
+            1,
+            -34,
+            0,
+            0
+        )
+
+    grip.Size =
+        UDim2.fromOffset(
+            26,
+            28
+        )
+
+    grip.FontFace =
+        Library.Scheme.Font
+
+    grip.Text =
+        "⋮⋮"
+
+    grip.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    grip.TextSize =
+        13
+
+    grip.ZIndex =
+        3
+
+    grip.Parent =
+        header
+
+    local cards =
+        {}
+
+    for index = 1, 5 do
+
+        local card =
+            Instance.new(
+                "Frame"
+            )
+
+        card.Name =
+            "MoonCard"
+            .. tostring(index)
+
+        card.BackgroundColor3 =
+            Color3.fromRGB(
+                13,
+                15,
+                20
+            )
+
+        card.BackgroundTransparency =
+            0.10
+
+        card.BorderSizePixel =
+            0
+
+        card.Position =
+            UDim2.fromOffset(
+                10
+                + (index - 1) * 81,
+                35
+            )
+
+        card.Size =
+            UDim2.fromOffset(
+                76,
+                67
+            )
+
+        card.Visible =
+            false
+
+        card.ZIndex =
+            2
+
+        card.Parent =
+            holder
+
+        local cardCorner =
+            Instance.new(
+                "UICorner"
+            )
+
+        cardCorner.CornerRadius =
+            UDim.new(
+                0,
+                5
+            )
+
+        cardCorner.Parent =
+            card
+
+        local cardStroke =
+            Instance.new(
+                "UIStroke"
+            )
+
+        cardStroke.ApplyStrokeMode =
+            Enum.ApplyStrokeMode.Border
+
+        cardStroke.Color =
+            Color3.fromRGB(
+                58,
+                62,
+                74
+            )
+
+        cardStroke.Transparency =
+            0.35
+
+        cardStroke.Thickness =
+            1
+
+        cardStroke.Parent =
+            card
+
+        local icon =
+            Instance.new(
+                "ImageLabel"
+            )
+
+        icon.BackgroundTransparency =
+            1
+
+        icon.Position =
+            UDim2.new(
+                0.5,
+                -15,
+                0,
+                4
+            )
+
+        icon.Size =
+            UDim2.fromOffset(
+                30,
+                30
+            )
+
+        icon.ScaleType =
+            Enum.ScaleType.Fit
+
+        icon.ZIndex =
+            3
+
+        icon.Parent =
+            card
+
+        local nameLabel =
+            Instance.new(
+                "TextLabel"
+            )
+
+        nameLabel.BackgroundTransparency =
+            1
+
+        nameLabel.Position =
+            UDim2.fromOffset(
+                3,
+                35
+            )
+
+        nameLabel.Size =
+            UDim2.new(
+                1,
+                -6,
+                0,
+                14
+            )
+
+        nameLabel.FontFace =
+            Library.Scheme.Font
+
+        nameLabel.Text =
+            "Moon"
+
+        nameLabel.TextColor3 =
+            Library.Scheme.FontColor
+
+        nameLabel.TextSize =
+            9
+
+        nameLabel.TextTruncate =
+            Enum.TextTruncate.AtEnd
+
+        nameLabel.TextXAlignment =
+            Enum.TextXAlignment.Center
+
+        nameLabel.ZIndex =
+            3
+
+        nameLabel.Parent =
+            card
+
+        local timerLabel =
+            Instance.new(
+                "TextLabel"
+            )
+
+        timerLabel.BackgroundTransparency =
+            1
+
+        timerLabel.Position =
+            UDim2.fromOffset(
+                3,
+                49
+            )
+
+        timerLabel.Size =
+            UDim2.new(
+                1,
+                -6,
+                0,
+                15
+            )
+
+        timerLabel.FontFace =
+            Library.Scheme.Font
+
+        timerLabel.Text =
+            "--"
+
+        timerLabel.TextColor3 =
+            Color3.fromRGB(
+                124,
+                252,
+                0
+            )
+
+        timerLabel.TextSize =
+            10
+
+        timerLabel.TextXAlignment =
+            Enum.TextXAlignment.Center
+
+        timerLabel.ZIndex =
+            3
+
+        timerLabel.Parent =
+            card
+
+        cards[index] = {
+            Frame =
+                card,
+
+            Icon =
+                icon,
+
+            Name =
+                nameLabel,
+
+            Timer =
+                timerLabel,
+        }
+    end
+
+    local emptyLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    emptyLabel.BackgroundTransparency =
+        1
+
+    emptyLabel.Position =
+        UDim2.fromOffset(
+            10,
+            35
+        )
+
+    emptyLabel.Size =
+        UDim2.new(
+            1,
+            -20,
+            0,
+            67
+        )
+
+    emptyLabel.FontFace =
+        Library.Scheme.Font
+
+    emptyLabel.Text =
+        "Finding upcoming moons..."
+
+    emptyLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    emptyLabel.TextSize =
+        11
+
+    emptyLabel.ZIndex =
+        3
+
+    emptyLabel.Parent =
+        holder
+
+    runtime.HudScreenGui =
+        screenGui
+
+    runtime.HudHolder =
+        holder
+
+    runtime.HudHeader =
+        header
+
+    runtime.HudCurrentIcon =
+        currentIcon
+
+    runtime.HudCurrentLabel =
+        currentLabel
+
+    runtime.HudEmptyLabel =
+        emptyLabel
+
+    runtime.HudCards =
+        cards
+
+    HolyMoonHudMakeDraggable(
+        holder,
+        header
+    )
+
+    task.defer(function()
+
+        HolyMoonHudClampHolder()
+    end)
+
+    HolyMoonHudRequestBuild(
+        "HUD created"
+    )
+
+    HolyMoonHudRender()
+
+    return true
+end
+
+function HolyMoonHudStart()
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    if state.HudEnabled ~= true then
+        return false
+    end
+
+    if typeof(runtime.HudHolder) == "Instance"
+    and runtime.HudHolder.Parent ~= nil then
+
+        return true
+    end
+
+    if HolyMoonHudCreate() ~= true then
+        return false
+    end
+
+    local token =
+        {}
+
+    runtime.HudToken =
+        token
+
+    task.spawn(function()
+
+        while runtime.HudToken == token
+        and state.HudEnabled == true do
+
+            HolyMoonHudRender()
+
+            local cycleInfo =
+                state.CycleInfo
+
+            local now =
+                HolyMoonGetNow()
+
+            if type(cycleInfo) == "table" then
+
+                local currentCycle =
+                    math.floor(
+                        now
+                        / cycleInfo.FullCycle
+                    )
+
+                local first =
+                    runtime.HudPredictions[1]
+
+                local expired =
+                    type(first) == "table"
+                    and tonumber(first.StartsAt)
+                    and tonumber(first.StartsAt) <= now
+
+                if runtime.HudScanning ~= true
+                and (
+                    currentCycle ~= runtime.HudLastCycle
+                    or expired == true
+                ) then
+
+                    HolyMoonHudRequestBuild(
+                        "HUD cycle advanced"
+                    )
+                end
+            end
+
+            task.wait(
+                1
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyMoonHudSetEnabled(value)
+
+    local enabled =
+        value == true
+
+    HOLY_MOON_PREDICTOR_STATE.HudEnabled =
+        enabled
+
+    HolyMoonSaveSettings()
+
+    if enabled == true then
+
+        return HolyMoonHudStart()
+    end
+
+    HolyMoonHudDestroy()
+
+    return true
+end
+
+
 function HolyMoonBuildMainUI(groupbox)
 
     if type(groupbox) ~= "table" then
@@ -70448,6 +71929,31 @@ function HolyMoonBuildMainUI(groupbox)
     HolyMoonLoadSettings()
 
     HolyMoonEnsureReady()
+
+    local hudToggle =
+        groupbox:AddToggle(
+            "HolyMainMoonPredictorHud",
+            {
+                Text =
+                    "Moon Predictor HUD",
+
+                Default =
+                    HOLY_MOON_PREDICTOR_STATE.HudEnabled == true,
+
+                Tooltip =
+                    "Shows a draggable HUD with the next five non-normal moons.",
+            }
+        )
+
+    HOLY_MOON_PREDICTOR_UI.HudToggle =
+        hudToggle
+
+    hudToggle:OnChanged(function(value)
+
+        HolyMoonHudSetEnabled(
+            value
+        )
+    end)
 
     local filterDropdown =
         groupbox:AddDropdown(
@@ -70567,6 +72073,11 @@ function HolyMoonStart()
         "startup"
     )
 
+    if HOLY_MOON_PREDICTOR_STATE.HudEnabled == true then
+
+        HolyMoonHudStart()
+    end
+
     task.spawn(function()
 
         while runtime.Token == token do
@@ -70642,6 +72153,8 @@ function HolyMoonStop(reason)
 
     HOLY_MOON_PREDICTOR_STATE.Scanning =
         false
+
+    HolyMoonHudDestroy()
 
     return true
 end
