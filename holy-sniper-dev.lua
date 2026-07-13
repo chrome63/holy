@@ -1252,10 +1252,10 @@ HOLY_SHOP_STATE = {
     AutoBuyAuctions = false,
     AuctionDryRun = true,
 
-    SelectedAuctions = {},
+    AuctionWatchlist = {},
+    AuctionWatchlistSelectedKey = "",
+    AuctionRoundRobinIndex = 0,
     AuctionKnownItems = {},
-
-    AuctionMaxPrice = "0",
     AuctionBuyUntilSoldOut = true,
     AuctionStatus = "Ready",
     AuctionWorkerRunning = false,
@@ -3484,20 +3484,14 @@ function HolySaveShopSettings()
         AuctionDryRun =
             HOLY_SHOP_STATE.AuctionDryRun ~= false,
 
-        SelectedAuctions =
-            HolyShopSelectionArray(
-                HOLY_SHOP_STATE.SelectedAuctions
+        AuctionWatchlist =
+            HolyAuctionNormalizeWatchlist(
+                HOLY_SHOP_STATE.AuctionWatchlist
             ),
 
         AuctionKnownItems =
             HolyShopSelectionArray(
                 HOLY_SHOP_STATE.AuctionKnownItems
-            ),
-
-        AuctionMaxPrice =
-            tostring(
-                HOLY_SHOP_STATE.AuctionMaxPrice
-                or "0"
             ),
 
         AuctionBuyUntilSoldOut =
@@ -3786,21 +3780,46 @@ function HolyLoadShopSettings()
             true
     end
 
-    HOLY_SHOP_STATE.SelectedAuctions =
-        HolyShopSelectionArray(
-            data.SelectedAuctions
+    local loadedWatchlist =
+        HolyAuctionNormalizeWatchlist(
+            data.AuctionWatchlist
+        )
+
+    if type(data.AuctionWatchlist) ~= "table" then
+
+        local legacyMaxPrice =
+            HolyAuctionReadMoney(
+                data.AuctionMaxPrice
+                or "0"
+            )
+
+        if legacyMaxPrice > 0 then
+
+            for _, itemName in ipairs(
+                HolyShopSelectionArray(
+                    data.SelectedAuctions
+                )
+            ) do
+
+                if HolyAuctionItemKey(itemName) ~= "all" then
+
+                    loadedWatchlist[#loadedWatchlist + 1] = {
+                        Name = itemName,
+                        MaxPrice = legacyMaxPrice,
+                    }
+                end
+            end
+        end
+    end
+
+    HOLY_SHOP_STATE.AuctionWatchlist =
+        HolyAuctionNormalizeWatchlist(
+            loadedWatchlist
         )
 
     HOLY_SHOP_STATE.AuctionKnownItems =
         HolyShopSelectionArray(
             data.AuctionKnownItems
-        )
-
-    HOLY_SHOP_STATE.AuctionMaxPrice =
-        tostring(
-            data.AuctionMaxPrice
-            or HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
         )
 
     if type(data.AuctionBuyUntilSoldOut) == "boolean" then
@@ -37433,22 +37452,32 @@ function HolyAuctionEnsureBaseState()
     HOLY_SHOP_STATE.AutoBuyAuctions =
         HOLY_SHOP_STATE.AutoBuyAuctions == true
 
-    HOLY_SHOP_STATE.SelectedAuctions =
-        HolyShopSelectionArray(
-            HOLY_SHOP_STATE.SelectedAuctions
-            or {}
+    HOLY_SHOP_STATE.AuctionWatchlist =
+        HolyAuctionNormalizeWatchlist(
+            HOLY_SHOP_STATE.AuctionWatchlist
+        )
+
+    HOLY_SHOP_STATE.AuctionWatchlistSelectedKey =
+        tostring(
+            HOLY_SHOP_STATE.AuctionWatchlistSelectedKey
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionRoundRobinIndex =
+        math.max(
+            0,
+            math.floor(
+                tonumber(
+                    HOLY_SHOP_STATE.AuctionRoundRobinIndex
+                )
+                or 0
+            )
         )
 
     HOLY_SHOP_STATE.AuctionKnownItems =
         HolyShopSelectionArray(
             HOLY_SHOP_STATE.AuctionKnownItems
             or {}
-        )
-
-    HOLY_SHOP_STATE.AuctionMaxPrice =
-        tostring(
-            HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
         )
 
     HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
@@ -37639,6 +37668,284 @@ function HolyAuctionFormatMoney(value)
         math.floor(value)
     )
         .. "¢"
+end
+
+function HolyAuctionNormalizeWatchlist(value)
+
+    local output = {}
+    local seen = {}
+
+    for _, rawEntry in ipairs(
+        type(value) == "table"
+        and value
+        or {}
+    ) do
+
+        local name = ""
+        local maxPrice = 0
+
+        if type(rawEntry) == "table" then
+
+            name =
+                HolyCleanText(
+                    rawEntry.Name
+                    or rawEntry.Item
+                    or rawEntry.DisplayName
+                )
+
+            maxPrice =
+                HolyAuctionReadMoney(
+                    rawEntry.MaxPrice
+                    or rawEntry.Price
+                    or rawEntry.Limit
+                )
+
+        elseif type(rawEntry) == "string" then
+
+            name =
+                HolyCleanText(
+                    rawEntry
+                )
+        end
+
+        local key =
+            HolyAuctionItemKey(
+                name
+            )
+
+        if key ~= ""
+        and key ~= "all"
+        and maxPrice > 0
+        and seen[key] ~= true then
+
+            seen[key] = true
+
+            output[#output + 1] = {
+                Name = name,
+                MaxPrice = maxPrice,
+            }
+        end
+    end
+
+    return output
+end
+
+function HolyAuctionGetWatchEntry(itemName)
+
+    local wantedKey =
+        HolyAuctionItemKey(
+            itemName
+        )
+
+    for index, entry in ipairs(
+        HOLY_SHOP_STATE.AuctionWatchlist
+        or {}
+    ) do
+
+        if HolyAuctionItemKey(entry.Name) == wantedKey then
+
+            return entry,
+                index
+        end
+    end
+
+    return nil,
+        nil
+end
+
+function HolyAuctionGetWatchMax(itemName)
+
+    local entry =
+        HolyAuctionGetWatchEntry(
+            itemName
+        )
+
+    return type(entry) == "table"
+        and HolyAuctionReadMoney(
+            entry.MaxPrice
+        )
+        or 0
+end
+
+function HolyAuctionGetWatchNames()
+
+    local names = {}
+
+    for _, entry in ipairs(
+        HOLY_SHOP_STATE.AuctionWatchlist
+        or {}
+    ) do
+
+        names[#names + 1] =
+            tostring(
+                entry.Name
+            )
+    end
+
+    return names
+end
+
+function HolyAuctionGetSelectedWatchEntry()
+
+    local selectedKey =
+        tostring(
+            HOLY_SHOP_STATE.AuctionWatchlistSelectedKey
+            or ""
+        )
+
+    for index, entry in ipairs(
+        HOLY_SHOP_STATE.AuctionWatchlist
+        or {}
+    ) do
+
+        if HolyAuctionItemKey(entry.Name) == selectedKey then
+
+            return entry,
+                index
+        end
+    end
+
+    return nil,
+        nil
+end
+
+function HolyAuctionUpsertWatchItem(itemName, maxPrice)
+
+    HolyAuctionEnsureState()
+
+    itemName =
+        HolyCleanText(
+            itemName
+        )
+
+    maxPrice =
+        HolyAuctionReadMoney(
+            maxPrice
+        )
+
+    if itemName == ""
+    or HolyAuctionItemKey(itemName) == "all" then
+
+        return false,
+            "Select an auction item."
+    end
+
+    if maxPrice <= 0 then
+
+        return false,
+            "Enter a valid maximum price."
+    end
+
+    local entry =
+        HolyAuctionGetWatchEntry(
+            itemName
+        )
+
+    if type(entry) == "table" then
+
+        entry.Name =
+            itemName
+
+        entry.MaxPrice =
+            maxPrice
+
+    else
+
+        table.insert(
+            HOLY_SHOP_STATE.AuctionWatchlist,
+            {
+                Name = itemName,
+                MaxPrice = maxPrice,
+            }
+        )
+    end
+
+    HOLY_SHOP_STATE.AuctionWatchlistSelectedKey =
+        HolyAuctionItemKey(
+            itemName
+        )
+
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
+    HolyAuctionRememberKnownItem(
+        itemName
+    )
+
+    HolySaveShopSettings()
+
+    if type(HolyAuctionRefreshWatchlistUI) == "function" then
+
+        HolyAuctionRefreshWatchlistUI(
+            true
+        )
+    end
+
+    HolyAuctionRefreshUI()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+        HolyAuctionQueueWorker(
+            "watchlist changed"
+        )
+    end
+
+    return true
+end
+
+function HolyAuctionRemoveWatchItem(itemName)
+
+    HolyAuctionEnsureState()
+
+    local entry,
+        index =
+        HolyAuctionGetWatchEntry(
+            itemName
+        )
+
+    if type(entry) ~= "table"
+    or index == nil then
+
+        return false
+    end
+
+    local removedKey =
+        HolyAuctionItemKey(
+            entry.Name
+        )
+
+    table.remove(
+        HOLY_SHOP_STATE.AuctionWatchlist,
+        index
+    )
+
+    if HOLY_SHOP_STATE.AuctionWatchlistSelectedKey == removedKey then
+
+        HOLY_SHOP_STATE.AuctionWatchlistSelectedKey =
+            ""
+    end
+
+    HOLY_SHOP_STATE.AuctionRoundRobinIndex =
+        math.min(
+            HOLY_SHOP_STATE.AuctionRoundRobinIndex,
+            #HOLY_SHOP_STATE.AuctionWatchlist
+        )
+
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
+    HolySaveShopSettings()
+
+    if type(HolyAuctionRefreshWatchlistUI) == "function" then
+
+        HolyAuctionRefreshWatchlistUI(
+            true
+        )
+    end
+
+    HolyAuctionRefreshUI()
+
+    return true
 end
 
 function HolyAuctionReadStock(value)
@@ -38544,53 +38851,16 @@ end
 
 function HolyAuctionRefreshDropdown(forceRefresh)
 
-    HOLY_SHOP_UI =
-        type(HOLY_SHOP_UI) == "table"
-        and HOLY_SHOP_UI
-        or {}
+    HolyAuctionBuildItemRows(
+        forceRefresh == true
+    )
 
-    local dropdown =
-        HOLY_SHOP_UI.AuctionDropdown
+    if type(HolyAuctionRefreshWatchlistUI) == "function" then
 
-    if type(dropdown) ~= "table" then
-        return false
-    end
-
-    local values =
-        HolyAuctionGetDropdownValues(
+        HolyAuctionRefreshWatchlistUI(
             forceRefresh == true
         )
-
-    HOLY_SHOP_STATE.SelectedAuctions =
-        HolyShopSelectionArray(
-            HOLY_SHOP_STATE.SelectedAuctions
-        )
-
-    pcall(function()
-
-        if type(dropdown.SetValues) == "function" then
-
-            dropdown:SetValues(
-                values
-            )
-
-        elseif type(dropdown.SetItems) == "function" then
-
-            dropdown:SetItems(
-                values
-            )
-        end
-    end)
-
-    pcall(function()
-
-        if type(dropdown.SetValue) == "function" then
-
-            dropdown:SetValue(
-                HOLY_SHOP_STATE.SelectedAuctions
-            )
-        end
-    end)
+    end
 
     return true
 end
@@ -39791,6 +40061,13 @@ function HolyAuctionRefreshUI()
         HOLY_SHOP_STATE.AuctionStatus
     )
 
+    if type(HolyAuctionRefreshWatchlistUI) == "function" then
+
+        HolyAuctionRefreshWatchlistUI(
+            false
+        )
+    end
+
     if HOLY_SHOP_STATE.AuctionHudEnabled == true then
 
         HolyAuctionHudRefresh(
@@ -39803,40 +40080,28 @@ end
 
 function HolyAuctionSelectionMap()
 
-    return HolyShopNormalizeSelection(
-        HOLY_SHOP_STATE.SelectedAuctions
-    )
+    local map = {}
+
+    for _, entry in ipairs(
+        HOLY_SHOP_STATE.AuctionWatchlist
+        or {}
+    ) do
+
+        map[
+            HolyAuctionItemKey(
+                entry.Name
+            )
+        ] = true
+    end
+
+    return map
 end
 
 function HolyAuctionSelectionAllows(name)
 
-    local map =
-        HolyAuctionSelectionMap()
-
-    local hasSelection =
-        false
-
-    for _ in pairs(map) do
-
-        hasSelection =
-            true
-
-        break
-    end
-
-    if hasSelection ~= true then
-        return false
-    end
-
-    if map.All == true then
-        return true
-    end
-
-    return map[
-        HolyCleanText(
-            name
-        )
-    ] == true
+    return HolyAuctionGetWatchMax(
+        name
+    ) > 0
 end
 
 function HolyAuctionPriceAllows(row)
@@ -39847,24 +40112,19 @@ function HolyAuctionPriceAllows(row)
         or {}
 
     local desiredPrice =
-        HolyAuctionReadMoney(
-            HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
+        HolyAuctionGetWatchMax(
+            row.Name
         )
 
-    if desiredPrice <= 0 then
-        return false
-    end
-
     local currentPrice =
-        tonumber(row.Price)
+        tonumber(
+            row.Price
+        )
         or 0
 
-    if currentPrice <= 0 then
-        return false
-    end
-
-    return currentPrice <= desiredPrice
+    return desiredPrice > 0
+        and currentPrice > 0
+        and currentPrice <= desiredPrice
 end
 
 function HolyAuctionResolvePurchasePacket(forceRefresh)
@@ -39921,20 +40181,18 @@ function HolyAuctionFindBuyTarget()
 
     HolyAuctionEnsureState()
 
-    local rows =
-        HolyAuctionScanLiveLots()
+    local watchlist =
+        HOLY_SHOP_STATE.AuctionWatchlist
+        or {}
 
-    local desiredPrice =
-        HolyAuctionReadMoney(
-            HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
-        )
-
-    if desiredPrice <= 0 then
+    if #watchlist <= 0 then
 
         return nil,
-            "Set Max Price first"
+            "Add an item to the Auction Watchlist"
     end
+
+    local rows =
+        HolyAuctionScanLiveLots()
 
     if #rows <= 0 then
 
@@ -39942,38 +40200,40 @@ function HolyAuctionFindBuyTarget()
             "Loading auctions"
     end
 
-    local eligible =
-        {}
-
-    local selectedTooExpensive =
-        nil
-
-    local selectedStale =
-        nil
-
-    local selectedBoughtOnce =
-        false
-
-    local selectedFound =
-        false
+    local eligibleByIndex = {}
+    local selectedTooExpensive = nil
+    local selectedStale = nil
+    local selectedBoughtOnce = false
+    local selectedFound = false
 
     for _, row in ipairs(rows) do
 
-        if HolyAuctionSelectionAllows(
-            row.Name
-        ) == true then
+        local entry,
+            watchIndex =
+            HolyAuctionGetWatchEntry(
+                row.Name
+            )
 
-            selectedFound =
-                true
+        if type(entry) == "table" then
+
+            selectedFound = true
+
+            row.WatchlistIndex =
+                watchIndex
+
+            row.WatchlistMaxPrice =
+                HolyAuctionReadMoney(
+                    entry.MaxPrice
+                )
 
             local alreadyAttempted =
-                HOLY_SHOP_STATE
-                    .AuctionAttemptedLots[
-                        tostring(row.LotId)
-                    ] == true
+                HOLY_SHOP_STATE.AuctionAttemptedLots[
+                    tostring(
+                        row.LotId
+                    )
+                ] == true
 
-            if HOLY_SHOP_STATE
-                .AuctionBuyUntilSoldOut ~= true
+            if HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= true
             and alreadyAttempted == true then
 
                 selectedBoughtOnce =
@@ -39994,71 +40254,89 @@ function HolyAuctionFindBuyTarget()
                         selectedStale
                         or staleReason
 
-                elseif HolyAuctionPriceAllows(
-                    row
-                ) == true then
+                elseif HolyAuctionPriceAllows(row) == true then
 
-                    eligible[#eligible + 1] =
+                    eligibleByIndex[watchIndex] =
                         row
 
                 else
 
-                    if selectedTooExpensive == nil
-                    or tonumber(row.Price)
-                        < tonumber(
-                            selectedTooExpensive.Price
-                        ) then
+                    local currentRatio =
+                        (
+                            tonumber(row.Price)
+                            or math.huge
+                        )
+                        / math.max(
+                            1,
+                            row.WatchlistMaxPrice
+                        )
 
-                        selectedTooExpensive =
-                            row
+                    local previousRatio =
+                        selectedTooExpensive
+                        and selectedTooExpensive.Ratio
+                        or math.huge
+
+                    if currentRatio < previousRatio then
+
+                        selectedTooExpensive = {
+                            Row = row,
+                            Ratio = currentRatio,
+                            MaxPrice = row.WatchlistMaxPrice,
+                        }
                     end
                 end
             end
         end
     end
 
-    if #eligible > 0 then
+    local lastIndex =
+        math.clamp(
+            math.floor(
+                tonumber(
+                    HOLY_SHOP_STATE.AuctionRoundRobinIndex
+                )
+                or 0
+            ),
+            0,
+            #watchlist
+        )
 
-        table.sort(eligible, function(a, b)
+    for offset = 1, #watchlist do
 
-            local priceA =
-                tonumber(a.Price)
-                or math.huge
-
-            local priceB =
-                tonumber(b.Price)
-                or math.huge
-
-            if priceA ~= priceB then
-
-                return priceA < priceB
-            end
-
-            return (
-                tonumber(a.SortIndex)
-                or 999
-            ) < (
-                tonumber(b.SortIndex)
-                or 999
+        local watchIndex =
+            (
+                (
+                    lastIndex + offset - 1
+                )
+                % #watchlist
             )
-        end)
+            + 1
 
-        return eligible[1],
-            "Ready"
+        local row =
+            eligibleByIndex[
+                watchIndex
+            ]
+
+        if type(row) == "table" then
+
+            return row,
+                "Ready"
+        end
     end
 
     if type(selectedTooExpensive) == "table" then
 
+        local row =
+            selectedTooExpensive.Row
+
         return nil,
             "Waiting: "
-            .. tostring(selectedTooExpensive.Name)
+            .. tostring(row.Name)
             .. " "
-            .. HolyAuctionFormatMoney(
-                selectedTooExpensive.Price
-            )
+            .. HolyAuctionFormatMoney(row.Price)
             .. " > "
             .. HolyAuctionFormatMoney(
-                desiredPrice
+                selectedTooExpensive.MaxPrice
             )
     end
 
@@ -40069,8 +40347,7 @@ function HolyAuctionFindBuyTarget()
     end
 
     if selectedBoughtOnce == true
-    and HOLY_SHOP_STATE
-        .AuctionBuyUntilSoldOut ~= true then
+    and HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= true then
 
         return nil,
             "Bought once"
@@ -40079,11 +40356,11 @@ function HolyAuctionFindBuyTarget()
     if selectedFound == true then
 
         return nil,
-            "Selected auction unavailable"
+            "Watchlist items unavailable"
     end
 
     return nil,
-        "Select an auction item"
+        "Waiting for watchlist items"
 end
 
 function HolyAuctionQueueWorker(reason)
@@ -42324,6 +42601,17 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     HOLY_SHOP_STATE.AuctionLastBlockReason =
         ""
 
+    local watchIndex =
+        tonumber(
+            finalRow.WatchlistIndex
+        )
+
+    if watchIndex ~= nil then
+
+        HOLY_SHOP_STATE.AuctionRoundRobinIndex =
+            watchIndex
+    end
+
     if fireMode == "dry run" then
 
         HOLY_SHOP_STATE.AuctionNextRetryAt =
@@ -44167,20 +44455,17 @@ function HolyAuctionHudRefresh(rows)
         HOLY_SHOP_STATE.AuctionNetworkReady == true
 
     local selected =
-        HolyShopSelectionArray(
-            HOLY_SHOP_STATE.SelectedAuctions
-        )
-
-    local maxPrice =
-        HolyAuctionReadMoney(
-            HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
-        )
+        HolyAuctionGetWatchNames()
 
     local function readDecision(row)
 
         local selectedRow =
             HolyAuctionSelectionAllows(
+                row.Name
+            )
+
+        local maxPrice =
+            HolyAuctionGetWatchMax(
                 row.Name
             )
 
@@ -44447,21 +44732,16 @@ function HolyAuctionHudRefresh(rows)
             tostring(#selected)
             .. (
                 #selected == 1
-                and " selected"
-                or " selected"
+                and " watched"
+                or " watched"
             )
     end
 
     if typeof(hud.LimitValue) == "Instance" then
 
         hud.LimitValue.Text =
-            maxPrice > 0
-            and (
-                "<= "
-                .. HolyAuctionFormatMoney(
-                    maxPrice
-                )
-            )
+            #selected > 0
+            and "Per item"
             or "Not set"
     end
 
@@ -66237,6 +66517,14 @@ local ShopAuctionBox =
         "shopping-basket"
     )
 
+local ShopAuctionWatchlistBox =
+    HolyAddRightGroupbox(
+        Tabs.Shop,
+        "Shop.AuctionWatchlist",
+        "Auction Watchlist",
+        "list"
+    )
+
 local ShopSellBox =
     HolyAddLeftGroupbox(
         Tabs.Shop,
@@ -77777,7 +78065,7 @@ and type(FarmCollectionBox.AddToggle) == "function" then
                     HOLY_FARM_STATE.AutoCollectFruits == true,
 
                 Tooltip =
-                    "Collects ready fruits from your own plot using the direct CollectFruit packet.",
+                    "Automatically collects ready fruits in your garden.",
             }
         )
 
@@ -79331,105 +79619,1271 @@ ShopAuctionBox:AddToggle(
     HolyAuctionRefreshUI()
 end)
 
-HOLY_SHOP_UI.AuctionDropdown =
-    ShopAuctionBox:AddDropdown(
-        "HolyShopSelectedAuctions",
+HOLY_AUCTION_WATCHLIST_UI =
+    type(HOLY_AUCTION_WATCHLIST_UI) == "table"
+    and HOLY_AUCTION_WATCHLIST_UI
+    or {}
+
+function HolyAuctionWatchlistLiveRow(itemName)
+
+    local wantedKey =
+        HolyAuctionItemKey(
+            itemName
+        )
+
+    for _, row in ipairs(
+        HOLY_SHOP_STATE.AuctionLastLots
+        or {}
+    ) do
+
+        if HolyAuctionItemKey(row.Name) == wantedKey then
+
+            return row
+        end
+    end
+
+    return nil
+end
+
+function HolyAuctionWatchlistState(entry)
+
+    local row =
+        HolyAuctionWatchlistLiveRow(
+            entry.Name
+        )
+
+    if type(row) ~= "table" then
+
+        return "WAIT",
+            Color3.fromRGB(245, 199, 100)
+    end
+
+    if row.Expired == true then
+
+        return "ENDED",
+            Color3.fromRGB(135, 141, 153)
+    end
+
+    if row.StockKnown == true
+    and (
+        tonumber(row.Stock)
+        or 0
+    ) <= 0 then
+
+        return "SOLD OUT",
+            Color3.fromRGB(135, 141, 153)
+    end
+
+    if row.Active == true
+    and row.NetworkReady == true
+    and HolyAuctionPriceAllows(row) == true then
+
+        return "READY",
+            Color3.fromRGB(105, 229, 160)
+    end
+
+    return "WAIT",
+        Color3.fromRGB(245, 199, 100)
+end
+
+function HolyAuctionWatchlistAvailableItems()
+
+    local values = {}
+
+    for _, row in ipairs(
+        HolyAuctionBuildItemRows(
+            true
+        )
+    ) do
+
+        if HolyAuctionGetWatchEntry(row.Name) == nil then
+
+            values[#values + 1] =
+                tostring(
+                    row.Name
+                )
+        end
+    end
+
+    return values
+end
+
+function HolyAuctionWatchlistReadSingleValue(value)
+
+    if type(value) ~= "table" then
+
+        return HolyCleanText(
+            value
+        )
+    end
+
+    for key, enabled in pairs(value) do
+
+        if enabled == true then
+
+            return HolyCleanText(
+                key
+            )
+        end
+    end
+
+    return HolyCleanText(
+        value[1]
+    )
+end
+
+function HolyAuctionOpenAddWatchDialog()
+
+    local available =
+        HolyAuctionWatchlistAvailableItems()
+
+    if #available <= 0 then
+
+        HolyNotify(
+            "Auction Watchlist",
+            "No new auction items are currently available.",
+            4
+        )
+
+        return
+    end
+
+    local selectedItem =
+        available[1]
+
+    local enteredPrice =
+        "0"
+
+    local dialog
+
+    local function updateValidation()
+
+        local parsedPrice =
+            HolyAuctionReadMoney(
+                enteredPrice
+            )
+
+        dialog:SetDescription(
+            parsedPrice > 0
+            and (
+                "Maximum price: "
+                .. HolyAuctionFormatMoney(
+                    parsedPrice
+                )
+            )
+            or "Enter the most you are willing to pay."
+        )
+
+        dialog:SetButtonDisabled(
+            "Add",
+            selectedItem == ""
+                or parsedPrice <= 0
+        )
+    end
+
+    dialog =
+        Window:AddDialog(
+            "HolyAuctionAddWatchItem",
+            {
+                Title = "Add Auction Item",
+                Description = "Enter the most you are willing to pay.",
+                AutoDismiss = false,
+                OutsideClickDismiss = true,
+
+                FooterButtons = {
+                    Cancel = {
+                        Title = "Cancel",
+                        Variant = "Ghost",
+                        Order = 1,
+
+                        Callback = function()
+
+                            dialog:Dismiss()
+                        end,
+                    },
+
+                    Add = {
+                        Title = "Add Item",
+                        Variant = "Primary",
+                        Order = 2,
+
+                        Callback = function()
+
+                            local success,
+                                reason =
+                                HolyAuctionUpsertWatchItem(
+                                    selectedItem,
+                                    enteredPrice
+                                )
+
+                            if success == true then
+
+                                dialog:Dismiss()
+
+                            else
+
+                                dialog:SetDescription(
+                                    tostring(
+                                        reason
+                                    )
+                                )
+                            end
+                        end,
+                    },
+                },
+            }
+        )
+
+    dialog:AddDropdown(
+        "HolyAuctionAddWatchItemDropdown",
         {
-            Text =
-                "Auction Items",
+            Text = "Item",
+            Values = available,
+            Default = available[1],
+            Multi = false,
+            Searchable = true,
+            MaxVisibleDropdownItems = 8,
+        }
+    ):OnChanged(function(value)
 
-            Values =
-                HolyAuctionGetDropdownValues(
-                    false
-                ),
+        selectedItem =
+            HolyAuctionWatchlistReadSingleValue(
+                value
+            )
 
-            Default =
-                HolyShopSelectionArray(
-                    HOLY_SHOP_STATE.SelectedAuctions
-                ),
+        updateValidation()
+    end)
 
-            Multi =
+    dialog:AddInput(
+        "HolyAuctionAddWatchItemPrice",
+        {
+            Text = "Maximum Price",
+            Default = "0",
+            Placeholder = "Example: 50M",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        enteredPrice =
+            tostring(
+                value
+                or "0"
+            )
+
+        updateValidation()
+    end)
+
+    updateValidation()
+end
+
+function HolyAuctionOpenEditWatchDialog()
+
+    local entry =
+        HolyAuctionGetSelectedWatchEntry()
+
+    if type(entry) ~= "table" then
+
+        HolyNotify(
+            "Auction Watchlist",
+            "Select an item first.",
+            3
+        )
+
+        return
+    end
+
+    local itemName =
+        tostring(
+            entry.Name
+        )
+
+    local enteredPrice =
+        tostring(
+            entry.MaxPrice
+            or "0"
+        )
+
+    local liveRow =
+        HolyAuctionWatchlistLiveRow(
+            itemName
+        )
+
+    local currentText =
+        type(liveRow) == "table"
+        and tostring(
+            liveRow.PriceText
+            or HolyAuctionFormatMoney(
+                liveRow.Price
+            )
+        )
+        or "Unavailable"
+
+    local dialog
+
+    local function updateValidation()
+
+        local parsedPrice =
+            HolyAuctionReadMoney(
+                enteredPrice
+            )
+
+        dialog:SetDescription(
+            "Current price: "
+            .. currentText
+            .. "\nMaximum price: "
+            .. (
+                parsedPrice > 0
+                and HolyAuctionFormatMoney(
+                    parsedPrice
+                )
+                or "Invalid"
+            )
+        )
+
+        dialog:SetButtonDisabled(
+            "Save",
+            parsedPrice <= 0
+        )
+    end
+
+    dialog =
+        Window:AddDialog(
+            "HolyAuctionEditWatchItem",
+            {
+                Title =
+                    "Edit "
+                    .. itemName,
+
+                Description =
+                    "Current price: "
+                    .. currentText,
+
+                AutoDismiss = false,
+                OutsideClickDismiss = true,
+
+                FooterButtons = {
+                    Remove = {
+                        Title = "Remove",
+                        Variant = "Destructive",
+                        WaitTime = 1,
+                        Order = 1,
+
+                        Callback = function()
+
+                            HolyAuctionRemoveWatchItem(
+                                itemName
+                            )
+
+                            dialog:Dismiss()
+                        end,
+                    },
+
+                    Cancel = {
+                        Title = "Cancel",
+                        Variant = "Ghost",
+                        Order = 2,
+
+                        Callback = function()
+
+                            dialog:Dismiss()
+                        end,
+                    },
+
+                    Save = {
+                        Title = "Save",
+                        Variant = "Primary",
+                        Order = 3,
+
+                        Callback = function()
+
+                            local success,
+                                reason =
+                                HolyAuctionUpsertWatchItem(
+                                    itemName,
+                                    enteredPrice
+                                )
+
+                            if success == true then
+
+                                dialog:Dismiss()
+
+                            else
+
+                                dialog:SetDescription(
+                                    tostring(
+                                        reason
+                                    )
+                                )
+                            end
+                        end,
+                    },
+                },
+            }
+        )
+
+    dialog:AddInput(
+        "HolyAuctionEditWatchItemPrice",
+        {
+            Text = "Maximum Price",
+            Default = enteredPrice,
+            Placeholder = "Example: 50M",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        enteredPrice =
+            tostring(
+                value
+                or "0"
+            )
+
+        updateValidation()
+    end)
+
+    updateValidation()
+end
+
+local AuctionWatchlistSurface =
+    Instance.new(
+        "Frame"
+    )
+
+AuctionWatchlistSurface.Name =
+    "HolyAuctionWatchlistSurface"
+
+AuctionWatchlistSurface.BackgroundTransparency =
+    1
+
+AuctionWatchlistSurface.BorderSizePixel =
+    0
+
+AuctionWatchlistSurface.Size =
+    UDim2.new(
+        1,
+        0,
+        0,
+        194
+    )
+
+local AuctionWatchlistSummary =
+    Instance.new(
+        "TextLabel"
+    )
+
+AuctionWatchlistSummary.BackgroundTransparency =
+    1
+
+AuctionWatchlistSummary.Position =
+    UDim2.fromOffset(
+        1,
+        0
+    )
+
+AuctionWatchlistSummary.Size =
+    UDim2.new(
+        1,
+        -2,
+        0,
+        18
+    )
+
+AuctionWatchlistSummary.Text =
+    "0 watched"
+
+AuctionWatchlistSummary.TextColor3 =
+    Library.Scheme.FontColor
+
+AuctionWatchlistSummary.TextTransparency =
+    0.32
+
+AuctionWatchlistSummary.TextSize =
+    12
+
+AuctionWatchlistSummary.TextXAlignment =
+    Enum.TextXAlignment.Left
+
+AuctionWatchlistSummary.FontFace =
+    Library.Scheme.Font
+
+AuctionWatchlistSummary.Parent =
+    AuctionWatchlistSurface
+
+local AuctionWatchlistHeader =
+    Instance.new(
+        "Frame"
+    )
+
+AuctionWatchlistHeader.BackgroundTransparency =
+    1
+
+AuctionWatchlistHeader.Position =
+    UDim2.fromOffset(
+        0,
+        20
+    )
+
+AuctionWatchlistHeader.Size =
+    UDim2.new(
+        1,
+        0,
+        0,
+        16
+    )
+
+AuctionWatchlistHeader.Parent =
+    AuctionWatchlistSurface
+
+local function createHeaderLabel(text, position, size, alignment)
+
+    local label =
+        Instance.new(
+            "TextLabel"
+        )
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.Text =
+        text
+
+    label.TextColor3 =
+        Library.Scheme.FontColor
+
+    label.TextTransparency =
+        0.50
+
+    label.TextSize =
+        10
+
+    label.TextXAlignment =
+        alignment
+
+    label.FontFace =
+        Library.Scheme.Font
+
+    label.Parent =
+        AuctionWatchlistHeader
+
+    return label
+end
+
+createHeaderLabel(
+    "ITEM",
+    UDim2.fromOffset(8, 0),
+    UDim2.new(0.57, -8, 1, 0),
+    Enum.TextXAlignment.Left
+)
+
+createHeaderLabel(
+    "MAX",
+    UDim2.fromScale(0.57, 0),
+    UDim2.new(0.26, 0, 1, 0),
+    Enum.TextXAlignment.Left
+)
+
+createHeaderLabel(
+    "STATE",
+    UDim2.fromScale(0.83, 0),
+    UDim2.new(0.17, -6, 1, 0),
+    Enum.TextXAlignment.Right
+)
+
+local AuctionWatchlistList =
+    Instance.new(
+        "ScrollingFrame"
+    )
+
+AuctionWatchlistList.Active =
+    true
+
+AuctionWatchlistList.AutomaticCanvasSize =
+    Enum.AutomaticSize.Y
+
+AuctionWatchlistList.BackgroundTransparency =
+    1
+
+AuctionWatchlistList.BorderSizePixel =
+    0
+
+AuctionWatchlistList.CanvasSize =
+    UDim2.fromOffset(
+        0,
+        0
+    )
+
+AuctionWatchlistList.Position =
+    UDim2.fromOffset(
+        0,
+        38
+    )
+
+AuctionWatchlistList.Size =
+    UDim2.new(
+        1,
+        0,
+        0,
+        120
+    )
+
+AuctionWatchlistList.ScrollBarThickness =
+    2
+
+AuctionWatchlistList.ScrollBarImageColor3 =
+    Library.Scheme.OutlineColor
+
+AuctionWatchlistList.Parent =
+    AuctionWatchlistSurface
+
+local AuctionWatchlistLayout =
+    Instance.new(
+        "UIListLayout"
+    )
+
+AuctionWatchlistLayout.Padding =
+    UDim.new(
+        0,
+        4
+    )
+
+AuctionWatchlistLayout.SortOrder =
+    Enum.SortOrder.LayoutOrder
+
+AuctionWatchlistLayout.Parent =
+    AuctionWatchlistList
+
+local AuctionWatchlistEmpty =
+    Instance.new(
+        "TextLabel"
+    )
+
+AuctionWatchlistEmpty.BackgroundTransparency =
+    1
+
+AuctionWatchlistEmpty.LayoutOrder =
+    0
+
+AuctionWatchlistEmpty.Size =
+    UDim2.new(
+        1,
+        -4,
+        0,
+        58
+    )
+
+AuctionWatchlistEmpty.Text =
+    "No auction items added."
+
+AuctionWatchlistEmpty.TextColor3 =
+    Library.Scheme.FontColor
+
+AuctionWatchlistEmpty.TextTransparency =
+    0.46
+
+AuctionWatchlistEmpty.TextSize =
+    12
+
+AuctionWatchlistEmpty.FontFace =
+    Library.Scheme.Font
+
+AuctionWatchlistEmpty.Parent =
+    AuctionWatchlistList
+
+local AuctionWatchlistActions =
+    Instance.new(
+        "Frame"
+    )
+
+AuctionWatchlistActions.BackgroundTransparency =
+    1
+
+AuctionWatchlistActions.Position =
+    UDim2.fromOffset(
+        0,
+        166
+    )
+
+AuctionWatchlistActions.Size =
+    UDim2.new(
+        1,
+        0,
+        0,
+        28
+    )
+
+AuctionWatchlistActions.Parent =
+    AuctionWatchlistSurface
+
+local function createWatchlistAction(text, position, size, primary)
+
+    local button =
+        Instance.new(
+            "TextButton"
+        )
+
+    button.AutoButtonColor =
+        false
+
+    button.BackgroundColor3 =
+        primary == true
+        and Library.Scheme.AccentColor
+        or Library.Scheme.MainColor
+
+    button.BackgroundTransparency =
+        primary == true
+        and 0.12
+        or 0.22
+
+    button.BorderSizePixel =
+        0
+
+    button.Position =
+        position
+
+    button.Size =
+        size
+
+    button.Text =
+        text
+
+    button.TextColor3 =
+        Library.Scheme.FontColor
+
+    button.TextSize =
+        11
+
+    button.FontFace =
+        Library.Scheme.Font
+
+    button.Parent =
+        AuctionWatchlistActions
+
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            4
+        )
+
+    corner.Parent =
+        button
+
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    stroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    stroke.Color =
+        primary == true
+        and Library.Scheme.AccentColor
+        or Library.Scheme.OutlineColor
+
+    stroke.Transparency =
+        primary == true
+        and 0.05
+        or 0.24
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        button
+
+    return button
+end
+
+local AuctionWatchlistAddButton =
+    createWatchlistAction(
+        "+ Add Item",
+        UDim2.fromOffset(0, 0),
+        UDim2.new(0.5, -3, 1, 0),
+        true
+    )
+
+local AuctionWatchlistEditButton =
+    createWatchlistAction(
+        "Edit",
+        UDim2.new(0.5, 3, 0, 0),
+        UDim2.new(0.5, -3, 1, 0),
+        false
+    )
+
+AuctionWatchlistAddButton.MouseButton1Click:Connect(function()
+
+    HolyAuctionOpenAddWatchDialog()
+end)
+
+AuctionWatchlistEditButton.MouseButton1Click:Connect(function()
+
+    if HolyAuctionGetSelectedWatchEntry() ~= nil then
+
+        HolyAuctionOpenEditWatchDialog()
+    end
+end)
+
+HOLY_AUCTION_WATCHLIST_UI.Root =
+    AuctionWatchlistSurface
+
+HOLY_AUCTION_WATCHLIST_UI.List =
+    AuctionWatchlistList
+
+HOLY_AUCTION_WATCHLIST_UI.Summary =
+    AuctionWatchlistSummary
+
+HOLY_AUCTION_WATCHLIST_UI.Empty =
+    AuctionWatchlistEmpty
+
+HOLY_AUCTION_WATCHLIST_UI.EditButton =
+    AuctionWatchlistEditButton
+
+HOLY_AUCTION_WATCHLIST_UI.Rows =
+    {}
+
+HOLY_AUCTION_WATCHLIST_UI.Signature =
+    ""
+
+HOLY_SHOP_UI.AuctionWatchlistPassthrough =
+    ShopAuctionWatchlistBox:AddUIPassthrough(
+        "HolyShopAuctionWatchlistSurface",
+        {
+            Instance =
+                AuctionWatchlistSurface,
+
+            Height =
+                194,
+
+            Visible =
                 true,
-
-            Searchable =
-                true,
-
-            MaxVisibleDropdownItems =
-                8,
-
-            Tooltip =
-                "Choose which auction items to buy.",
         }
     )
 
-HOLY_SHOP_UI.AuctionDropdown:OnChanged(function(value)
+function HolyAuctionCreateWatchlistRow(entry, index)
 
-    HOLY_SHOP_STATE.SelectedAuctions =
-        HolyShopSelectionArray(
-            value
+    local key =
+        HolyAuctionItemKey(
+            entry.Name
         )
 
-    HOLY_SHOP_STATE.AuctionNextRetryAt =
+    local button =
+        Instance.new(
+            "TextButton"
+        )
+
+    button.AutoButtonColor =
+        false
+
+    button.BackgroundColor3 =
+        Library.Scheme.MainColor
+
+    button.BackgroundTransparency =
+        0.30
+
+    button.BorderSizePixel =
         0
 
-    HolySaveShopSettings()
+    button.LayoutOrder =
+        index
 
-    HolyAuctionRefreshUI()
-
-    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
-
-        HolyAuctionQueueWorker(
-            "selection changed"
+    button.Size =
+        UDim2.new(
+            1,
+            -4,
+            0,
+            27
         )
-    end
-end)
 
-ShopAuctionBox:AddInput(
-    "HolyShopAuctionMaxPrice",
-    {
-        Text =
-            "Max Price",
+    button.Text =
+        ""
 
-        Default =
-            tostring(
-                HOLY_SHOP_STATE.AuctionMaxPrice
-                or "0"
-            ),
+    button.Parent =
+        AuctionWatchlistList
 
-        Placeholder =
-            "Example: 2M, 100M, 1.5B",
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
 
-        Numeric =
-            false,
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            3
+        )
 
-        Finished =
-            true,
+    corner.Parent =
+        button
 
-        ClearTextOnFocus =
-            false,
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
 
-        Tooltip =
-            "The most you are willing to pay for an auction item.",
+    stroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    stroke.Color =
+        Library.Scheme.OutlineColor
+
+    stroke.Transparency =
+        0.26
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        button
+
+    local nameLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    nameLabel.BackgroundTransparency =
+        1
+
+    nameLabel.Position =
+        UDim2.fromOffset(
+            8,
+            0
+        )
+
+    nameLabel.Size =
+        UDim2.new(
+            0.57,
+            -8,
+            1,
+            0
+        )
+
+    nameLabel.Text =
+        tostring(
+            entry.Name
+        )
+
+    nameLabel.TextColor3 =
+        Library.Scheme.FontColor
+
+    nameLabel.TextSize =
+        11
+
+    nameLabel.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    nameLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    nameLabel.FontFace =
+        Library.Scheme.Font
+
+    nameLabel.Parent =
+        button
+
+    local maxLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    maxLabel.BackgroundTransparency =
+        1
+
+    maxLabel.Position =
+        UDim2.fromScale(
+            0.57,
+            0
+        )
+
+    maxLabel.Size =
+        UDim2.new(
+            0.26,
+            0,
+            1,
+            0
+        )
+
+    maxLabel.Text =
+        HolyAuctionFormatMoney(
+            entry.MaxPrice
+        )
+
+    maxLabel.TextColor3 =
+        Library.Scheme.FontColor
+
+    maxLabel.TextTransparency =
+        0.25
+
+    maxLabel.TextSize =
+        11
+
+    maxLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    maxLabel.FontFace =
+        Library.Scheme.Font
+
+    maxLabel.Parent =
+        button
+
+    local stateLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    stateLabel.BackgroundTransparency =
+        1
+
+    stateLabel.Position =
+        UDim2.fromScale(
+            0.83,
+            0
+        )
+
+    stateLabel.Size =
+        UDim2.new(
+            0.17,
+            -7,
+            1,
+            0
+        )
+
+    stateLabel.Text =
+        "WAIT"
+
+    stateLabel.TextSize =
+        10
+
+    stateLabel.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    stateLabel.FontFace =
+        Library.Scheme.Font
+
+    stateLabel.Parent =
+        button
+
+    button.MouseButton1Click:Connect(function()
+
+        HOLY_SHOP_STATE.AuctionWatchlistSelectedKey =
+            key
+
+        HolyAuctionRefreshWatchlistUI(
+            false
+        )
+    end)
+
+    HOLY_AUCTION_WATCHLIST_UI.Rows[key] = {
+        Button = button,
+        Stroke = stroke,
+        Name = nameLabel,
+        Max = maxLabel,
+        State = stateLabel,
     }
-):OnChanged(function(value)
+end
 
-    HOLY_SHOP_STATE.AuctionMaxPrice =
-        tostring(value or "0")
+function HolyAuctionRefreshWatchlistUI(forceRebuild)
 
-    HOLY_SHOP_STATE.AuctionNextRetryAt =
+    local ui =
+        HOLY_AUCTION_WATCHLIST_UI
+
+    if type(ui) ~= "table"
+    or typeof(ui.List) ~= "Instance" then
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionWatchlist =
+        HolyAuctionNormalizeWatchlist(
+            HOLY_SHOP_STATE.AuctionWatchlist
+        )
+
+    local watchlist =
+        HOLY_SHOP_STATE.AuctionWatchlist
+
+    local signatureParts = {}
+
+    for _, entry in ipairs(watchlist) do
+
+        signatureParts[#signatureParts + 1] =
+            HolyAuctionItemKey(
+                entry.Name
+            )
+            .. ":"
+            .. tostring(
+                entry.MaxPrice
+            )
+    end
+
+    local signature =
+        table.concat(
+            signatureParts,
+            "|"
+        )
+
+    if forceRebuild == true
+    or signature ~= ui.Signature then
+
+        for _, rowUi in pairs(
+            ui.Rows
+            or {}
+        ) do
+
+            if typeof(rowUi.Button) == "Instance" then
+
+                rowUi.Button:Destroy()
+            end
+        end
+
+        ui.Rows = {}
+        ui.Signature = signature
+
+        for index, entry in ipairs(watchlist) do
+
+            HolyAuctionCreateWatchlistRow(
+                entry,
+                index
+            )
+        end
+    end
+
+    local selectedKey =
+        tostring(
+            HOLY_SHOP_STATE.AuctionWatchlistSelectedKey
+            or ""
+        )
+
+    local selectedValid =
+        false
+
+    local readyCount =
         0
 
-    HolySaveShopSettings()
+    for _, entry in ipairs(watchlist) do
 
-    HolyAuctionRefreshUI()
+        local key =
+            HolyAuctionItemKey(
+                entry.Name
+            )
 
-    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+        local rowUi =
+            ui.Rows[key]
 
-        HolyAuctionQueueWorker(
-            "desired price changed"
-        )
+        if type(rowUi) == "table" then
+
+            local selected =
+                selectedKey == key
+
+            if selected == true then
+
+                selectedValid =
+                    true
+            end
+
+            local stateText,
+                stateColor =
+                HolyAuctionWatchlistState(
+                    entry
+                )
+
+            if stateText == "READY" then
+
+                readyCount =
+                    readyCount + 1
+            end
+
+            rowUi.Name.Text =
+                tostring(
+                    entry.Name
+                )
+
+            rowUi.Max.Text =
+                HolyAuctionFormatMoney(
+                    entry.MaxPrice
+                )
+
+            rowUi.State.Text =
+                stateText
+
+            rowUi.State.TextColor3 =
+                stateColor
+
+            rowUi.Button.BackgroundColor3 =
+                selected == true
+                and Library.Scheme.AccentColor
+                or Library.Scheme.MainColor
+
+            rowUi.Button.BackgroundTransparency =
+                selected == true
+                and 0.82
+                or 0.30
+
+            rowUi.Stroke.Color =
+                selected == true
+                and Library.Scheme.AccentColor
+                or Library.Scheme.OutlineColor
+
+            rowUi.Stroke.Transparency =
+                selected == true
+                and 0.02
+                or 0.26
+
+            rowUi.Name.TextTransparency =
+                selected == true
+                and 0
+                or 0.10
+        end
     end
-end)
+
+    if selectedValid ~= true then
+
+        HOLY_SHOP_STATE.AuctionWatchlistSelectedKey =
+            ""
+    end
+
+    ui.Empty.Visible =
+        #watchlist <= 0
+
+    ui.Summary.Text =
+        tostring(#watchlist)
+        .. (
+            #watchlist == 1
+            and " watched"
+            or " watched"
+        )
+        .. "  •  "
+        .. tostring(readyCount)
+        .. " ready"
+
+    ui.EditButton.Active =
+        selectedValid
+
+    ui.EditButton.Selectable =
+        selectedValid
+
+    ui.EditButton.TextTransparency =
+        selectedValid == true
+        and 0
+        or 0.55
+
+    return true
+end
+
+HolyAuctionRefreshWatchlistUI(
+    true
+)
 
 ShopAuctionBox:AddToggle(
     "HolyShopAuctionBuyUntilSoldOut",
