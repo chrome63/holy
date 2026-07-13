@@ -297,7 +297,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260713-theme_transparency_v1"
+    "holy-premium-20260713-precision_ui_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -66472,7 +66472,7 @@ local Window =
             ),
 
         CornerRadius =
-            7,
+            4,
 
         GlobalSearch =
             true,
@@ -78204,26 +78204,22 @@ and type(Tabs.Farm.AddTopNavigation) == "function" then
             Items = {
                 {
                     Key = "Collect",
-                    Text = "🎯 Collect",
-                    AccentColor = Color3.fromRGB(255, 70, 88),
+                    Text = "Collect",
                 },
 
                 {
                     Key = "Plant",
-                    Text = "🌱 Plant",
-                    AccentColor = Color3.fromRGB(94, 255, 120),
+                    Text = "Plant",
                 },
 
                 {
                     Key = "Tools",
-                    Text = "🛠️ Tools",
-                    AccentColor = Color3.fromRGB(86, 160, 255),
+                    Text = "Tools",
                 },
 
                 {
                     Key = "Extra",
-                    Text = "⭐ Extra",
-                    AccentColor = Color3.fromRGB(255, 216, 74),
+                    Text = "Extra",
                 },
             },
 
@@ -78232,10 +78228,10 @@ and type(Tabs.Farm.AddTopNavigation) == "function" then
                 or "Collect",
 
             Height =
-                58,
+                50,
 
             BarHeight =
-                42,
+                36,
 
             Callback =
                 function(value)
