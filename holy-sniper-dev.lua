@@ -68002,6 +68002,2654 @@ HOLY_DEV_SUITE_RUNTIME.Stop =
     end
 
 --==================================================
+-- [3.9] MAIN MOON PREDICTOR
+--==================================================
+
+if type(HOLY_MOON_PREDICTOR_RUNTIME) == "table"
+and type(HOLY_MOON_PREDICTOR_RUNTIME.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_MOON_PREDICTOR_RUNTIME.Stop(
+            "reload"
+        )
+    end)
+end
+
+HOLY_MOON_PREDICTOR_STATE = {
+    Amount = 30,
+    RowsPerPage = 6,
+    Page = 1,
+
+    SelectedMoons = {},
+    HasSavedSelection = false,
+
+    CycleInfo = nil,
+    PickWeather = nil,
+
+    MoonTypes = {},
+    RawByDisplay = {},
+    DisplayByRaw = {},
+    WeatherRecords = {},
+
+    Predictions = {},
+    PredictionCache = {},
+
+    ScanGeneration = 0,
+    Scanning = false,
+    ScanChecked = 0,
+    ScanLimit = 0,
+    LastBuildCycle = nil,
+}
+
+HOLY_MOON_PREDICTOR_RUNTIME = {
+    Running = false,
+    Token = nil,
+    Stop = nil,
+}
+
+HOLY_MOON_PREDICTOR_UI = {
+    FilterDropdown = nil,
+    AmountInput = nil,
+    Passthrough = nil,
+
+    Surface = nil,
+    CurrentIcon = nil,
+    CurrentLabel = nil,
+    HeaderLabel = nil,
+    HeaderTimerLabel = nil,
+    EmptyLabel = nil,
+
+    Rows = {},
+
+    PreviousButton = nil,
+    PageLabel = nil,
+    NextButton = nil,
+}
+
+local HOLY_MOON_PREDICTOR_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumMoonPredictorSettings.json"
+
+function HolyMoonEscape(value)
+
+    return tostring(value or "")
+        :gsub("&", "&amp;")
+        :gsub("<", "&lt;")
+        :gsub(">", "&gt;")
+end
+
+function HolyMoonKey(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-]", "")
+end
+
+function HolyMoonDisplayName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local key =
+        HolyMoonKey(
+            text
+        )
+
+    if key == "goldmoon" then
+        return "Gold Moon"
+    end
+
+    if key == "bloodmoon" then
+        return "Blood Moon"
+    end
+
+    if key == "megamoon" then
+        return "Mega Moon"
+    end
+
+    return text ~= ""
+        and text
+        or "Unknown Moon"
+end
+
+function HolyMoonReadAmount(value)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("%d+")
+        )
+        or 30
+
+    return math.clamp(
+        math.floor(number),
+        1,
+        500
+    )
+end
+
+function HolyMoonGetNow()
+
+    local ok,
+        value =
+        pcall(function()
+
+            return workspace:GetServerTimeNow()
+        end)
+
+    if ok == true
+    and tonumber(value) then
+
+        return math.floor(
+            tonumber(value)
+        )
+    end
+
+    return os.time()
+end
+
+function HolyMoonFormatSeconds(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local days =
+        math.floor(
+            seconds / 86400
+        )
+
+    local hours =
+        math.floor(
+            (seconds % 86400) / 3600
+        )
+
+    local minutes =
+        math.floor(
+            (seconds % 3600) / 60
+        )
+
+    local remain =
+        seconds % 60
+
+    if days > 0 then
+
+        return tostring(days)
+            .. "d "
+            .. tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if minutes > 0 then
+
+        return tostring(minutes)
+            .. "m "
+            .. tostring(remain)
+            .. "s"
+    end
+
+    return tostring(remain)
+        .. "s"
+end
+
+function HolyMoonColor(value, weatherData)
+
+    local key =
+        HolyMoonKey(
+            value
+        )
+
+    if key == "moon"
+    or key == "day" then
+
+        return Color3.fromRGB(
+            147,
+            197,
+            253
+        )
+    end
+
+    if key == "sunset" then
+
+        return Color3.fromRGB(
+            251,
+            191,
+            36
+        )
+    end
+
+    if key == "goldmoon" then
+
+        return Color3.fromRGB(
+            250,
+            204,
+            21
+        )
+    end
+
+    if key == "rainbowmoon" then
+
+        return Color3.fromRGB(
+            255,
+            64,
+            255
+        )
+    end
+
+    if key == "bloodmoon" then
+
+        return Color3.fromRGB(
+            248,
+            64,
+            64
+        )
+    end
+
+    if key == "megamoon" then
+
+        return Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+    end
+
+    local moduleColor =
+        type(weatherData) == "table"
+        and weatherData.Color
+        or nil
+
+    if typeof(moduleColor) == "Color3" then
+        return moduleColor
+    end
+
+    return Color3.fromRGB(
+        196,
+        181,
+        253
+    )
+end
+
+function HolyMoonRichColor(color)
+
+    color =
+        typeof(color) == "Color3"
+        and color
+        or Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    return string.format(
+        "rgb(%d,%d,%d)",
+        math.floor(color.R * 255 + 0.5),
+        math.floor(color.G * 255 + 0.5),
+        math.floor(color.B * 255 + 0.5)
+    )
+end
+
+function HolyMoonSaveSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local selected =
+        {}
+
+    for rawName, enabled in pairs(
+        HOLY_MOON_PREDICTOR_STATE.SelectedMoons
+    ) do
+
+        if enabled == true then
+
+            table.insert(
+                selected,
+                tostring(rawName)
+            )
+        end
+    end
+
+    table.sort(selected, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    local payload = {
+        Amount =
+            HolyMoonReadAmount(
+                HOLY_MOON_PREDICTOR_STATE.Amount
+            ),
+
+        SelectedMoons =
+            selected,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    return pcall(function()
+
+        writefile(
+            HOLY_MOON_PREDICTOR_SETTINGS_FILE,
+            encoded
+        )
+    end)
+end
+
+function HolyMoonLoadSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                HOLY_MOON_PREDICTOR_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                HOLY_MOON_PREDICTOR_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_MOON_PREDICTOR_STATE.Amount =
+        HolyMoonReadAmount(
+            data.Amount
+        )
+
+    if type(data.SelectedMoons) == "table" then
+
+        HOLY_MOON_PREDICTOR_STATE.HasSavedSelection =
+            true
+
+        HOLY_MOON_PREDICTOR_STATE.SelectedMoons =
+            {}
+
+        for _, rawName in ipairs(
+            HolyShopSelectionArray(
+                data.SelectedMoons
+            )
+        ) do
+
+            HOLY_MOON_PREDICTOR_STATE.SelectedMoons[
+                tostring(rawName)
+            ] =
+                true
+        end
+    end
+
+    return true
+end
+
+function HolyMoonBuildFallbackData()
+
+    return {
+        Data = {
+            Day = {
+                Lasts = 450,
+                StartOrder = 1,
+
+                Weathers = {
+                    Day = {
+                        Chance = 100,
+                        Image =
+                            "rbxassetid://100486757307207",
+                    },
+                },
+            },
+
+            Sunset = {
+                Lasts = 30,
+                StartOrder = 2,
+
+                Weathers = {
+                    Sunset = {
+                        Chance = 100,
+                        Image =
+                            "rbxassetid://86217612022586",
+                    },
+                },
+            },
+
+            Night = {
+                Lasts = 120,
+                StartOrder = 3,
+
+                Weathers = {
+                    Moon = {
+                        Chance = 79,
+                        Image =
+                            "rbxassetid://91446334780160",
+                    },
+
+                    Goldmoon = {
+                        Chance = 13,
+                        Image =
+                            "rbxassetid://84902063004871",
+                    },
+
+                    ["Rainbow Moon"] = {
+                        Chance = 6,
+                        Image =
+                            "rbxassetid://93602895495056",
+                    },
+
+                    Bloodmoon = {
+                        Chance = 2,
+                        Image =
+                            "rbxassetid://140465339393451",
+                    },
+
+                    ["Mega Moon"] = {
+                        Chance = 2,
+                        Image =
+                            "rbxassetid://107925838920918",
+                    },
+                },
+            },
+        },
+    }
+end
+
+function HolyMoonBuildCycleInfo()
+
+    local moduleData =
+        nil
+
+    local module =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    module =
+        module
+        and module:FindFirstChild(
+            "TimeCycleData"
+        )
+
+    if typeof(module) == "Instance"
+    and module:IsA("ModuleScript") then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return require(
+                    module
+                )
+            end)
+
+        if ok == true
+        and type(result) == "table"
+        and type(result.Data) == "table" then
+
+            moduleData =
+                result
+        end
+    end
+
+    if type(moduleData) ~= "table"
+    or type(moduleData.Data) ~= "table" then
+
+        moduleData =
+            HolyMoonBuildFallbackData()
+    end
+
+    local phases =
+        {}
+
+    local weatherRecords =
+        {}
+
+    for phaseName, phaseData in pairs(
+        moduleData.Data
+    ) do
+
+        if type(phaseData) == "table" then
+
+            local phase = {
+                Name =
+                    tostring(phaseName),
+
+                Duration =
+                    tonumber(phaseData.Lasts)
+                    or 0,
+
+                Order =
+                    tonumber(phaseData.StartOrder)
+                    or 999,
+
+                Weathers =
+                    type(phaseData.Weathers) == "table"
+                    and phaseData.Weathers
+                    or {},
+
+                Raw =
+                    phaseData,
+            }
+
+            table.insert(
+                phases,
+                phase
+            )
+
+            for weatherName, weatherData in pairs(
+                phase.Weathers
+            ) do
+
+                weatherRecords[
+                    tostring(weatherName)
+                ] = {
+                    Raw =
+                        tostring(weatherName),
+
+                    Phase =
+                        tostring(phaseName),
+
+                    Data =
+                        type(weatherData) == "table"
+                        and weatherData
+                        or {},
+                }
+            end
+        end
+    end
+
+    table.sort(phases, function(a, b)
+
+        return tonumber(a.Order)
+            < tonumber(b.Order)
+    end)
+
+    local fullCycle =
+        0
+
+    local secondsBeforeNight =
+        0
+
+    local nightIndex =
+        nil
+
+    local nightRecord =
+        nil
+
+    for index, phase in ipairs(phases) do
+
+        fullCycle +=
+            tonumber(phase.Duration)
+            or 0
+
+        if nightRecord == nil then
+
+            if tostring(phase.Name) == "Night" then
+
+                nightIndex =
+                    index
+
+                nightRecord =
+                    phase
+
+            else
+
+                secondsBeforeNight +=
+                    tonumber(phase.Duration)
+                    or 0
+            end
+        end
+    end
+
+    if nightRecord == nil then
+
+        local fallback =
+            HolyMoonBuildFallbackData()
+
+        nightRecord = {
+            Name = "Night",
+            Duration = 120,
+            Order = 3,
+            Weathers =
+                fallback.Data.Night.Weathers,
+            Raw =
+                fallback.Data.Night,
+        }
+
+        nightIndex =
+            3
+
+        fullCycle =
+            600
+
+        secondsBeforeNight =
+            480
+    end
+
+    if fullCycle <= 0 then
+        fullCycle = 600
+    end
+
+    HOLY_MOON_PREDICTOR_STATE.WeatherRecords =
+        weatherRecords
+
+    return {
+        Phases =
+            phases,
+
+        FullCycle =
+            fullCycle,
+
+        SecondsBeforeNight =
+            secondsBeforeNight,
+
+        NightIndex =
+            nightIndex
+            or 3,
+
+        NightRecord =
+            nightRecord,
+    }
+end
+
+function HolyMoonBuildTypes()
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local cycleInfo =
+        state.CycleInfo
+
+    local weathers =
+        type(cycleInfo) == "table"
+        and type(cycleInfo.NightRecord) == "table"
+        and type(cycleInfo.NightRecord.Weathers) == "table"
+        and cycleInfo.NightRecord.Weathers
+        or {}
+
+    local types =
+        {}
+
+    local rawByDisplay =
+        {}
+
+    local displayByRaw =
+        {}
+
+    for rawName, weatherData in pairs(weathers) do
+
+        rawName =
+            tostring(rawName)
+
+        local displayName =
+            HolyMoonDisplayName(
+                rawName
+            )
+
+        local row = {
+            Raw =
+                rawName,
+
+            Display =
+                displayName,
+
+            Chance =
+                tonumber(
+                    type(weatherData) == "table"
+                    and weatherData.Chance
+                    or 0
+                )
+                or 0,
+
+            Data =
+                type(weatherData) == "table"
+                and weatherData
+                or {},
+        }
+
+        table.insert(
+            types,
+            row
+        )
+
+        rawByDisplay[displayName] =
+            rawName
+
+        displayByRaw[rawName] =
+            displayName
+    end
+
+    table.sort(types, function(a, b)
+
+        if tonumber(a.Chance)
+        ~= tonumber(b.Chance) then
+
+            return tonumber(a.Chance)
+                > tonumber(b.Chance)
+        end
+
+        return tostring(a.Display):lower()
+            < tostring(b.Display):lower()
+    end)
+
+    state.MoonTypes =
+        types
+
+    state.RawByDisplay =
+        rawByDisplay
+
+    state.DisplayByRaw =
+        displayByRaw
+
+    local cleanedSelection =
+        {}
+
+    if state.HasSavedSelection == true then
+
+        for savedName, enabled in pairs(
+            state.SelectedMoons
+        ) do
+
+            if enabled == true then
+
+                local rawName =
+                    displayByRaw[savedName]
+                    and savedName
+                    or rawByDisplay[savedName]
+
+                if rawName ~= nil then
+
+                    cleanedSelection[rawName] =
+                        true
+                end
+            end
+        end
+
+    else
+
+        for _, row in ipairs(types) do
+
+            if HolyMoonKey(row.Raw)
+            ~= "moon" then
+
+                cleanedSelection[row.Raw] =
+                    true
+            end
+        end
+    end
+
+    state.SelectedMoons =
+        cleanedSelection
+
+    return types
+end
+
+function HolyMoonGetFilterValues()
+
+    local values =
+        {}
+
+    for _, row in ipairs(
+        HOLY_MOON_PREDICTOR_STATE.MoonTypes
+    ) do
+
+        table.insert(
+            values,
+            tostring(row.Display)
+        )
+    end
+
+    return values
+end
+
+function HolyMoonGetSelectedDisplays()
+
+    local values =
+        {}
+
+    local selected =
+        HOLY_MOON_PREDICTOR_STATE.SelectedMoons
+
+    for _, row in ipairs(
+        HOLY_MOON_PREDICTOR_STATE.MoonTypes
+    ) do
+
+        if selected[row.Raw] == true then
+
+            table.insert(
+                values,
+                tostring(row.Display)
+            )
+        end
+    end
+
+    return values
+end
+
+function HolyMoonExtractPickWeather()
+
+    if type(debug) ~= "table"
+    or type(debug.getupvalues) ~= "function" then
+
+        return nil
+    end
+
+    local playerScripts =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild(
+            "PlayerScripts"
+        )
+
+    local controllers =
+        playerScripts
+        and playerScripts:FindFirstChild(
+            "Controllers"
+        )
+
+    local module =
+        controllers
+        and controllers:FindFirstChild(
+            "TimeCycleController"
+        )
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local requireOk,
+        controller =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if requireOk ~= true
+    or type(controller) ~= "table"
+    or type(controller.Start) ~= "function" then
+
+        return nil
+    end
+
+    local upvalueOk,
+        upvalues =
+        pcall(function()
+
+            return debug.getupvalues(
+                controller.Start
+            )
+        end)
+
+    if upvalueOk ~= true
+    or type(upvalues) ~= "table" then
+
+        return nil
+    end
+
+    local cycleInfo =
+        HOLY_MOON_PREDICTOR_STATE.CycleInfo
+
+    local function isPicker(candidate)
+
+        if type(candidate) ~= "function"
+        or type(cycleInfo) ~= "table"
+        or type(cycleInfo.NightRecord) ~= "table" then
+
+            return false
+        end
+
+        local ok,
+            moonName =
+            pcall(function()
+
+                return candidate(
+                    cycleInfo.NightRecord,
+                    Random.new(123456)
+                )
+            end)
+
+        return ok == true
+            and type(moonName) == "string"
+            and cycleInfo.NightRecord.Weathers[
+                moonName
+            ] ~= nil
+    end
+
+    if isPicker(upvalues[2]) == true then
+        return upvalues[2]
+    end
+
+    for _, candidate in pairs(upvalues) do
+
+        if isPicker(candidate) == true then
+            return candidate
+        end
+    end
+
+    return nil
+end
+
+function HolyMoonFallbackPickWeather(
+    phaseRecord,
+    rng
+)
+
+    if type(phaseRecord) ~= "table"
+    or type(phaseRecord.Weathers) ~= "table" then
+
+        return "?"
+    end
+
+    local rows =
+        {}
+
+    local total =
+        0
+
+    for weatherName, weatherData in pairs(
+        phaseRecord.Weathers
+    ) do
+
+        local chance =
+            tonumber(
+                type(weatherData) == "table"
+                and weatherData.Chance
+                or 0
+            )
+            or 0
+
+        table.insert(rows, {
+            Name =
+                tostring(weatherName),
+
+            Chance =
+                chance,
+        })
+
+        total +=
+            chance
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tostring(a.Name)
+            < tostring(b.Name)
+    end)
+
+    if total <= 0 then
+
+        return rows[1]
+            and rows[1].Name
+            or "?"
+    end
+
+    local roll =
+        rng:NextNumber()
+        * total
+
+    local cumulative =
+        0
+
+    for _, row in ipairs(rows) do
+
+        cumulative +=
+            tonumber(row.Chance)
+            or 0
+
+        if roll <= cumulative then
+            return row.Name
+        end
+    end
+
+    return rows[#rows]
+        and rows[#rows].Name
+        or "?"
+end
+
+function HolyMoonEnsureReady()
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    if type(state.CycleInfo) ~= "table" then
+
+        state.CycleInfo =
+            HolyMoonBuildCycleInfo()
+
+        HolyMoonBuildTypes()
+    end
+
+    if type(state.PickWeather) ~= "function" then
+
+        state.PickWeather =
+            HolyMoonExtractPickWeather()
+    end
+
+    return type(state.CycleInfo) == "table"
+end
+
+function HolyMoonPredict(cycleIndex)
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    if HolyMoonEnsureReady() ~= true then
+        return "?"
+    end
+
+    cycleIndex =
+        math.floor(
+            tonumber(cycleIndex)
+            or 0
+        )
+
+    local cached =
+        state.PredictionCache[cycleIndex]
+
+    if type(cached) == "string" then
+        return cached
+    end
+
+    local seed =
+        cycleIndex
+        * 1000
+        + tonumber(
+            state.CycleInfo.NightIndex
+        )
+
+    local moonName =
+        nil
+
+    if type(state.PickWeather) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return state.PickWeather(
+                    state.CycleInfo.NightRecord,
+                    Random.new(seed)
+                )
+            end)
+
+        if ok == true
+        and type(result) == "string" then
+
+            moonName =
+                result
+        end
+    end
+
+    if type(moonName) ~= "string" then
+
+        moonName =
+            HolyMoonFallbackPickWeather(
+                state.CycleInfo.NightRecord,
+                Random.new(seed)
+            )
+    end
+
+    state.PredictionCache[cycleIndex] =
+        moonName
+
+    return moonName
+end
+
+function HolyMoonSelectedChance()
+
+    local selectedChance =
+        0
+
+    local totalChance =
+        0
+
+    for _, row in ipairs(
+        HOLY_MOON_PREDICTOR_STATE.MoonTypes
+    ) do
+
+        local chance =
+            math.max(
+                0,
+                tonumber(row.Chance)
+                or 0
+            )
+
+        totalChance +=
+            chance
+
+        if HOLY_MOON_PREDICTOR_STATE.SelectedMoons[
+            row.Raw
+        ] == true then
+
+            selectedChance +=
+                chance
+        end
+    end
+
+    return selectedChance,
+        totalChance
+end
+
+function HolyMoonCalculateScanLimit()
+
+    local amount =
+        HolyMoonReadAmount(
+            HOLY_MOON_PREDICTOR_STATE.Amount
+        )
+
+    local selectedChance,
+        totalChance =
+        HolyMoonSelectedChance()
+
+    if selectedChance <= 0
+    or totalChance <= 0 then
+
+        return 0
+    end
+
+    local expected =
+        amount
+        * totalChance
+        / selectedChance
+
+    return math.clamp(
+        math.ceil(
+            math.max(
+                2000,
+                expected * 8
+            )
+        ),
+        2000,
+        250000
+    )
+end
+
+function HolyMoonRequestBuild(reason)
+
+    if HolyMoonEnsureReady() ~= true then
+        return false
+    end
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    state.ScanGeneration +=
+        1
+
+    local generation =
+        state.ScanGeneration
+
+    state.Predictions =
+        {}
+
+    state.Scanning =
+        true
+
+    state.ScanChecked =
+        0
+
+    state.ScanLimit =
+        HolyMoonCalculateScanLimit()
+
+    if state.ScanLimit <= 0 then
+
+        state.Scanning =
+            false
+
+        HolyMoonRender()
+
+        return false
+    end
+
+    local now =
+        HolyMoonGetNow()
+
+    local cycleInfo =
+        state.CycleInfo
+
+    local currentCycle =
+        math.floor(
+            now
+            / cycleInfo.FullCycle
+        )
+
+    state.LastBuildCycle =
+        currentCycle
+
+    local wanted =
+        HolyMoonReadAmount(
+            state.Amount
+        )
+
+    HolyMoonRender()
+
+    task.spawn(function()
+
+        for offset = 0, state.ScanLimit do
+
+            if state.ScanGeneration
+            ~= generation then
+
+                return
+            end
+
+            local cycleIndex =
+                currentCycle
+                + offset
+
+            local nightStart =
+                cycleIndex
+                * cycleInfo.FullCycle
+                + cycleInfo.SecondsBeforeNight
+
+            if nightStart > now then
+
+                local moonName =
+                    HolyMoonPredict(
+                        cycleIndex
+                    )
+
+                if state.SelectedMoons[
+                    moonName
+                ] == true then
+
+                    table.insert(
+                        state.Predictions,
+                        {
+                            Moon =
+                                moonName,
+
+                            StartsAt =
+                                nightStart,
+
+                            CycleIndex =
+                                cycleIndex,
+                        }
+                    )
+
+                    if #state.Predictions
+                    >= wanted then
+
+                        break
+                    end
+                end
+            end
+
+            state.ScanChecked =
+                offset + 1
+
+            if offset % 75 == 0 then
+
+                HolyMoonRender()
+
+                task.wait()
+            end
+        end
+
+        if state.ScanGeneration
+        ~= generation then
+
+            return
+        end
+
+        state.Scanning =
+            false
+
+        HolyMoonRender()
+    end)
+
+    return true
+end
+
+function HolyMoonFindWeatherRecord(value)
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local direct =
+        state.WeatherRecords[
+            tostring(value or "")
+        ]
+
+    if type(direct) == "table" then
+        return direct
+    end
+
+    local wantedKey =
+        HolyMoonKey(
+            value
+        )
+
+    for rawName, record in pairs(
+        state.WeatherRecords
+    ) do
+
+        if HolyMoonKey(rawName)
+        == wantedKey then
+
+            return record
+        end
+    end
+
+    return nil
+end
+
+function HolyMoonUpdateCurrentUI()
+
+    local ui =
+        HOLY_MOON_PREDICTOR_UI
+
+    if typeof(ui.CurrentLabel) ~= "Instance" then
+        return false
+    end
+
+    local activeWeather =
+        HolyCleanText(
+            workspace:GetAttribute(
+                "ActiveWeather"
+            )
+        )
+
+    if activeWeather == "" then
+        activeWeather = "Unknown"
+    end
+
+    local now =
+        HolyMoonGetNow()
+
+    local phaseEnd =
+        tonumber(
+            workspace:GetAttribute(
+                "PhaseDuration"
+            )
+        )
+        or now
+
+    local remaining =
+        math.max(
+            0,
+            phaseEnd - now
+        )
+
+    local record =
+        HolyMoonFindWeatherRecord(
+            activeWeather
+        )
+
+    local weatherData =
+        type(record) == "table"
+        and record.Data
+        or {}
+
+    local displayName =
+        HolyMoonDisplayName(
+            activeWeather
+        )
+
+    local color =
+        HolyMoonColor(
+            activeWeather,
+            weatherData
+        )
+
+    ui.CurrentLabel.Text =
+        '<font color="rgb(226,232,240)"><b>Current:</b></font> '
+        .. '<font color="'
+        .. HolyMoonRichColor(color)
+        .. '"><b>'
+        .. HolyMoonEscape(displayName)
+        .. '</b></font> '
+        .. '<font color="rgb(148,163,184)">· '
+        .. HolyMoonFormatSeconds(remaining)
+        .. ' left</font>'
+
+    if typeof(ui.CurrentIcon) == "Instance" then
+
+        local image =
+            type(weatherData) == "table"
+            and tostring(
+                weatherData.Image
+                or ""
+            )
+            or ""
+
+        ui.CurrentIcon.Image =
+            image
+
+        ui.CurrentIcon.Visible =
+            image ~= ""
+    end
+
+    return true
+end
+
+function HolyMoonRender()
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local ui =
+        HOLY_MOON_PREDICTOR_UI
+
+    if typeof(ui.Surface) ~= "Instance" then
+        return false
+    end
+
+    HolyMoonUpdateCurrentUI()
+
+    local rowsPerPage =
+        math.max(
+            1,
+            math.floor(
+                tonumber(state.RowsPerPage)
+                or 6
+            )
+        )
+
+    local resultCount =
+        #state.Predictions
+
+    local maxPage =
+        math.max(
+            1,
+            math.ceil(
+                resultCount
+                / rowsPerPage
+            )
+        )
+
+    state.Page =
+        math.clamp(
+            math.floor(
+                tonumber(state.Page)
+                or 1
+            ),
+            1,
+            maxPage
+        )
+
+    local wanted =
+        HolyMoonReadAmount(
+            state.Amount
+        )
+
+    if typeof(ui.HeaderLabel) == "Instance" then
+
+        if state.Scanning == true then
+
+            ui.HeaderLabel.Text =
+                "Moon  •  Finding "
+                .. tostring(resultCount)
+                .. "/"
+                .. tostring(wanted)
+
+        else
+
+            ui.HeaderLabel.Text =
+                "Moon  •  "
+                .. tostring(resultCount)
+                .. " results"
+        end
+    end
+
+    if typeof(ui.PageLabel) == "Instance" then
+
+        ui.PageLabel.Text =
+            "Page "
+            .. tostring(state.Page)
+            .. " / "
+            .. tostring(maxPage)
+    end
+
+    local canPrevious =
+        state.Page > 1
+
+    local canNext =
+        state.Page < maxPage
+
+    if typeof(ui.PreviousButton) == "Instance" then
+
+        ui.PreviousButton.TextTransparency =
+            canPrevious
+            and 0
+            or 0.55
+    end
+
+    if typeof(ui.NextButton) == "Instance" then
+
+        ui.NextButton.TextTransparency =
+            canNext
+            and 0
+            or 0.55
+    end
+
+    local firstIndex =
+        (state.Page - 1)
+        * rowsPerPage
+        + 1
+
+    local now =
+        HolyMoonGetNow()
+
+    for rowIndex = 1, rowsPerPage do
+
+        local rowUI =
+            ui.Rows[rowIndex]
+
+        local prediction =
+            state.Predictions[
+                firstIndex
+                + rowIndex
+                - 1
+            ]
+
+        if type(rowUI) == "table"
+        and typeof(rowUI.Frame) == "Instance" then
+
+            if type(prediction) == "table" then
+
+                local record =
+                    HolyMoonFindWeatherRecord(
+                        prediction.Moon
+                    )
+
+                local weatherData =
+                    type(record) == "table"
+                    and record.Data
+                    or {}
+
+                rowUI.Frame.Visible =
+                    true
+
+                rowUI.Name.Text =
+                    HolyMoonDisplayName(
+                        prediction.Moon
+                    )
+
+                rowUI.Name.TextColor3 =
+                    HolyMoonColor(
+                        prediction.Moon,
+                        weatherData
+                    )
+
+                rowUI.Timer.Text =
+                    HolyMoonFormatSeconds(
+                        tonumber(
+                            prediction.StartsAt
+                        )
+                        - now
+                    )
+
+                local image =
+                    type(weatherData) == "table"
+                    and tostring(
+                        weatherData.Image
+                        or ""
+                    )
+                    or ""
+
+                rowUI.Icon.Image =
+                    image
+
+                rowUI.Icon.Visible =
+                    image ~= ""
+
+            else
+
+                rowUI.Frame.Visible =
+                    false
+            end
+        end
+    end
+
+    if typeof(ui.EmptyLabel) == "Instance" then
+
+        local hasSelection =
+            next(state.SelectedMoons)
+            ~= nil
+
+        ui.EmptyLabel.Visible =
+            resultCount <= 0
+
+        if hasSelection ~= true then
+
+            ui.EmptyLabel.Text =
+                "Select at least one moon."
+
+        elseif state.Scanning == true then
+
+            ui.EmptyLabel.Text =
+                "Finding moons..."
+
+        else
+
+            ui.EmptyLabel.Text =
+                "No matching moons found."
+        end
+    end
+
+    return true
+end
+
+function HolyMoonSetPage(value)
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local maxPage =
+        math.max(
+            1,
+            math.ceil(
+                #state.Predictions
+                / math.max(
+                    1,
+                    tonumber(state.RowsPerPage)
+                    or 6
+                )
+            )
+        )
+
+    state.Page =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 1
+            ),
+            1,
+            maxPage
+        )
+
+    HolyMoonRender()
+
+    return state.Page
+end
+
+function HolyMoonSetFilters(value)
+
+    local state =
+        HOLY_MOON_PREDICTOR_STATE
+
+    local selected =
+        {}
+
+    for _, displayName in ipairs(
+        HolyShopSelectionArray(
+            value
+        )
+    ) do
+
+        local rawName =
+            state.RawByDisplay[
+                displayName
+            ]
+
+        if rawName ~= nil then
+
+            selected[rawName] =
+                true
+        end
+    end
+
+    state.SelectedMoons =
+        selected
+
+    state.HasSavedSelection =
+        true
+
+    state.Page =
+        1
+
+    HolyMoonSaveSettings()
+
+    HolyMoonRequestBuild(
+        "filters changed"
+    )
+
+    return true
+end
+
+function HolyMoonSetAmount(value)
+
+    local amount =
+        HolyMoonReadAmount(
+            value
+        )
+
+    HOLY_MOON_PREDICTOR_STATE.Amount =
+        amount
+
+    HOLY_MOON_PREDICTOR_STATE.Page =
+        1
+
+    HolyMoonSaveSettings()
+
+    local input =
+        HOLY_MOON_PREDICTOR_UI.AmountInput
+
+    if type(input) == "table"
+    and type(input.SetValue) == "function"
+    and tostring(value) ~= tostring(amount) then
+
+        task.defer(function()
+
+            pcall(function()
+
+                input:SetValue(
+                    tostring(amount)
+                )
+            end)
+        end)
+    end
+
+    HolyMoonRequestBuild(
+        "amount changed"
+    )
+
+    return amount
+end
+
+function HolyMoonCreateTextLabel(
+    parent,
+    name,
+    position,
+    size,
+    textSize,
+    align
+)
+
+    local label =
+        Instance.new(
+            "TextLabel"
+        )
+
+    label.Name =
+        name
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.FontFace =
+        Library.Scheme.Font
+
+    label.Text =
+        ""
+
+    label.TextColor3 =
+        Library.Scheme.FontColor
+
+    label.TextSize =
+        textSize
+        or 11
+
+    label.TextXAlignment =
+        align
+        or Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function HolyMoonCreatePagerButton(
+    parent,
+    text,
+    position
+)
+
+    local button =
+        Instance.new(
+            "TextButton"
+        )
+
+    button.AutoButtonColor =
+        false
+
+    button.BackgroundColor3 =
+        Library.Scheme.MainColor
+
+    button.BackgroundTransparency =
+        0.22
+
+    button.BorderSizePixel =
+        0
+
+    button.Position =
+        position
+
+    button.Size =
+        UDim2.new(
+            0.31,
+            0,
+            1,
+            0
+        )
+
+    button.FontFace =
+        Library.Scheme.Font
+
+    button.Text =
+        text
+
+    button.TextColor3 =
+        Library.Scheme.FontColor
+
+    button.TextSize =
+        11
+
+    button.Parent =
+        parent
+
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            4
+        )
+
+    corner.Parent =
+        button
+
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    stroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    stroke.Color =
+        Library.Scheme.OutlineColor
+
+    stroke.Transparency =
+        0.24
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        button
+
+    return button
+end
+
+function HolyMoonCreateSurface()
+
+    local ui =
+        HOLY_MOON_PREDICTOR_UI
+
+    local surface =
+        Instance.new(
+            "Frame"
+        )
+
+    surface.Name =
+        "HolyMoonPredictorSurface"
+
+    surface.BackgroundTransparency =
+        1
+
+    surface.BorderSizePixel =
+        0
+
+    surface.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            240
+        )
+
+    local currentIcon =
+        Instance.new(
+            "ImageLabel"
+        )
+
+    currentIcon.Name =
+        "CurrentIcon"
+
+    currentIcon.BackgroundTransparency =
+        1
+
+    currentIcon.Position =
+        UDim2.fromOffset(
+            0,
+            1
+        )
+
+    currentIcon.Size =
+        UDim2.fromOffset(
+            20,
+            20
+        )
+
+    currentIcon.ScaleType =
+        Enum.ScaleType.Fit
+
+    currentIcon.Parent =
+        surface
+
+    local currentLabel =
+        HolyMoonCreateTextLabel(
+            surface,
+            "Current",
+            UDim2.fromOffset(
+                26,
+                0
+            ),
+            UDim2.new(
+                1,
+                -26,
+                0,
+                22
+            ),
+            11,
+            Enum.TextXAlignment.Left
+        )
+
+    currentLabel.RichText =
+        true
+
+    local header =
+        Instance.new(
+            "Frame"
+        )
+
+    header.Name =
+        "Header"
+
+    header.BackgroundColor3 =
+        Library.Scheme.MainColor
+
+    header.BackgroundTransparency =
+        0.30
+
+    header.BorderSizePixel =
+        0
+
+    header.Position =
+        UDim2.fromOffset(
+            0,
+            26
+        )
+
+    header.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            18
+        )
+
+    header.Parent =
+        surface
+
+    local headerCorner =
+        Instance.new(
+            "UICorner"
+        )
+
+    headerCorner.CornerRadius =
+        UDim.new(
+            0,
+            3
+        )
+
+    headerCorner.Parent =
+        header
+
+    local headerLabel =
+        HolyMoonCreateTextLabel(
+            header,
+            "Moon",
+            UDim2.fromOffset(
+                7,
+                0
+            ),
+            UDim2.new(
+                0.70,
+                -7,
+                1,
+                0
+            ),
+            10,
+            Enum.TextXAlignment.Left
+        )
+
+    headerLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    local headerTimer =
+        HolyMoonCreateTextLabel(
+            header,
+            "StartsIn",
+            UDim2.new(
+                0.70,
+                0,
+                0,
+                0
+            ),
+            UDim2.new(
+                0.30,
+                -7,
+                1,
+                0
+            ),
+            10,
+            Enum.TextXAlignment.Right
+        )
+
+    headerTimer.Text =
+        "Starts In"
+
+    headerTimer.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    local rows =
+        {}
+
+    for index = 1, 6 do
+
+        local row =
+            Instance.new(
+                "Frame"
+            )
+
+        row.Name =
+            "MoonRow"
+            .. tostring(index)
+
+        row.BackgroundColor3 =
+            Library.Scheme.MainColor
+
+        row.BackgroundTransparency =
+            index % 2 == 0
+            and 0.38
+            or 0.28
+
+        row.BorderSizePixel =
+            0
+
+        row.Position =
+            UDim2.fromOffset(
+                0,
+                48
+                + (index - 1) * 27
+            )
+
+        row.Size =
+            UDim2.new(
+                1,
+                0,
+                0,
+                24
+            )
+
+        row.Visible =
+            false
+
+        row.Parent =
+            surface
+
+        local rowCorner =
+            Instance.new(
+                "UICorner"
+            )
+
+        rowCorner.CornerRadius =
+            UDim.new(
+                0,
+                3
+            )
+
+        rowCorner.Parent =
+            row
+
+        local icon =
+            Instance.new(
+                "ImageLabel"
+            )
+
+        icon.Name =
+            "Icon"
+
+        icon.BackgroundTransparency =
+            1
+
+        icon.Position =
+            UDim2.fromOffset(
+                4,
+                2
+            )
+
+        icon.Size =
+            UDim2.fromOffset(
+                20,
+                20
+            )
+
+        icon.ScaleType =
+            Enum.ScaleType.Fit
+
+        icon.Parent =
+            row
+
+        local nameLabel =
+            HolyMoonCreateTextLabel(
+                row,
+                "Name",
+                UDim2.fromOffset(
+                    29,
+                    0
+                ),
+                UDim2.new(
+                    0.66,
+                    -29,
+                    1,
+                    0
+                ),
+                11,
+                Enum.TextXAlignment.Left
+            )
+
+        local timerLabel =
+            HolyMoonCreateTextLabel(
+                row,
+                "Timer",
+                UDim2.new(
+                    0.66,
+                    0,
+                    0,
+                    0
+                ),
+                UDim2.new(
+                    0.34,
+                    -7,
+                    1,
+                    0
+                ),
+                11,
+                Enum.TextXAlignment.Right
+            )
+
+        timerLabel.TextColor3 =
+            Color3.fromRGB(
+                124,
+                252,
+                0
+            )
+
+        rows[index] = {
+            Frame =
+                row,
+
+            Icon =
+                icon,
+
+            Name =
+                nameLabel,
+
+            Timer =
+                timerLabel,
+        }
+    end
+
+    local emptyLabel =
+        HolyMoonCreateTextLabel(
+            surface,
+            "Empty",
+            UDim2.fromOffset(
+                0,
+                48
+            ),
+            UDim2.new(
+                1,
+                0,
+                0,
+                159
+            ),
+            11,
+            Enum.TextXAlignment.Center
+        )
+
+    emptyLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    local pager =
+        Instance.new(
+            "Frame"
+        )
+
+    pager.Name =
+        "Pager"
+
+    pager.BackgroundTransparency =
+        1
+
+    pager.BorderSizePixel =
+        0
+
+    pager.Position =
+        UDim2.fromOffset(
+            0,
+            214
+        )
+
+    pager.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            26
+        )
+
+    pager.Parent =
+        surface
+
+    local previousButton =
+        HolyMoonCreatePagerButton(
+            pager,
+            "Previous",
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    local pageLabel =
+        HolyMoonCreateTextLabel(
+            pager,
+            "Page",
+            UDim2.new(
+                0.31,
+                4,
+                0,
+                0
+            ),
+            UDim2.new(
+                0.38,
+                -8,
+                1,
+                0
+            ),
+            11,
+            Enum.TextXAlignment.Center
+        )
+
+    local nextButton =
+        HolyMoonCreatePagerButton(
+            pager,
+            "Next",
+            UDim2.new(
+                0.69,
+                0,
+                0,
+                0
+            )
+        )
+
+    previousButton.MouseButton1Click:Connect(
+        function()
+
+            HolyMoonSetPage(
+                HOLY_MOON_PREDICTOR_STATE.Page
+                - 1
+            )
+        end
+    )
+
+    nextButton.MouseButton1Click:Connect(
+        function()
+
+            HolyMoonSetPage(
+                HOLY_MOON_PREDICTOR_STATE.Page
+                + 1
+            )
+        end
+    )
+
+    ui.Surface =
+        surface
+
+    ui.CurrentIcon =
+        currentIcon
+
+    ui.CurrentLabel =
+        currentLabel
+
+    ui.HeaderLabel =
+        headerLabel
+
+    ui.HeaderTimerLabel =
+        headerTimer
+
+    ui.EmptyLabel =
+        emptyLabel
+
+    ui.Rows =
+        rows
+
+    ui.PreviousButton =
+        previousButton
+
+    ui.PageLabel =
+        pageLabel
+
+    ui.NextButton =
+        nextButton
+
+    return surface
+end
+
+function HolyMoonBuildMainUI(groupbox)
+
+    if type(groupbox) ~= "table" then
+        return false
+    end
+
+    HolyMoonLoadSettings()
+
+    HolyMoonEnsureReady()
+
+    local filterDropdown =
+        groupbox:AddDropdown(
+            "HolyMainMoonFilters",
+            {
+                Text =
+                    "Moons to Show",
+
+                Values =
+                    HolyMoonGetFilterValues(),
+
+                Default =
+                    HolyMoonGetSelectedDisplays(),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Choose which upcoming moon types appear in the predictor.",
+            }
+        )
+
+    HOLY_MOON_PREDICTOR_UI.FilterDropdown =
+        filterDropdown
+
+    filterDropdown:OnChanged(function(value)
+
+        HolyMoonSetFilters(
+            value
+        )
+    end)
+
+    local amountInput =
+        groupbox:AddInput(
+            "HolyMainMoonAmount",
+            {
+                Text =
+                    "Moon Amount",
+
+                Default =
+                    tostring(
+                        HOLY_MOON_PREDICTOR_STATE.Amount
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Total matching upcoming moons to generate. Range: 1 to 500.",
+            }
+        )
+
+    HOLY_MOON_PREDICTOR_UI.AmountInput =
+        amountInput
+
+    amountInput:OnChanged(function(value)
+
+        HolyMoonSetAmount(
+            value
+        )
+    end)
+
+    local surface =
+        HolyMoonCreateSurface()
+
+    HOLY_MOON_PREDICTOR_UI.Passthrough =
+        groupbox:AddUIPassthrough(
+            "HolyMainMoonPredictorSurface",
+            {
+                Instance =
+                    surface,
+
+                Height =
+                    240,
+
+                Visible =
+                    true,
+            }
+        )
+
+    HolyMoonRender()
+
+    return true
+end
+
+function HolyMoonStart()
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    if runtime.Running == true then
+        return false
+    end
+
+    runtime.Running =
+        true
+
+    local token =
+        {}
+
+    runtime.Token =
+        token
+
+    HolyMoonRequestBuild(
+        "startup"
+    )
+
+    task.spawn(function()
+
+        while runtime.Token == token do
+
+            HolyMoonRender()
+
+            local state =
+                HOLY_MOON_PREDICTOR_STATE
+
+            local now =
+                HolyMoonGetNow()
+
+            local cycleInfo =
+                state.CycleInfo
+
+            if type(cycleInfo) == "table" then
+
+                local currentCycle =
+                    math.floor(
+                        now
+                        / cycleInfo.FullCycle
+                    )
+
+                local first =
+                    state.Predictions[1]
+
+                local expired =
+                    type(first) == "table"
+                    and tonumber(first.StartsAt)
+                    and tonumber(first.StartsAt) <= now
+
+                if state.Scanning ~= true
+                and (
+                    currentCycle
+                    ~= state.LastBuildCycle
+                    or expired == true
+                ) then
+
+                    HolyMoonRequestBuild(
+                        "cycle advanced"
+                    )
+                end
+            end
+
+            task.wait(
+                1
+            )
+        end
+
+        if runtime.Token == token then
+
+            runtime.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyMoonStop(reason)
+
+    local runtime =
+        HOLY_MOON_PREDICTOR_RUNTIME
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    HOLY_MOON_PREDICTOR_STATE.ScanGeneration +=
+        1
+
+    HOLY_MOON_PREDICTOR_STATE.Scanning =
+        false
+
+    return true
+end
+
+HOLY_MOON_PREDICTOR_RUNTIME.Stop =
+    HolyMoonStop
+
+--==================================================
 -- [4] WINDOW
 --==================================================
 
@@ -68183,6 +70831,14 @@ local MainLivePetsBox =
         "Main.LiveWildPets",
         "Live Wild Pets",
         "paw-print"
+    )
+
+local MainMoonPredictorBox =
+    HolyAddRightGroupbox(
+        Tabs.Main,
+        "Main.MoonPredictor",
+        "Moon Predictor",
+        "moon"
     )
 
 local ServerControlsBox =
@@ -77159,6 +79815,12 @@ HOLY_SNIPER_UI.LivePetsActions =
             },
         }
     )
+
+HolyMoonBuildMainUI(
+    MainMoonPredictorBox
+)
+
+HolyMoonStart()
 
 HolyLivePetsRefreshUI()
 HolyLivePetsStart()
