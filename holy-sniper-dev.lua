@@ -297,7 +297,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260713-auction_dialog_dropdown_v1"
+    "holy-premium-20260713-theme_transparency_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -424,6 +424,13 @@ local DEV_TOOLS = {
 HOLY_DEV_UI_STATE = {
     ShowUIOnLoad = true,
     DPIScale = 100,
+
+    ThemeName = "HOLY Red",
+    InterfaceTransparency = 0,
+    InterfaceAnimations = true,
+    ShowHolyLoadingScreen = true,
+    SettingsDashboard = "Interface",
+
     AutoSkipLoading = true,
     AntiAfk = true,
     AutoFarmMiddle = true,
@@ -2113,8 +2120,40 @@ function HolySaveUISettings()
             HOLY_DEV_UI_STATE.ShowUIOnLoad ~= true,
 
         DPIScale =
-            tonumber(HOLY_DEV_UI_STATE.DPIScale)
+            tonumber(
+                HOLY_DEV_UI_STATE.DPIScale
+            )
             or 100,
+
+        ThemeName =
+            tostring(
+                HOLY_DEV_UI_STATE.ThemeName
+                or "HOLY Red"
+            ),
+
+        InterfaceTransparency =
+            math.clamp(
+                tonumber(
+                    HOLY_DEV_UI_STATE.InterfaceTransparency
+                )
+                or 0,
+                0,
+                70
+            ),
+
+        InterfaceAnimations =
+            HOLY_DEV_UI_STATE.InterfaceAnimations
+            ~= false,
+
+        ShowHolyLoadingScreen =
+            HOLY_DEV_UI_STATE.ShowHolyLoadingScreen
+            ~= false,
+
+        SettingsDashboard =
+            tostring(
+                HOLY_DEV_UI_STATE.SettingsDashboard
+                or "Interface"
+            ),
 
         AutoSkipLoading =
             HOLY_DEV_UI_STATE.AutoSkipLoading == true,
@@ -2226,17 +2265,74 @@ function HolyLoadUISettings()
     end
 
     local scale =
-        tonumber(data.DPIScale)
+        tonumber(
+            data.DPIScale
+        )
 
     if scale then
 
         HOLY_DEV_UI_STATE.DPIScale =
             math.clamp(
-                math.floor(scale + 0.5),
+                math.floor(
+                    scale + 0.5
+                ),
                 30,
                 110
             )
     end
+
+    local themeName =
+        tostring(
+            data.ThemeName
+            or "HOLY Red"
+        )
+
+    if themeName == "Obsidian Red" then
+
+        themeName =
+            "HOLY Red"
+    end
+
+    HOLY_DEV_UI_STATE.ThemeName =
+        themeName
+
+    HOLY_DEV_UI_STATE.InterfaceTransparency =
+        math.clamp(
+            tonumber(
+                data.InterfaceTransparency
+            )
+            or 0,
+            0,
+            70
+        )
+
+    if type(data.InterfaceAnimations) == "boolean" then
+
+        HOLY_DEV_UI_STATE.InterfaceAnimations =
+            data.InterfaceAnimations
+    end
+
+    if type(data.ShowHolyLoadingScreen) == "boolean" then
+
+        HOLY_DEV_UI_STATE.ShowHolyLoadingScreen =
+            data.ShowHolyLoadingScreen
+    end
+
+    local settingsDashboard =
+        tostring(
+            data.SettingsDashboard
+            or "Interface"
+        )
+
+    if settingsDashboard ~= "Session"
+    and settingsDashboard ~= "Performance" then
+
+        settingsDashboard =
+            "Interface"
+    end
+
+    HOLY_DEV_UI_STATE.SettingsDashboard =
+        settingsDashboard
 
     if type(data.AutoSkipLoading) == "boolean" then
 
@@ -64050,6 +64146,98 @@ if type(Library) ~= "table" then
     )
 end
 
+HOLY_DEV_UI_STATE.ThemeName =
+    Library:SetTheme(
+        HOLY_DEV_UI_STATE.ThemeName
+    )
+
+Library:SetInterfaceTransparency(
+    HOLY_DEV_UI_STATE.InterfaceTransparency
+)
+
+Library:SetAnimations(
+    {
+        ToggleWindow = false,
+
+        TabSwitch =
+            HOLY_DEV_UI_STATE.InterfaceAnimations
+            ~= false,
+
+        Groupbox = false,
+        Dropdown = false,
+        KeyPicker = false,
+    },
+    0.16,
+    12,
+    "bottom"
+)
+
+local HolyStartupLoading =
+    nil
+
+local HolyStartupLoadingStartedAt =
+    os.clock()
+
+local function HolyStartupLoadingStep(
+    step,
+    message,
+    description
+)
+
+    if type(HolyStartupLoading) ~= "table" then
+        return
+    end
+
+    pcall(function()
+
+        HolyStartupLoading:SetCurrentStep(
+            step
+        )
+
+        HolyStartupLoading:SetMessage(
+            message
+        )
+
+        HolyStartupLoading:SetDescription(
+            description
+        )
+    end)
+end
+
+if HOLY_DEV_UI_STATE.ShowHolyLoadingScreen ~= false
+and type(Library.CreateLoading) == "function" then
+
+    HolyStartupLoading =
+        Library:CreateLoading({
+            Title =
+                '<font color="rgb(245,245,247)"><b>HOLY</b></font> <font color="rgb(232,45,67)"><b>PRO</b></font>',
+
+            TotalSteps =
+                4,
+
+            CurrentStep =
+                1,
+
+            WindowWidth =
+                430,
+
+            WindowHeight =
+                245,
+
+            AutoResizeHeight =
+                false,
+
+            ShowSidebar =
+                false,
+        })
+
+    HolyStartupLoadingStep(
+        1,
+        "Loading interface",
+        "Preparing HOLY PRO."
+    )
+end
+
 local Options =
     Library.Options
 
@@ -66289,6 +66477,27 @@ local Window =
         GlobalSearch =
             true,
 
+        Animations = {
+            ToggleWindow = false,
+
+            TabSwitch =
+                HOLY_DEV_UI_STATE.InterfaceAnimations
+                ~= false,
+
+            Groupbox = false,
+            Dropdown = false,
+            KeyPicker = false,
+        },
+
+        TabTransitionTime =
+            0.16,
+
+        TabSwipeOffset =
+            12,
+
+        TabSwipeFrom =
+            "bottom",
+
         EnableCompacting =
             true,
 
@@ -66301,6 +66510,12 @@ local Window =
 
 HolyApplyUIScale(
     HOLY_DEV_UI_STATE.DPIScale
+)
+
+HolyStartupLoadingStep(
+    2,
+    "Building dashboards",
+    "Creating your saved interface."
 )
 
 --==================================================
@@ -66667,12 +66882,23 @@ local VisualGardenBox =
         "sprout"
     )
 
+local SettingsModeControl =
+    nil
+
 local SettingsUIBox =
     HolyAddLeftGroupbox(
         Tabs.Settings,
         "Settings.UI",
-        "UI",
-        "sliders-horizontal"
+        "Appearance",
+        "palette"
+    )
+
+local SettingsLayoutBox =
+    HolyAddRightGroupbox(
+        Tabs.Settings,
+        "Settings.Layout",
+        "Layout",
+        "panels-top-left"
     )
 
 local SettingsSessionBox =
@@ -66684,12 +66910,18 @@ local SettingsSessionBox =
     )
 
 local SettingsPerformanceBox =
-    HolyAddRightGroupbox(
+    HolyAddLeftGroupbox(
         Tabs.Settings,
         "Settings.Performance",
         "Performance",
         "gauge"
     )
+
+HolyStartupLoadingStep(
+    3,
+    "Restoring controls",
+    "Applying saved features and preferences."
+)
 
 local DevToolsBox =
     nil
@@ -79253,6 +79485,11 @@ function HolyShopRefreshMode()
     )
 
     HolySetGroupboxVisible(
+        ShopAuctionWatchlistBox,
+        isBuy
+    )
+
+    HolySetGroupboxVisible(
         ShopSellBox,
         not isBuy
     )
@@ -82975,6 +83212,249 @@ end)
 -- [6] SETTINGS TAB
 --==================================================
 
+function HolySettingsRefreshDashboard()
+
+    local dashboard =
+        tostring(
+            HOLY_DEV_UI_STATE.SettingsDashboard
+            or "Interface"
+        )
+
+    local showInterface =
+        dashboard == "Interface"
+
+    local showSession =
+        dashboard == "Session"
+
+    local showPerformance =
+        dashboard == "Performance"
+
+    HolySetGroupboxVisible(
+        SettingsUIBox,
+        showInterface
+    )
+
+    HolySetGroupboxVisible(
+        SettingsLayoutBox,
+        showInterface
+    )
+
+    HolySetGroupboxVisible(
+        SettingsSessionBox,
+        showSession
+    )
+
+    HolySetGroupboxVisible(
+        SettingsPerformanceBox,
+        showPerformance
+    )
+end
+
+function HolySettingsSetDashboard(value)
+
+    value =
+        tostring(
+            value
+            or "Interface"
+        )
+
+    if value ~= "Session"
+    and value ~= "Performance" then
+
+        value =
+            "Interface"
+    end
+
+    HOLY_DEV_UI_STATE.SettingsDashboard =
+        value
+
+    HolySaveUISettings()
+
+    if SettingsModeControl
+    and type(SettingsModeControl.SetValue) == "function" then
+
+        SettingsModeControl:SetValue(
+            value,
+            true
+        )
+    end
+
+    HolySettingsRefreshDashboard()
+end
+
+SettingsModeControl =
+    Tabs.Settings:AddTopSegmentedControl({
+        Values = {
+            "Interface",
+            "Session",
+            "Performance",
+        },
+
+        Default =
+            HOLY_DEV_UI_STATE.SettingsDashboard,
+
+        Width =
+            390,
+
+        Height =
+            46,
+
+        PillHeight =
+            32,
+
+        Callback =
+            function(value)
+
+                HolySettingsSetDashboard(
+                    value
+                )
+            end,
+    })
+
+HolySettingsRefreshDashboard()
+
+SettingsUIBox:AddDropdown(
+    "HolyInterfaceTheme",
+    {
+        Text =
+            "Theme",
+
+        Values =
+            Library:GetThemeNames(),
+
+        Default =
+            HOLY_DEV_UI_STATE.ThemeName,
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        Tooltip =
+            "Changes the interface colors.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.ThemeName =
+        Library:SetTheme(
+            value
+        )
+
+    if type(HOLY_SHOP_STATE) == "table" then
+
+        HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+            true
+    end
+
+    HolySaveUISettings()
+end)
+
+SettingsUIBox:AddSlider(
+    "HolyInterfaceTransparency",
+    {
+        Text =
+            "Transparency",
+
+        Default =
+            HOLY_DEV_UI_STATE.InterfaceTransparency,
+
+        Min =
+            0,
+
+        Max =
+            70,
+
+        Rounding =
+            0,
+
+        Suffix =
+            "%",
+
+        HideMax =
+            true,
+
+        Tooltip =
+            "Adjusts how transparent the interface is.",
+    }
+):OnChanged(function(value)
+
+    value =
+        math.clamp(
+            tonumber(value)
+            or 0,
+            0,
+            70
+        )
+
+    HOLY_DEV_UI_STATE.InterfaceTransparency =
+        value
+
+    Library:SetInterfaceTransparency(
+        value
+    )
+
+    HolySaveUISettings()
+end)
+
+SettingsUIBox:AddToggle(
+    "HolyInterfaceAnimations",
+    {
+        Text =
+            "Interface Animations",
+
+        Default =
+            HOLY_DEV_UI_STATE.InterfaceAnimations
+            ~= false,
+
+        Tooltip =
+            "Animates dashboard and tab changes.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.InterfaceAnimations =
+        value == true
+
+    Library:SetAnimations(
+        {
+            ToggleWindow = false,
+
+            TabSwitch =
+                HOLY_DEV_UI_STATE.InterfaceAnimations,
+
+            Groupbox = false,
+            Dropdown = false,
+            KeyPicker = false,
+        },
+        0.16,
+        12,
+        "bottom"
+    )
+
+    HolySaveUISettings()
+end)
+
+SettingsUIBox:AddToggle(
+    "HolyShowLoadingScreen",
+    {
+        Text =
+            "Loading Screen",
+
+        Default =
+            HOLY_DEV_UI_STATE.ShowHolyLoadingScreen
+            ~= false,
+
+        Tooltip =
+            "Shows the HOLY loading screen when the script starts.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.ShowHolyLoadingScreen =
+        value == true
+
+    HolySaveUISettings()
+end)
+
 SettingsPerformanceBox:AddToggle(
     "HolyPerformanceMode",
     {
@@ -83177,7 +83657,7 @@ SettingsSessionBox:AddToggle(
     )
 end)
 
-SettingsUIBox:AddToggle(
+SettingsLayoutBox:AddToggle(
     "HolyDevAutoCloseUI",
     {
         Text =
@@ -83197,7 +83677,7 @@ SettingsUIBox:AddToggle(
     HolySaveUISettings()
 end)
 
-SettingsUIBox:AddDropdown(
+SettingsLayoutBox:AddDropdown(
     "HolyDevDPI",
     {
         Text =
@@ -83241,7 +83721,7 @@ SettingsUIBox:AddDropdown(
     HolySaveUISettings()
 end)
 
-SettingsUIBox:AddDropdown(
+SettingsLayoutBox:AddDropdown(
     "HolyServerFinderHudScale",
     {
         Text =
@@ -85702,6 +86182,39 @@ if HOLY_WATERING_REJOIN_STATE.Enabled == true then
 
         HolyWateringRejoinStart(
             "saved startup"
+        )
+    end)
+end
+
+HolyStartupLoadingStep(
+    4,
+    "Ready",
+    "HOLY PRO has finished loading."
+)
+
+if type(HolyStartupLoading) == "table" then
+
+    local loadingElapsed =
+        os.clock()
+        - HolyStartupLoadingStartedAt
+
+    if loadingElapsed < 0.6 then
+
+        task.wait(
+            0.6 - loadingElapsed
+        )
+    end
+
+    pcall(function()
+
+        HolyStartupLoading:Continue()
+    end)
+
+    pcall(function()
+
+        Window:Toggle(
+            HOLY_DEV_UI_STATE.ShowUIOnLoad
+            == true
         )
     end)
 end
