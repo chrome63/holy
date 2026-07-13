@@ -1250,6 +1250,8 @@ HOLY_SHOP_STATE = {
     SelectedProps = {},
 
     AutoBuyAuctions = false,
+    AuctionDryRun = true,
+
     SelectedAuctions = {},
     AuctionKnownItems = {},
 
@@ -3483,6 +3485,9 @@ function HolySaveShopSettings()
         AutoBuyAuctions =
             HOLY_SHOP_STATE.AutoBuyAuctions == true,
 
+        AuctionDryRun =
+            HOLY_SHOP_STATE.AuctionDryRun ~= false,
+
         SelectedAuctions =
             HolyShopSelectionArray(
                 HOLY_SHOP_STATE.SelectedAuctions
@@ -3782,6 +3787,17 @@ function HolyLoadShopSettings()
 
     HOLY_SHOP_STATE.AutoBuyAuctions =
         data.AutoBuyAuctions == true
+
+    if type(data.AuctionDryRun) == "boolean" then
+
+        HOLY_SHOP_STATE.AuctionDryRun =
+            data.AuctionDryRun
+
+    else
+
+        HOLY_SHOP_STATE.AuctionDryRun =
+            true
+    end
 
     HOLY_SHOP_STATE.SelectedAuctions =
         HolyShopSelectionArray(
@@ -42420,14 +42436,6 @@ function HolyAuctionFindBuyTarget()
             "Ready"
     end
 
-    if selectedBoughtOnce == true
-    and HOLY_SHOP_STATE
-        .AuctionBuyUntilSoldOut ~= true then
-
-        return nil,
-            "Bought once"
-    end
-
     if type(selectedTooExpensive) == "table" then
 
         return nil,
@@ -42447,6 +42455,14 @@ function HolyAuctionFindBuyTarget()
 
         return nil,
             "Waiting for stock"
+    end
+
+    if selectedBoughtOnce == true
+    and HOLY_SHOP_STATE
+        .AuctionBuyUntilSoldOut ~= true then
+
+        return nil,
+            "Bought once"
     end
 
     if selectedFound == true then
@@ -43044,6 +43060,24 @@ function HolyAuctionEnsureState()
     HOLY_SHOP_STATE.AuctionPendingSentAt =
         tonumber(
             HOLY_SHOP_STATE.AuctionPendingSentAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionLastSentLotId =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastSentLotId
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionLastSentName =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastSentName
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionLastSentAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionLastSentAt
         )
         or 0
 
@@ -43987,6 +44021,46 @@ function HolyAuctionApplyManifestPayload(payload, source)
         )
     end)
 
+    local previousCycle =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionManifestCycle
+        )
+
+    if previousCycle ~= nil
+    and bestCycle ~= nil
+    and previousCycle ~= bestCycle then
+
+        HOLY_SHOP_STATE.AuctionAttemptedLots =
+            {}
+
+        HOLY_SHOP_STATE.AuctionNextBuyAt =
+            0
+
+        HOLY_SHOP_STATE.AuctionNextRetryAt =
+            0
+
+        HOLY_SHOP_STATE.AuctionPendingLotId =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingPrice =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingName =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingSentAt =
+            0
+
+        HOLY_SHOP_STATE.AuctionLastSentLotId =
+            ""
+
+        HOLY_SHOP_STATE.AuctionLastSentName =
+            ""
+
+        HOLY_SHOP_STATE.AuctionLastSentAt =
+            0
+    end
+
     HOLY_SHOP_STATE.AuctionManifest =
         lots
 
@@ -44286,11 +44360,8 @@ function HolyAuctionRowStale(row, requireServerStock)
                 "stock missing"
         end
 
-        if HolyAuctionStockAge() >= 40 then
-
-            return true,
-                "stock stale"
-        end
+    local ready =
+        HOLY_SHOP_STATE.AuctionNetworkReady == true
     end
 
     return false,
@@ -44874,14 +44945,29 @@ function HolyAuctionFirePurchase(row)
     HOLY_SHOP_STATE.AuctionPendingPrice =
         price
 
-    HOLY_SHOP_STATE.AuctionPendingName =
+    local sentAt =
+        os.clock()
+
+    local sentName =
         tostring(
             finalRow.Name
             or "Auction item"
         )
 
+    HOLY_SHOP_STATE.AuctionPendingName =
+        sentName
+
     HOLY_SHOP_STATE.AuctionPendingSentAt =
-        os.clock()
+        sentAt
+
+    HOLY_SHOP_STATE.AuctionLastSentLotId =
+        lotId
+
+    HOLY_SHOP_STATE.AuctionLastSentName =
+        sentName
+
+    HOLY_SHOP_STATE.AuctionLastSentAt =
+        sentAt
 
     HOLY_SHOP_STATE.AuctionLastDecision =
         "Purchase sent: "
@@ -45209,18 +45295,18 @@ function HolyAuctionConnectPacketSignals()
             if applied == true then
 
                 HolyAuctionSetStatus(
-                    "Manifest "
-                    .. tostring(
-                        HOLY_SHOP_STATE.AuctionManifestCycle
-                    )
-                    .. " received; waiting matching stock"
+                    "Updating auctions..."
                 )
 
             else
 
-                HolyAuctionSetStatus(
-                    "Snapshot rejected: "
+                warn(
+                    "[HOLY Auction] Update rejected: "
                     .. tostring(applyReason)
+                )
+
+                HolyAuctionSetStatus(
+                    "Could not update auctions"
                 )
             end
 
@@ -45279,16 +45365,14 @@ function HolyAuctionConnectPacketSignals()
 
                     HolyAuctionSetStatus(
                         HOLY_SHOP_STATE.AuctionDryRun == true
-                        and "Network ready — safety dry run"
-                        or "Network ready — purchases armed"
+                        and "Test Mode ready"
+                        or "Auto Buy ready"
                     )
 
                 else
 
                     HolyAuctionSetStatus(
-                        tostring(
-                            HOLY_SHOP_STATE.AuctionDataMode
-                        )
+                        "Updating auctions..."
                     )
                 end
             end
@@ -45366,21 +45450,50 @@ function HolyAuctionConnectPacketSignals()
                 lotId =
                     tostring(
                         HOLY_SHOP_STATE.AuctionPendingLotId
+                        or HOLY_SHOP_STATE.AuctionLastSentLotId
                         or ""
                     )
             end
 
             local pendingName =
-                tostring(
+                HolyCleanText(
                     HOLY_SHOP_STATE.AuctionPendingName
-                    or "Auction item"
                 )
+
+            if pendingName == "" then
+
+                pendingName =
+                    HolyCleanText(
+                        HOLY_SHOP_STATE.AuctionLastSentName
+                    )
+            end
+
+            if pendingName == "" then
+
+                pendingName =
+                    "Auction item"
+            end
 
             local pendingSentAt =
                 tonumber(
                     HOLY_SHOP_STATE.AuctionPendingSentAt
                 )
-                or os.clock()
+                or 0
+
+            if pendingSentAt <= 0 then
+
+                pendingSentAt =
+                    tonumber(
+                        HOLY_SHOP_STATE.AuctionLastSentAt
+                    )
+                    or 0
+            end
+
+            if pendingSentAt <= 0 then
+
+                pendingSentAt =
+                    os.clock()
+            end
 
             if success == true then
 
@@ -45461,13 +45574,106 @@ function HolyAuctionConnectPacketSignals()
                         "Waiting for cooldown"
                     )
 
+                elseif lowerReason:find(
+                    "money",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "fund",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "currency",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "afford",
+                    1,
+                    true
+                ) then
+
+                    HOLY_SHOP_STATE.AuctionNextBuyAt =
+                        0
+
+                    HOLY_SHOP_STATE.AuctionNextRetryAt =
+                        os.clock() + 30
+
+                    HolyAuctionSetStatus(
+                        "Not enough money"
+                    )
+
+                elseif lowerReason:find(
+                    "stock",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "sold",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "expired",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "inactive",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "unavailable",
+                    1,
+                    true
+                ) then
+
+                    HOLY_SHOP_STATE.AuctionNextBuyAt =
+                        0
+
+                    HOLY_SHOP_STATE.AuctionNextRetryAt =
+                        os.clock() + 5
+
+                    HolyAuctionSetStatus(
+                        "Waiting for stock"
+                    )
+
+                elseif lowerReason:find(
+                    "price",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "mismatch",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "changed",
+                    1,
+                    true
+                ) then
+
+                    HOLY_SHOP_STATE.AuctionNextBuyAt =
+                        0
+
+                    HOLY_SHOP_STATE.AuctionNextRetryAt =
+                        os.clock() + 1
+
+                    HolyAuctionSetStatus(
+                        "Price changed"
+                    )
+
                 else
 
                     HOLY_SHOP_STATE.AuctionNextBuyAt =
                         0
 
                     HOLY_SHOP_STATE.AuctionNextRetryAt =
-                        os.clock() + 2
+                        os.clock() + 5
 
                     HolyAuctionSetStatus(
                         "Purchase failed"
@@ -45486,6 +45692,21 @@ function HolyAuctionConnectPacketSignals()
 
             HOLY_SHOP_STATE.AuctionPendingSentAt =
                 0
+
+            if lotId == ""
+            or tostring(
+                HOLY_SHOP_STATE.AuctionLastSentLotId
+            ) == lotId then
+
+                HOLY_SHOP_STATE.AuctionLastSentLotId =
+                    ""
+
+                HOLY_SHOP_STATE.AuctionLastSentName =
+                    ""
+
+                HOLY_SHOP_STATE.AuctionLastSentAt =
+                    0
+            end
 
             task.defer(function()
 
@@ -81796,6 +82017,9 @@ ShopAuctionBox:AddToggle(
     HOLY_SHOP_STATE.AutoBuyAuctions =
         value == true
 
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
     HolySaveShopSettings()
 
     if HOLY_SHOP_STATE.AutoBuyAuctions == true then
@@ -81834,7 +82058,7 @@ ShopAuctionBox:AddToggle(
             "Test Mode",
 
         Default =
-            true,
+            HOLY_SHOP_STATE.AuctionDryRun ~= false,
 
         Tooltip =
             "Shows what Auto Buy would purchase without spending anything.",
@@ -81843,9 +82067,6 @@ ShopAuctionBox:AddToggle(
 
     HOLY_SHOP_STATE.AuctionDryRun =
         value == true
-
-    HOLY_SHOP_STATE.AuctionNextBuyAt =
-        0
 
     HOLY_SHOP_STATE.AuctionNextRetryAt =
         0
@@ -81861,6 +82082,8 @@ ShopAuctionBox:AddToggle(
 
     HOLY_SHOP_STATE.AuctionPendingSentAt =
         0
+
+    HolySaveShopSettings()
 
     HolyAuctionSetStatus(
         HOLY_SHOP_STATE.AuctionDryRun == true
@@ -81909,6 +82132,9 @@ HOLY_SHOP_UI.AuctionDropdown:OnChanged(function(value)
             value
         )
 
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
     HolySaveShopSettings()
 
     HolyAuctionRefreshUI()
@@ -81952,6 +82178,9 @@ ShopAuctionBox:AddInput(
 
     HOLY_SHOP_STATE.AuctionMaxPrice =
         tostring(value or "0")
+
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
 
     HolySaveShopSettings()
 
