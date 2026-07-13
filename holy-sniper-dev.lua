@@ -40182,6 +40182,9 @@ function HolyAuctionHudButton(parent, text, x, y, w, h)
                 BorderSizePixel =
                     0,
 
+                ClipsDescendants =
+                    true,
+
                 Position =
                     UDim2.fromOffset(
                         x,
@@ -44878,7 +44881,7 @@ function HolyAuctionHudCreateUI()
     HOLY_AUCTION_HUD.StatusLabel =
         HolyAuctionHudLabel(
             body,
-            "Waiting for packet 335",
+            "Loading auctions...",
             12,
             41,
             366,
@@ -45108,6 +45111,22 @@ function HolyAuctionHudRefresh(rows)
             HOLY_SHOP_STATE.AuctionMaxPrice
             or "0"
         )
+    
+
+    if HOLY_SHOP_STATE.AuctionHudMinimized ~= true then
+
+        local visibleRows =
+            math.min(
+                4,
+                #rows
+            )
+
+        hud.Holder.Size =
+            UDim2.fromOffset(
+                390,
+                104 + (visibleRows * 31)
+            )
+    end
 
     if typeof(hud.AutoBadge) == "Instance" then
 
@@ -45147,10 +45166,10 @@ function HolyAuctionHudRefresh(rows)
             ready
             and (
                 HOLY_SHOP_STATE.AuctionDryRun == true
-                and "NETWORK READY · DRY RUN"
-                or "NETWORK READY · ARMED"
+                and "TEST MODE"
+                or "READY"
             )
-            or "SYNCING MANIFEST + STOCK"
+            or "LOADING AUCTIONS"
 
         hud.SyncLabel.TextColor3 =
             ready
@@ -67005,6 +67024,9 @@ local DevErrorBox =
 local DevDataBox =
     nil
 
+local DevAuctionBox =
+    nil
+
 if Tabs.Dev then
 
     DevToolsBox =
@@ -67053,6 +67075,14 @@ if Tabs.Dev then
             "Dev.DataInspector",
             "Data Inspector",
             "braces"
+        )
+
+    DevAuctionBox =
+        HolyAddLeftGroupbox(
+            Tabs.Dev,
+            "Dev.AuctionInspector",
+            "Auction Inspector",
+            "shopping-basket"
         )
 end
 
@@ -79818,7 +79848,7 @@ ShopAuctionBox:AddToggle(
             HOLY_SHOP_STATE.AutoBuyAuctions == true,
 
         Tooltip =
-            "Uses packet 335 manifest data, packet 336 stock, and Auctioneer.CurrentPrice. It never reads the Auction GUI.",
+            "Automatically buys selected auction items at or below your Max Price.",
     }
 ):OnChanged(function(value)
 
@@ -79860,13 +79890,13 @@ ShopAuctionBox:AddToggle(
     "HolyShopAuctionDryRun",
     {
         Text =
-            "Safety Dry Run",
+            "Test Mode",
 
         Default =
             true,
 
         Tooltip =
-            "ON performs every selection, stock, cycle, and price check but never fires PurchaseLot. Turn this off only after verifying an ELIGIBLE result.",
+            "Shows what Auto Buy would purchase without spending anything.",
     }
 ):OnChanged(function(value)
 
@@ -79912,7 +79942,7 @@ HOLY_SHOP_UI.AuctionDropdown =
                 8,
 
             Tooltip =
-                "Dynamic list from auction-capable modules plus any live auction item the script sees.",
+                "Choose which auction items to buy.",
         }
     )
 
@@ -79960,7 +79990,7 @@ ShopAuctionBox:AddInput(
             false,
 
         Tooltip =
-            "Only buys when the live auction price is at or below this price. Supports K/M/B. 0 disables buying.",
+            "The most you are willing to pay for an auction item.",
     }
 ):OnChanged(function(value)
 
@@ -80004,7 +80034,7 @@ ShopAuctionBox:AddInput(
             false,
 
         Tooltip =
-            "Auctioneer purchase cooldown is 10s by flag, so 10 is safest.",
+            "How long to wait between auction purchases.",
     }
 ):OnChanged(function(value)
 
@@ -80024,7 +80054,7 @@ ShopAuctionBox:AddToggle(
             HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= false,
 
         Tooltip =
-            "ON = keep buying selected lots every cooldown until sold out/expired. OFF = one buy attempt per lot.",
+            "Keeps buying selected items until they are sold out.",
     }
 ):OnChanged(function(value)
 
@@ -80044,7 +80074,7 @@ ShopAuctionBox:AddToggle(
             HOLY_SHOP_STATE.AuctionHudEnabled == true,
 
         Tooltip =
-            "Shows the compact networking HUD. The original Auction GUI can remain completely closed.",
+            "Shows a small auction status window.",
     }
 ):OnChanged(function(value)
 
@@ -80085,7 +80115,7 @@ ShopAuctionBox:AddDropdown(
             6,
 
         Tooltip =
-            "Changes the Live Auction HUD size.",
+            "Changes the size of the auction status window.",
     }
 ):OnChanged(function(value)
 
@@ -80120,7 +80150,7 @@ HolyAuctionButtons:AddButton({
         "Buy Once",
 
     Tooltip =
-        "Attempts one safe buy for the best selected live auction lot. Requires selected item, desired price, fresh server stock, and price <= desired.",
+        "Buys one selected auction item when it is within your Max Price.",
 
     Func =
         function()
@@ -82270,6 +82300,1518 @@ SettingsUIBox:AddDropdown(
     )
 end)
 
+
+
+--==================================================
+-- [6.95] PASSIVE AUCTION BOOTSTRAP INSPECTOR
+--==================================================
+
+function HolyDevAuctionReadPrimitive(value)
+
+    local valueType =
+        type(value)
+
+    if valueType == "string"
+    or valueType == "number"
+    or valueType == "boolean" then
+
+        return value
+    end
+
+    return nil
+end
+
+function HolyDevAuctionSanitizeItem(value)
+
+    local primitive =
+        HolyDevAuctionReadPrimitive(
+            value
+        )
+
+    if primitive ~= nil then
+        return primitive
+    end
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    return {
+        Name =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "name")
+                or rawget(value, "Name")
+                or rawget(value, "displayName")
+                or rawget(value, "DisplayName")
+            ),
+
+        Id =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "id")
+                or rawget(value, "Id")
+                or rawget(value, "itemId")
+                or rawget(value, "ItemId")
+            ),
+
+        Type =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "type")
+                or rawget(value, "Type")
+                or rawget(value, "category")
+                or rawget(value, "Category")
+            ),
+    }
+end
+
+function HolyDevAuctionReadLot(value)
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local lotId =
+        HolyDevAuctionReadPrimitive(
+            rawget(value, "lotId")
+            or rawget(value, "LotId")
+            or rawget(value, "lotID")
+            or rawget(value, "LotID")
+        )
+
+    lotId =
+        tostring(
+            lotId
+            or ""
+        )
+
+    if lotId:match(
+        "^auction:%d+:%d+$"
+    ) == nil then
+
+        return nil
+    end
+
+    local score =
+        0
+
+    for _, key in ipairs({
+        "rolledAt",
+        "startPrice",
+        "minPrice",
+        "expiresAt",
+        "displayName",
+        "listingId",
+        "decrementPercent",
+        "decrementIntervalSeconds",
+    }) do
+
+        if rawget(value, key) ~= nil then
+
+            score +=
+                1
+        end
+    end
+
+    if score <= 0 then
+        return nil
+    end
+
+    local displayName =
+        HolyDevAuctionReadPrimitive(
+            rawget(value, "displayName")
+            or rawget(value, "DisplayName")
+            or rawget(value, "name")
+            or rawget(value, "Name")
+        )
+
+    return {
+        LotId =
+            lotId,
+
+        Cycle =
+            HolyAuctionExtractCycle(
+                lotId
+            ),
+
+        Slot =
+            HolyAuctionExtractSlot(
+                lotId
+            ),
+
+        DisplayName =
+            displayName,
+
+        ListingId =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "listingId")
+                or rawget(value, "ListingId")
+            ),
+
+        Category =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "category")
+                or rawget(value, "Category")
+            ),
+
+        Count =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "count")
+                or rawget(value, "Count")
+            ),
+
+        StockQuantity =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "stockQuantity")
+                or rawget(value, "StockQuantity")
+            ),
+
+        RolledAt =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "rolledAt")
+                or rawget(value, "RolledAt")
+            ),
+
+        ExpiresAt =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "expiresAt")
+                or rawget(value, "ExpiresAt")
+            ),
+
+        StartPrice =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "startPrice")
+                or rawget(value, "StartPrice")
+            ),
+
+        MinPrice =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "minPrice")
+                or rawget(value, "MinPrice")
+            ),
+
+        DecrementPercent =
+            HolyDevAuctionReadPrimitive(
+                rawget(value, "decrementPercent")
+                or rawget(value, "DecrementPercent")
+            ),
+
+        DecrementIntervalSeconds =
+            HolyDevAuctionReadPrimitive(
+                rawget(
+                    value,
+                    "decrementIntervalSeconds"
+                )
+                or rawget(
+                    value,
+                    "DecrementIntervalSeconds"
+                )
+            ),
+
+        Item =
+            HolyDevAuctionSanitizeItem(
+                rawget(value, "item")
+                or rawget(value, "Item")
+            ),
+    }
+end
+
+function HolyDevAuctionTableLooksRelevant(value)
+
+    if type(value) ~= "table" then
+        return false
+    end
+
+    if HolyDevAuctionReadLot(value) ~= nil then
+        return true
+    end
+
+    for _, key in ipairs({
+        "manifest",
+        "Manifest",
+        "lots",
+        "Lots",
+        "auctionLots",
+        "AuctionLots",
+        "currentAuctions",
+        "CurrentAuctions",
+        "auction",
+        "Auction",
+    }) do
+
+        if type(
+            rawget(
+                value,
+                key
+            )
+        ) == "table" then
+
+            return true
+        end
+    end
+
+    local cursor =
+        nil
+
+    for _ = 1, 24 do
+
+        local ok,
+            key,
+            child =
+            pcall(
+                next,
+                value,
+                cursor
+            )
+
+        if ok ~= true
+        or key == nil then
+
+            break
+        end
+
+        cursor =
+            key
+
+        if type(child) == "table"
+        and HolyDevAuctionReadLot(child) ~= nil then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDevAuctionScanTree(
+    value,
+    path,
+    output,
+    visited,
+    depth,
+    budget
+)
+
+    if type(value) ~= "table" then
+        return
+    end
+
+    output =
+        type(output) == "table"
+        and output
+        or {}
+
+    visited =
+        type(visited) == "table"
+        and visited
+        or {}
+
+    budget =
+        type(budget) == "table"
+        and budget
+        or {
+            Nodes = 0,
+            Maximum = 6000,
+        }
+
+    if visited[value] == true
+    or budget.Nodes >= budget.Maximum then
+
+        return
+    end
+
+    visited[value] =
+        true
+
+    budget.Nodes +=
+        1
+
+    local lot =
+        HolyDevAuctionReadLot(
+            value
+        )
+
+    if type(lot) == "table" then
+
+        local lotId =
+            tostring(
+                lot.LotId
+            )
+
+        if output[lotId] == nil then
+
+            output[lotId] = {
+                Path =
+                    tostring(path or "Root"),
+
+                Data =
+                    lot,
+            }
+        end
+    end
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    if depth <= 0 then
+        return
+    end
+
+    local cursor =
+        nil
+
+    local childCount =
+        0
+
+    while childCount < 500
+    and budget.Nodes < budget.Maximum do
+
+        local ok,
+            key,
+            child =
+            pcall(
+                next,
+                value,
+                cursor
+            )
+
+        if ok ~= true
+        or key == nil then
+
+            break
+        end
+
+        cursor =
+            key
+
+        childCount +=
+            1
+
+        if type(child) == "table" then
+
+            local childKey =
+                tostring(key)
+
+            if #childKey > 80 then
+
+                childKey =
+                    childKey:sub(
+                        1,
+                        80
+                    )
+            end
+
+            HolyDevAuctionScanTree(
+                child,
+                tostring(path or "Root")
+                    .. "."
+                    .. childKey,
+                output,
+                visited,
+                depth - 1,
+                budget
+            )
+        end
+    end
+end
+
+function HolyDevAuctionSortedLots(lotsById)
+
+    local rows =
+        {}
+
+    for _, row in pairs(
+        lotsById
+        or {}
+    ) do
+
+        rows[#rows + 1] =
+            row
+    end
+
+    table.sort(rows, function(a, b)
+
+        local cycleA =
+            tonumber(
+                a.Data
+                and a.Data.Cycle
+            )
+            or 0
+
+        local cycleB =
+            tonumber(
+                b.Data
+                and b.Data.Cycle
+            )
+            or 0
+
+        if cycleA ~= cycleB then
+
+            return cycleA > cycleB
+        end
+
+        return (
+            tonumber(
+                a.Data
+                and a.Data.Slot
+            )
+            or 999
+        ) < (
+            tonumber(
+                b.Data
+                and b.Data.Slot
+            )
+            or 999
+        )
+    end)
+
+    return rows
+end
+
+function HolyDevAuctionSourceSignature(rows)
+
+    local ids =
+        {}
+
+    for _, row in ipairs(rows or {}) do
+
+        ids[#ids + 1] =
+            tostring(
+                row.Data
+                and row.Data.LotId
+                or ""
+            )
+    end
+
+    table.sort(ids)
+
+    return table.concat(
+        ids,
+        "|"
+    )
+end
+
+function HolyDevAuctionDominantCycle(rows)
+
+    local counts =
+        {}
+
+    local bestCycle =
+        nil
+
+    local bestCount =
+        0
+
+    for _, row in ipairs(rows or {}) do
+
+        local cycle =
+            tonumber(
+                row.Data
+                and row.Data.Cycle
+            )
+
+        if cycle ~= nil then
+
+            counts[cycle] =
+                (
+                    counts[cycle]
+                    or 0
+                )
+                + 1
+
+            if counts[cycle] > bestCount then
+
+                bestCycle =
+                    cycle
+
+                bestCount =
+                    counts[cycle]
+            end
+        end
+    end
+
+    return bestCycle,
+        bestCount
+end
+
+function HolyDevAuctionAddSource(
+    report,
+    kind,
+    name,
+    lotsById
+)
+
+    local rows =
+        HolyDevAuctionSortedLots(
+            lotsById
+        )
+
+    if #rows <= 0 then
+        return false
+    end
+
+    local signature =
+        HolyDevAuctionSourceSignature(
+            rows
+        )
+
+    report.SourceSignatures =
+        type(report.SourceSignatures) == "table"
+        and report.SourceSignatures
+        or {}
+
+    if report.SourceSignatures[signature] == true then
+
+        return false
+    end
+
+    report.SourceSignatures[signature] =
+        true
+
+    local cycle,
+        cycleCount =
+        HolyDevAuctionDominantCycle(
+            rows
+        )
+
+    local source = {
+        Kind =
+            tostring(kind or "Unknown"),
+
+        Name =
+            tostring(name or "Unknown"),
+
+        LotCount =
+            #rows,
+
+        DominantCycle =
+            cycle,
+
+        DominantCycleCount =
+            cycleCount,
+
+        CompleteCandidate =
+            cycleCount >= 5,
+
+        Lots =
+            rows,
+    }
+
+    report.Sources[#report.Sources + 1] =
+        source
+
+    if source.CompleteCandidate == true then
+
+        report.CompleteSources +=
+            1
+    end
+
+    if report.BestSource == nil
+    or source.DominantCycleCount
+        > report.BestSource.DominantCycleCount then
+
+        report.BestSource = {
+            Kind =
+                source.Kind,
+
+            Name =
+                source.Name,
+
+            LotCount =
+                source.LotCount,
+
+            DominantCycle =
+                source.DominantCycle,
+
+            DominantCycleCount =
+                source.DominantCycleCount,
+        }
+    end
+
+    return true
+end
+
+function HolyDevAuctionMergeLooseLots(
+    looseLots,
+    lotsById,
+    sourceName
+)
+
+    for lotId, row in pairs(
+        lotsById
+        or {}
+    ) do
+
+        if looseLots[lotId] == nil then
+
+            looseLots[lotId] = {
+                Path =
+                    tostring(sourceName)
+                    .. ":"
+                    .. tostring(row.Path),
+
+                Data =
+                    row.Data,
+            }
+        end
+    end
+end
+
+function HolyDevAuctionGetFunctionInfo(callback)
+
+    if type(callback) ~= "function" then
+
+        return "",
+            ""
+    end
+
+    local source =
+        ""
+
+    local name =
+        ""
+
+    if type(debug) == "table"
+    and type(debug.info) == "function" then
+
+        pcall(function()
+
+            source =
+                tostring(
+                    debug.info(
+                        callback,
+                        "s"
+                    )
+                    or ""
+                )
+
+            name =
+                tostring(
+                    debug.info(
+                        callback,
+                        "n"
+                    )
+                    or ""
+                )
+        end)
+
+    elseif type(debug) == "table"
+    and type(debug.getinfo) == "function" then
+
+        pcall(function()
+
+            local info =
+                debug.getinfo(
+                    callback
+                )
+
+            if type(info) == "table" then
+
+                source =
+                    tostring(
+                        info.source
+                        or info.short_src
+                        or ""
+                    )
+
+                name =
+                    tostring(
+                        info.name
+                        or ""
+                    )
+            end
+        end)
+    end
+
+    return source,
+        name
+end
+
+function HolyDevAuctionGetUpvalues(callback)
+
+    if type(callback) ~= "function" then
+        return nil
+    end
+
+    if type(getupvalues) == "function" then
+
+        local ok,
+            values =
+            pcall(
+                getupvalues,
+                callback
+            )
+
+        if ok == true
+        and type(values) == "table" then
+
+            return values
+        end
+    end
+
+    if type(debug) == "table"
+    and type(debug.getupvalues) == "function" then
+
+        local ok,
+            values =
+            pcall(
+                debug.getupvalues,
+                callback
+            )
+
+        if ok == true
+        and type(values) == "table" then
+
+            return values
+        end
+    end
+
+    if type(debug) == "table"
+    and type(debug.getupvalue) == "function" then
+
+        local values =
+            {}
+
+        for index = 1, 80 do
+
+            local ok,
+                upvalueName,
+                upvalue =
+                pcall(
+                    debug.getupvalue,
+                    callback,
+                    index
+                )
+
+            if ok ~= true
+            or upvalueName == nil then
+
+                break
+            end
+
+            values[
+                tostring(upvalueName)
+            ] =
+                upvalue
+        end
+
+        return values
+    end
+
+    return nil
+end
+
+function HolyDevAuctionScanFunction(
+    report,
+    looseLots,
+    callback,
+    sourceName
+)
+
+    if type(callback) ~= "function" then
+        return false
+    end
+
+    local upvalues =
+        HolyDevAuctionGetUpvalues(
+            callback
+        )
+
+    if type(upvalues) ~= "table" then
+        return false
+    end
+
+    local lots =
+        {}
+
+    HolyDevAuctionScanTree(
+        upvalues,
+        "Upvalues",
+        lots,
+        {},
+        6,
+        {
+            Nodes = 0,
+            Maximum = 5000,
+        }
+    )
+
+    HolyDevAuctionMergeLooseLots(
+        looseLots,
+        lots,
+        sourceName
+    )
+
+    if next(lots) ~= nil then
+
+        HolyDevAuctionAddSource(
+            report,
+            "Function upvalues",
+            sourceName,
+            lots
+        )
+
+        return true
+    end
+
+    return false
+end
+
+function HolyDevAuctionScanGuiConnections(
+    report,
+    looseLots
+)
+
+    if type(getconnections) ~= "function" then
+
+        report.Capabilities.GuiConnections =
+            false
+
+        return 0
+    end
+
+    report.Capabilities.GuiConnections =
+        true
+
+    local auctionGui =
+        HolyAuctionFindAuctionGui()
+
+    if typeof(auctionGui) ~= "Instance" then
+
+        return 0
+    end
+
+    local inspected =
+        0
+
+    for _, object in ipairs(
+        auctionGui:GetDescendants()
+    ) do
+
+        if object:IsA("GuiButton") then
+
+            for _, signalName in ipairs({
+                "Activated",
+                "MouseButton1Click",
+            }) do
+
+                local signal =
+                    nil
+
+                pcall(function()
+
+                    signal =
+                        object[signalName]
+                end)
+
+                if signal ~= nil then
+
+                    local ok,
+                        connections =
+                        pcall(
+                            getconnections,
+                            signal
+                        )
+
+                    if ok == true
+                    and type(connections) == "table" then
+
+                        for _, connection in ipairs(connections) do
+
+                            local callback =
+                                nil
+
+                            pcall(function()
+
+                                callback =
+                                    connection.Function
+                                    or connection.Callback
+                            end)
+
+                            if type(callback) == "function" then
+
+                                inspected +=
+                                    1
+
+                                HolyDevAuctionScanFunction(
+                                    report,
+                                    looseLots,
+                                    callback,
+                                    HolyDevGetFullName(object)
+                                        .. "."
+                                        .. signalName
+                                )
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return inspected
+end
+
+function HolyDevAuctionScanLoadedModules(
+    report,
+    looseLots
+)
+
+    if type(getloadedmodules) ~= "function" then
+
+        report.Capabilities.LoadedModules =
+            false
+
+        return 0
+    end
+
+    report.Capabilities.LoadedModules =
+        true
+
+    local ok,
+        modules =
+        pcall(
+            getloadedmodules
+        )
+
+    if ok ~= true
+    or type(modules) ~= "table" then
+
+        return 0
+    end
+
+    local inspected =
+        0
+
+    for _, module in ipairs(modules) do
+
+        if typeof(module) == "Instance"
+        and module:IsA("ModuleScript") then
+
+            local fullName =
+                HolyDevGetFullName(
+                    module
+                )
+
+            local lower =
+                fullName:lower()
+
+            if lower:find(
+                "auction",
+                1,
+                true
+            ) then
+
+                local requireOk,
+                    result =
+                    pcall(
+                        require,
+                        module
+                    )
+
+                if requireOk == true
+                and type(result) == "table" then
+
+                    inspected +=
+                        1
+
+                    local lots =
+                        {}
+
+                    HolyDevAuctionScanTree(
+                        result,
+                        "Module",
+                        lots,
+                        {},
+                        7,
+                        {
+                            Nodes = 0,
+                            Maximum = 8000,
+                        }
+                    )
+
+                    HolyDevAuctionMergeLooseLots(
+                        looseLots,
+                        lots,
+                        fullName
+                    )
+
+                    HolyDevAuctionAddSource(
+                        report,
+                        "Loaded module",
+                        fullName,
+                        lots
+                    )
+                end
+            end
+        end
+    end
+
+    return inspected
+end
+
+function HolyDevAuctionScanGarbageCollector(
+    report,
+    looseLots
+)
+
+    if type(getgc) ~= "function" then
+
+        report.Capabilities.GarbageCollector =
+            false
+
+        return 0
+    end
+
+    report.Capabilities.GarbageCollector =
+        true
+
+    local ok,
+        values =
+        pcall(
+            getgc,
+            true
+        )
+
+    if ok ~= true
+    or type(values) ~= "table" then
+
+        return 0
+    end
+
+    local inspected =
+        0
+
+    local maximum =
+        math.min(
+            #values,
+            30000
+        )
+
+    for index = 1, maximum do
+
+        local value =
+            values[index]
+
+        if type(value) == "table"
+        and HolyDevAuctionTableLooksRelevant(
+            value
+        ) == true then
+
+            inspected +=
+                1
+
+            local lots =
+                {}
+
+            HolyDevAuctionScanTree(
+                value,
+                "GC",
+                lots,
+                {},
+                5,
+                {
+                    Nodes = 0,
+                    Maximum = 4000,
+                }
+            )
+
+            HolyDevAuctionMergeLooseLots(
+                looseLots,
+                lots,
+                "GC table "
+                    .. tostring(index)
+            )
+
+            HolyDevAuctionAddSource(
+                report,
+                "Memory table",
+                "Table "
+                    .. tostring(index),
+                lots
+            )
+
+        elseif type(value) == "function" then
+
+            local source,
+                name =
+                HolyDevAuctionGetFunctionInfo(
+                    value
+                )
+
+            local label =
+                (
+                    tostring(source)
+                    .. " "
+                    .. tostring(name)
+                ):lower()
+
+            if label:find(
+                "auction",
+                1,
+                true
+            ) then
+
+                inspected +=
+                    1
+
+                HolyDevAuctionScanFunction(
+                    report,
+                    looseLots,
+                    value,
+                    source ~= ""
+                    and source
+                    or (
+                        "Function "
+                        .. tostring(index)
+                    )
+                )
+            end
+        end
+
+        if index % 400 == 0 then
+
+            HolyDevSetStatus(
+                "AuctionBootstrapStatusLabel",
+                "Scanning current auction data..."
+            )
+
+            task.wait()
+        end
+    end
+
+    report.GarbageCollectorValues =
+        maximum
+
+    return inspected
+end
+
+function HolyDevRunAuctionBootstrapInspector()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.AuctionBootstrapRunning == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Auction scan is already running.",
+            4
+        )
+
+        return false
+    end
+
+    runtime.AuctionBootstrapRunning =
+        true
+
+    HolyDevSetStatus(
+        "AuctionBootstrapStatusLabel",
+        "Scanning current auction data..."
+    )
+
+    task.spawn(function()
+
+        local startedClock =
+            os.clock()
+
+        local report = {
+            Version =
+                "HOLY_AUCTION_BOOTSTRAP_INSPECTOR_V1",
+
+            PlaceId =
+                game.PlaceId,
+
+            PlaceVersion =
+                nil,
+
+            JobId =
+                game.JobId,
+
+            StartedAt =
+                os.time(),
+
+            FinishedAt =
+                nil,
+
+            Runtime =
+                0,
+
+            Safety = {
+                Passive =
+                    true,
+
+                PurchaseCallsMade =
+                    0,
+
+                PacketsFired =
+                    0,
+
+                AuctionGuiChanged =
+                    false,
+            },
+
+            Capabilities = {},
+
+            CurrentState = {
+                ManifestCount =
+                    type(
+                        HOLY_SHOP_STATE.AuctionManifest
+                    ) == "table"
+                    and #HOLY_SHOP_STATE.AuctionManifest
+                    or 0,
+
+                ManifestCycle =
+                    HOLY_SHOP_STATE.AuctionManifestCycle,
+
+                StockCycle =
+                    HolyAuctionGetStockCycle(),
+
+                StockCount =
+                    0,
+
+                NetworkReady =
+                    HOLY_SHOP_STATE.AuctionNetworkReady == true,
+            },
+
+            Inspected = {
+                LoadedModules =
+                    0,
+
+                GuiCallbacks =
+                    0,
+
+                MemoryObjects =
+                    0,
+            },
+
+            CompleteSources =
+                0,
+
+            Sources = {},
+
+            BestSource =
+                nil,
+
+            SourceSignatures = {},
+        }
+
+        pcall(function()
+
+            report.PlaceVersion =
+                game.PlaceVersion
+        end)
+
+        for _ in pairs(
+            HOLY_SHOP_STATE.AuctionStockMap
+            or {}
+        ) do
+
+            report.CurrentState.StockCount +=
+                1
+        end
+
+        local looseLots =
+            {}
+
+        local currentLots =
+            {}
+
+        HolyDevAuctionScanTree(
+            HOLY_SHOP_STATE.AuctionManifest,
+            "CurrentManifest",
+            currentLots,
+            {},
+            7,
+            {
+                Nodes = 0,
+                Maximum = 8000,
+            }
+        )
+
+        HolyDevAuctionMergeLooseLots(
+            looseLots,
+            currentLots,
+            "Current state"
+        )
+
+        HolyDevAuctionAddSource(
+            report,
+            "Current state",
+            "Auction manifest",
+            currentLots
+        )
+
+        local cache =
+            HolyDevReadJson(
+                HOLY_AUCTION_MANIFEST_CACHE_FILE
+            )
+
+        if type(cache) == "table" then
+
+            local cacheLots =
+                {}
+
+            HolyDevAuctionScanTree(
+                cache,
+                "Cache",
+                cacheLots,
+                {},
+                7,
+                {
+                    Nodes = 0,
+                    Maximum = 8000,
+                }
+            )
+
+            HolyDevAuctionMergeLooseLots(
+                looseLots,
+                cacheLots,
+                "Saved cache"
+            )
+
+            HolyDevAuctionAddSource(
+                report,
+                "Saved cache",
+                HOLY_AUCTION_MANIFEST_CACHE_FILE,
+                cacheLots
+            )
+        end
+
+        report.Inspected.LoadedModules =
+            HolyDevAuctionScanLoadedModules(
+                report,
+                looseLots
+            )
+
+        report.Inspected.GuiCallbacks =
+            HolyDevAuctionScanGuiConnections(
+                report,
+                looseLots
+            )
+
+        report.Inspected.MemoryObjects =
+            HolyDevAuctionScanGarbageCollector(
+                report,
+                looseLots
+            )
+
+        HolyDevAuctionAddSource(
+            report,
+            "Combined memory",
+            "All unique discovered lots",
+            looseLots
+        )
+
+        local uniqueLots =
+            HolyDevAuctionSortedLots(
+                looseLots
+            )
+
+        report.UniqueLotCount =
+            #uniqueLots
+
+        report.UniqueLots =
+            uniqueLots
+
+        report.SourceCount =
+            #report.Sources
+
+        report.SourceSignatures =
+            nil
+
+        report.FinishedAt =
+            os.time()
+
+        report.Runtime =
+            os.clock()
+            - startedClock
+
+        runtime.LastAuctionBootstrapReport =
+            report
+
+        runtime.AuctionBootstrapRunning =
+            false
+
+        local copied =
+            HolyDevCopyReport(
+                report
+            )
+
+        local status =
+            tostring(report.UniqueLotCount)
+            .. " current lots found"
+
+        if report.CompleteSources > 0 then
+
+            status =
+                status
+                .. " — usable source found"
+
+        else
+
+            status =
+                status
+                .. " — no complete source yet"
+        end
+
+        if copied == true then
+
+            status =
+                status
+                .. " — copied"
+        end
+
+        HolyDevSetStatus(
+            "AuctionBootstrapStatusLabel",
+            status
+        )
+
+        HolyNotify(
+            "HOLY Dev",
+            status,
+            6
+        )
+    end)
+
+    return true
+end
+
+function HolyDevCopyAuctionBootstrapResult()
+
+    local report =
+        HOLY_DEV_SUITE_RUNTIME
+        and HOLY_DEV_SUITE_RUNTIME
+            .LastAuctionBootstrapReport
+
+    if type(report) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Run the auction scan first.",
+            4
+        )
+
+        return false
+    end
+
+    local copied =
+        HolyDevCopyReport(
+            report
+        )
+
+    if copied == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Auction scan copied.",
+            4
+        )
+    end
+
+    return copied
+end
+
+
 --==================================================
 -- [7] DEV TAB
 --==================================================
@@ -82662,6 +84204,44 @@ if DevDataBox then
             end,
     })
 end
+
+if DevAuctionBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.AuctionBootstrapStatusLabel =
+        HolySniperAddLabel(
+            DevAuctionBox,
+            "Ready to scan."
+        )
+
+    DevAuctionBox:AddButton({
+        Text =
+            "Scan Auction Data",
+
+        Tooltip =
+            "Searches for the current auction list without buying anything.",
+
+        Func =
+            function()
+
+                HolyDevRunAuctionBootstrapInspector()
+            end,
+    })
+
+    DevAuctionBox:AddButton({
+        Text =
+            "Copy Last Result",
+
+        Tooltip =
+            "Copies the latest auction scan.",
+
+        Func =
+            function()
+
+                HolyDevCopyAuctionBootstrapResult()
+            end,
+    })
+end
+
 
 if Tabs.Dev then
 
