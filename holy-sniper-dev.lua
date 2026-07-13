@@ -68244,9 +68244,25 @@ local SniperWatchlistBox =
 local ServerSniperBox =
     HolyAddLeftGroupbox(
         Tabs.Sniper,
-        "Sniper.ServerSniper",
-        "Server Sniper",
+        "Sniper.ServerFinder",
+        "Server Finder",
         "server"
+    )
+
+local ServerAutoJoinBox =
+    HolyAddLeftGroupbox(
+        Tabs.Sniper,
+        "Sniper.ServerAutoJoin",
+        "Auto Join",
+        "zap"
+    )
+
+local ServerAutoJoinWatchlistBox =
+    HolyAddRightGroupbox(
+        Tabs.Sniper,
+        "Sniper.ServerAutoJoinWatchlist",
+        "Auto Join Watchlist",
+        "list"
     )
 
 local SniperModeControl =
@@ -68731,7 +68747,25 @@ end
 -- [5.45] SERVER FINDER HUD
 --==================================================
 
+if type(HOLY_SERVER_FINDER_HUD) == "table"
+and type(HOLY_SERVER_FINDER_HUD.Destroy) == "function" then
+
+    pcall(function()
+
+        HOLY_SERVER_FINDER_HUD:Destroy()
+    end)
+end
+
+if type(HOLY_SERVER_FINDER_BACKGROUND_TOKEN) == "table" then
+
+    HOLY_SERVER_FINDER_BACKGROUND_TOKEN.Active =
+        false
+end
+
 HOLY_SERVER_FINDER_HUD =
+    nil
+
+HOLY_SERVER_FINDER_BACKGROUND_TOKEN =
     nil
 
 HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME = {
@@ -69803,30 +69837,35 @@ function HolyServerFinderNormalizeAutoJoinRules(rules)
     local output =
         {}
 
-    if type(rules) == "table" then
+    local suppliedList =
+        type(rules) == "table"
 
-        for _, rule in ipairs(rules) do
+    if suppliedList then
 
-            if type(rule) == "table" then
+        for _, target in ipairs(rules) do
+
+            if type(target) == "table" then
 
                 table.insert(
                     output,
                     HolyServerFinderNormalizeAutoJoinRule(
-                        rule
+                        target
                     )
                 )
             end
         end
     end
 
-    if #output <= 0 then
+    if suppliedList ~= true then
 
-        for _, rule in ipairs(HolyServerFinderGetDefaultAutoJoinRules()) do
+        for _, target in ipairs(
+            HolyServerFinderGetDefaultAutoJoinRules()
+        ) do
 
             table.insert(
                 output,
                 HolyServerFinderNormalizeAutoJoinRule(
-                    rule
+                    target
                 )
             )
         end
@@ -71689,7 +71728,7 @@ function HolyServerFinderEvaluateAutoJoin(hud)
 
             HolyNotify(
                 "HOLY Auto Join",
-                "Found rule #"
+                "Matched target #"
                 .. tostring(target.RuleIndex)
                 .. ": "
                 .. tostring(row.DisplayName or row.Pet or "server"),
@@ -71800,1747 +71839,207 @@ function HolyServerFinderAutoJoinRuleDetailText(rule)
     return text
 end
 
-function HolyServerFinderPopupRoot()
+HOLY_SERVER_FINDER_MAIN_UI = {
+    Lock = false,
+    TargetMap = {},
+}
 
-    if Library
-    and typeof(Library.ScreenGui) == "Instance" then
+function HolyServerFinderReadSingleValue(value)
 
-        return Library.ScreenGui
-    end
+    if type(value) ~= "table" then
 
-    if typeof(CoreGui) == "Instance" then
-        return CoreGui
-    end
-
-    return game:GetService(
-        "CoreGui"
-    )
-end
-
-function HolyServerFinderPopupZIndex(parent, offset)
-
-    offset =
-        tonumber(offset)
-        or 1
-
-    if typeof(parent) == "Instance"
-    and parent:IsA("GuiObject") then
-
-        return (
-            tonumber(parent.ZIndex)
-            or 9600
-        ) + offset
-    end
-
-    return 9600 + offset
-end
-
-function HolyServerFinderStyleBox(instance, selected)
-
-    if typeof(instance) ~= "Instance" then
-        return
-    end
-
-    local scheme =
-        Library
-        and Library.Scheme
-        or {}
-
-    local mainColor =
-        scheme.MainColor
-        or Color3.fromRGB(12, 13, 16)
-
-    local accentColor =
-        scheme.AccentColor
-        or Color3.fromRGB(232, 45, 67)
-
-    local outlineColor =
-        scheme.OutlineColor
-        or Color3.fromRGB(42, 18, 23)
-
-    local fontColor =
-        scheme.FontColor
-        or Color3.fromRGB(245, 245, 247)
-
-    if instance:IsA("GuiObject") then
-
-        instance.BackgroundColor3 =
-            selected == true
-            and accentColor
-            or mainColor
-
-        instance.BackgroundTransparency =
-            selected == true
-            and 0.06
-            or 0.28
-    end
-
-    if instance:IsA("TextButton")
-    or instance:IsA("TextBox")
-    or instance:IsA("TextLabel") then
-
-        instance.TextColor3 =
-            fontColor
-
-        instance.FontFace =
-            scheme.Font
-            or Font.fromEnum(Enum.Font.GothamMedium)
-
-        instance.TextTransparency =
-            selected == true
-            and 0.02
-            or 0.28
-    end
-
-    local corner =
-        instance:FindFirstChildOfClass(
-            "UICorner"
-        )
-
-    if corner == nil then
-
-        corner =
-            Instance.new(
-                "UICorner"
-            )
-
-        corner.CornerRadius =
-            UDim.new(
-                0,
-                5
-            )
-
-        corner.Parent =
-            instance
-    end
-
-    local stroke =
-        instance:FindFirstChildOfClass(
-            "UIStroke"
-        )
-
-    if stroke == nil then
-
-        stroke =
-            Instance.new(
-                "UIStroke"
-            )
-
-        stroke.Parent =
-            instance
-    end
-
-    stroke.Color =
-        selected == true
-        and accentColor
-        or outlineColor
-
-    stroke.Transparency =
-        selected == true
-        and 0.20
-        or 0.44
-end
-
-function HolyServerFinderCreateFixedPopup(title, width, height, position, zIndex)
-
-    width =
-        tonumber(width)
-        or 360
-
-    height =
-        tonumber(height)
-        or 320
-
-    zIndex =
-        tonumber(zIndex)
-        or 9600
-
-    local root =
-        HolyServerFinderPopupRoot()
-
-    local holder =
-        Instance.new(
-            "Frame"
-        )
-
-    holder.Name =
-        "HolyAutoJoinPopup"
-
-    holder.AutomaticSize =
-        Enum.AutomaticSize.None
-
-    holder.BackgroundColor3 =
-        Library.Scheme.BackgroundColor
-
-    holder.BackgroundTransparency =
-        0.04
-
-    holder.ClipsDescendants =
-        true
-
-    holder.Position =
-        position
-        or UDim2.fromOffset(
-            420,
-            92
-        )
-
-    holder.Size =
-        UDim2.fromOffset(
-            width,
-            height
-        )
-
-    holder.ZIndex =
-        zIndex
-
-    holder.Visible =
-        false
-
-    holder.Parent =
-        root
-
-    HolyServerFinderApplyScaleToFrame(
-        holder
-    )
-
-    local corner =
-        Instance.new(
-            "UICorner"
-        )
-
-    corner.CornerRadius =
-        UDim.new(
-            0,
-            7
-        )
-
-    corner.Parent =
-        holder
-
-    local stroke =
-        Instance.new(
-            "UIStroke"
-        )
-
-    stroke.Color =
-        Library.Scheme.OutlineColor
-
-    stroke.Transparency =
-        0.20
-
-    stroke.Parent =
-        holder
-
-    local header =
-        Instance.new(
-            "TextButton"
-        )
-
-    header.AutoButtonColor =
-        false
-
-    header.BackgroundColor3 =
-        Library.Scheme.MainColor
-
-    header.BackgroundTransparency =
-        0.28
-
-    header.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            34
-        )
-
-    header.Text =
-        ""
-
-    header.ZIndex =
-        holder.ZIndex + 1
-
-    header.Parent =
-        holder
-
-    local titleLabel =
-        Instance.new(
-            "TextLabel"
-        )
-
-    titleLabel.BackgroundTransparency =
-        1
-
-    titleLabel.Position =
-        UDim2.fromOffset(
-            12,
-            0
-        )
-
-    titleLabel.Size =
-        UDim2.new(
-            1,
-            -48,
-            1,
-            0
-        )
-
-    titleLabel.Text =
-        tostring(title or "Popup")
-
-    titleLabel.TextSize =
-        14
-
-    titleLabel.TextTransparency =
-        0.02
-
-    titleLabel.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    titleLabel.TextColor3 =
-        Library.Scheme.FontColor
-
-    titleLabel.FontFace =
-        Library.Scheme.Font
-
-    titleLabel.ZIndex =
-        header.ZIndex + 1
-
-    titleLabel.Parent =
-        header
-
-    local closeButton =
-        Instance.new(
-            "TextButton"
-        )
-
-    closeButton.AutoButtonColor =
-        false
-
-    closeButton.BackgroundColor3 =
-        Library.Scheme.MainColor
-
-    closeButton.BackgroundTransparency =
-        0.20
-
-    closeButton.Position =
-        UDim2.new(
-            1,
-            -29,
-            0,
-            7
-        )
-
-    closeButton.Size =
-        UDim2.fromOffset(
-            20,
-            20
-        )
-
-    closeButton.Text =
-        "×"
-
-    closeButton.TextSize =
-        16
-
-    closeButton.TextTransparency =
-        0.20
-
-    closeButton.TextColor3 =
-        Library.Scheme.FontColor
-
-    closeButton.FontFace =
-        Library.Scheme.Font
-
-    closeButton.ZIndex =
-        header.ZIndex + 2
-
-    closeButton.Parent =
-        header
-
-    HolyServerFinderStyleBox(
-        closeButton,
-        false
-    )
-
-    closeButton.MouseButton1Click:Connect(function()
-
-        holder.Visible =
-            false
-    end)
-
-    local line =
-        Instance.new(
-            "Frame"
-        )
-
-    line.BackgroundColor3 =
-        Library.Scheme.OutlineColor
-
-    line.BackgroundTransparency =
-        0.18
-
-    line.BorderSizePixel =
-        0
-
-    line.Position =
-        UDim2.fromOffset(
-            0,
-            34
-        )
-
-    line.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            1
-        )
-
-    line.ZIndex =
-        holder.ZIndex + 1
-
-    line.Parent =
-        holder
-
-    local container =
-        Instance.new(
-            "ScrollingFrame"
-        )
-
-    container.Active =
-        true
-
-    container.AutomaticCanvasSize =
-        Enum.AutomaticSize.Y
-
-    container.BackgroundTransparency =
-        1
-
-    container.BorderSizePixel =
-        0
-
-    container.CanvasSize =
-        UDim2.fromOffset(
-            0,
-            0
-        )
-
-    container.ClipsDescendants =
-        true
-
-    container.Position =
-        UDim2.fromOffset(
-            8,
-            43
-        )
-
-    container.ScrollBarImageColor3 =
-        Library.Scheme.OutlineColor
-
-    container.ScrollBarImageTransparency =
-        0.15
-
-    container.ScrollBarThickness =
-        3
-
-    container.ScrollingDirection =
-        Enum.ScrollingDirection.Y
-
-    container.Size =
-        UDim2.new(
-            1,
-            -16,
-            1,
-            -51
-        )
-
-    container.TopImage =
-        "rbxasset://textures/ui/Scroll/scroll-middle.png"
-
-    container.MidImage =
-        "rbxasset://textures/ui/Scroll/scroll-middle.png"
-
-    container.BottomImage =
-        "rbxasset://textures/ui/Scroll/scroll-middle.png"
-
-    container.ZIndex =
-        holder.ZIndex + 1
-
-    container.Parent =
-        holder
-
-    local layout =
-        Instance.new(
-            "UIListLayout"
-        )
-
-    layout.Padding =
-        UDim.new(
-            0,
-            7
-        )
-
-    layout.SortOrder =
-        Enum.SortOrder.LayoutOrder
-
-    layout.Parent =
-        container
-
-    local padding =
-        Instance.new(
-            "UIPadding"
-        )
-
-    padding.PaddingBottom =
-        UDim.new(
-            0,
-            8
-        )
-
-    padding.PaddingRight =
-        UDim.new(
-            0,
-            4
-        )
-
-    padding.Parent =
-        container
-
-    if Library
-    and type(Library.MakeDraggable) == "function" then
-
-        Library:MakeDraggable(
-            holder,
-            header,
-            true
-        )
-    end
-
-    return holder,
-        container,
-        closeButton
-end
-
-function HolyServerFinderMakePopupRow(parent, height)
-
-    local row =
-        Instance.new(
-            "Frame"
-        )
-
-    row.BackgroundTransparency =
-        1
-
-    row.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            height
-        )
-
-    row.ZIndex =
-        HolyServerFinderPopupZIndex(
-            parent,
-            1
-        )
-
-    row.Parent =
-        parent
-
-    return row
-end
-
-function HolyServerFinderMakeHorizontalRow(parent, height, gap)
-
-    local row =
-        HolyServerFinderMakePopupRow(
-            parent,
-            height
-        )
-
-    local layout =
-        Instance.new(
-            "UIListLayout"
-        )
-
-    layout.FillDirection =
-        Enum.FillDirection.Horizontal
-
-    layout.HorizontalFlex =
-        Enum.UIFlexAlignment.Fill
-
-    layout.Padding =
-        UDim.new(
-            0,
-            gap or 7
-        )
-
-    layout.SortOrder =
-        Enum.SortOrder.LayoutOrder
-
-    layout.Parent =
-        row
-
-    return row
-end
-
-function HolyServerFinderMakePopupLabel(parent, text, height, transparency)
-
-    local label =
-        Instance.new(
-            "TextLabel"
-        )
-
-    label.BackgroundTransparency =
-        1
-
-    label.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            height or 18
-        )
-
-    label.Text =
-        tostring(text or "")
-
-    label.TextSize =
-        12
-
-    label.TextTransparency =
-        transparency or 0.30
-
-    label.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    label.TextColor3 =
-        Library.Scheme.FontColor
-
-    label.FontFace =
-        Library.Scheme.Font
-
-    label.ZIndex =
-        HolyServerFinderPopupZIndex(
-            parent,
-            1
-        )
-
-    label.Parent =
-        parent
-
-    return label
-end
-
-function HolyServerFinderMakePopupButton(parent, text, callback, selected)
-
-    local button =
-        Instance.new(
-            "TextButton"
-        )
-
-    button.AutoButtonColor =
-        false
-
-    button.Size =
-        UDim2.fromScale(
-            1,
-            1
-        )
-
-    button.Text =
-        tostring(text or "Button")
-
-    button.TextSize =
-        12
-
-    button.TextTruncate =
-        Enum.TextTruncate.AtEnd
-
-    button.ZIndex =
-        HolyServerFinderPopupZIndex(
-            parent,
-            1
-        )
-
-    button.Parent =
-        parent
-
-    HolyServerFinderStyleBox(
-        button,
-        selected == true
-    )
-
-    button.MouseButton1Click:Connect(function()
-
-        if type(callback) == "function" then
-
-            callback(
-                button
-            )
-        end
-    end)
-
-    return button
-end
-
-function HolyServerFinderMakePopupInput(parent, text, placeholder)
-
-    local box =
-        Instance.new(
-            "TextBox"
-        )
-
-    box.ClearTextOnFocus =
-        false
-
-    box.Text =
-        tostring(text or "")
-
-    box.PlaceholderText =
-        tostring(placeholder or "")
-
-    box.TextSize =
-        12
-
-    box.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    box.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    box.TextWrapped =
-        false
-
-    box.Size =
-        UDim2.fromScale(
-            1,
-            1
-        )
-
-    box.ZIndex =
-        HolyServerFinderPopupZIndex(
-            parent,
-            1
-        )
-
-    box.Parent =
-        parent
-
-    HolyServerFinderStyleBox(
-        box,
-        false
-    )
-
-    local padding =
-        Instance.new(
-            "UIPadding"
-        )
-
-    padding.PaddingLeft =
-        UDim.new(
-            0,
-            8
-        )
-
-    padding.PaddingRight =
-        UDim.new(
-            0,
-            8
-        )
-
-    padding.Parent =
-        box
-
-    return box
-end
-
-function HolyServerFinderMakeRuleRow(parent, index)
-
-    local button =
-        Instance.new(
-            "TextButton"
-        )
-
-    button.AutoButtonColor =
-        false
-
-    button.Text =
-        ""
-
-    button.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            28
-        )
-
-    button.ZIndex =
-        HolyServerFinderPopupZIndex(
-            parent,
-            1
-        )
-
-    button.Parent =
-        parent
-
-    HolyServerFinderStyleBox(
-        button,
-        false
-    )
-
-    local marker =
-        Instance.new(
-            "Frame"
-        )
-
-    marker.BackgroundColor3 =
-        Library.Scheme.AccentColor
-
-    marker.BackgroundTransparency =
-        1
-
-    marker.Position =
-        UDim2.fromOffset(
-            5,
-            6
-        )
-
-    marker.Size =
-        UDim2.new(
-            0,
-            3,
-            1,
-            -12
-        )
-
-    marker.ZIndex =
-        button.ZIndex + 1
-
-    marker.Parent =
-        button
-
-    local markerCorner =
-        Instance.new(
-            "UICorner"
-        )
-
-    markerCorner.CornerRadius =
-        UDim.new(
-            1,
-            0
-        )
-
-    markerCorner.Parent =
-        marker
-
-    local petLabel =
-        Instance.new(
-            "TextLabel"
-        )
-
-    petLabel.BackgroundTransparency =
-        1
-
-    petLabel.Position =
-        UDim2.fromOffset(
-            14,
-            0
-        )
-
-    petLabel.Size =
-        UDim2.new(
-            0.47,
-            -14,
-            1,
-            0
-        )
-
-    petLabel.Text =
-        ""
-
-    petLabel.TextSize =
-        12
-
-    petLabel.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    petLabel.TextTruncate =
-        Enum.TextTruncate.AtEnd
-
-    petLabel.TextColor3 =
-        Library.Scheme.FontColor
-
-    petLabel.FontFace =
-        Library.Scheme.Font
-
-    petLabel.ZIndex =
-        button.ZIndex + 1
-
-    petLabel.Parent =
-        button
-
-    local detailLabel =
-        Instance.new(
-            "TextLabel"
-        )
-
-    detailLabel.BackgroundTransparency =
-        1
-
-    detailLabel.Position =
-        UDim2.fromScale(
-            0.50,
-            0
-        )
-
-    detailLabel.Size =
-        UDim2.new(
-            0.50,
-            -8,
-            1,
-            0
-        )
-
-    detailLabel.Text =
-        ""
-
-    detailLabel.TextSize =
-        12
-
-    detailLabel.TextTransparency =
-        0.34
-
-    detailLabel.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    detailLabel.TextTruncate =
-        Enum.TextTruncate.AtEnd
-
-    detailLabel.TextColor3 =
-        Library.Scheme.FontColor
-
-    detailLabel.FontFace =
-        Library.Scheme.Font
-
-    detailLabel.ZIndex =
-        button.ZIndex + 1
-
-    detailLabel.Parent =
-        button
-
-    button.MouseButton1Click:Connect(function()
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-            index
-
-        HolyServerFinderRefreshAutoJoinRulesPopup()
-    end)
-
-    return {
-        Index =
-            index,
-
-        Button =
-            button,
-
-        Marker =
-            marker,
-
-        PetLabel =
-            petLabel,
-
-        DetailLabel =
-            detailLabel,
-    }
-end
-
-function HolyServerFinderRefreshModeButtons(ui)
-
-    if type(ui) ~= "table" then
-        return false
-    end
-
-    local mode =
-        HolyServerFinderNormalizeAutoJoinMode(
-            HOLY_SERVER_FINDER_STATE.AutoJoinMode
-        )
-
-    for modeName, button in pairs(ui.ModeButtons or {}) do
-
-        HolyServerFinderStyleBox(
-            button,
-            mode == modeName
-        )
-    end
-
-    return true
-end
-
-function HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    local ui =
-        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
-
-    if type(ui) ~= "table" then
-        return false
-    end
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    HolyServerFinderRefreshModeButtons(
-        ui
-    )
-
-    if ui.MinLifeInput then
-
-        ui.MinLifeInput.Text =
-            tostring(
-                math.floor(
-                    tonumber(
-                        HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
-                    )
-                    or 30
-                )
-            )
-    end
-
-    if ui.CooldownInput then
-
-        ui.CooldownInput.Text =
-            tostring(
-                math.floor(
-                    tonumber(
-                        HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
-                    )
-                    or 10
-                )
-            )
-    end
-
-    local rules =
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules
-        or {}
-
-    local selectedIndex =
-        tonumber(
-            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
-        )
-        or 1
-
-    if ui.ListHolder then
-
-        ui.ListHolder.Size =
-            UDim2.new(
-                1,
-                0,
-                0,
-                math.max(
-                    32,
-                    (#rules * 33)
-                    + (
-                        #rules <= 0
-                        and 30
-                        or 0
-                    )
-                )
-            )
-
-        while #(
-            ui.RuleRows
-            or {}
-        ) < #rules do
-
-            ui.RuleRows =
-                ui.RuleRows
-                or {}
-
-            table.insert(
-                ui.RuleRows,
-                HolyServerFinderMakeRuleRow(
-                    ui.ListHolder,
-                    #ui.RuleRows + 1
-                )
-            )
-        end
-    end
-
-    for index, row in ipairs(ui.RuleRows or {}) do
-
-        local rule =
-            rules[index]
-
-        if type(rule) == "table" then
-
-            row.Button.Visible =
-                true
-
-            row.PetLabel.Text =
-                tostring(index)
-                .. ". "
-                .. HolyServerFinderAutoJoinRulePetText(
-                    rule
-                )
-
-            row.DetailLabel.Text =
-                HolyServerFinderAutoJoinRuleDetailText(
-                    rule
-                )
-
-            local selected =
-                index == selectedIndex
-
-            row.Button.BackgroundTransparency =
-                selected and 0.12
-                or 0.32
-
-            row.Marker.BackgroundTransparency =
-                selected and 0
-                or 1
-
-            row.PetLabel.TextTransparency =
-                selected and 0.03
-                or 0.18
-
-            row.DetailLabel.TextTransparency =
-                selected and 0.08
-                or 0.38
-
-        else
-
-            row.Button.Visible =
-                false
-        end
-    end
-
-    if ui.EmptyLabel then
-
-        ui.EmptyLabel.Visible =
-            #rules <= 0
-    end
-
-    return true
-end
-
-function HolyServerFinderApplyAutoJoinRulesPopup()
-
-    local ui =
-        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
-
-    if type(ui) ~= "table" then
-        return false
-    end
-
-    HOLY_SERVER_FINDER_STATE.AutoJoinMinLife =
-        math.clamp(
-            tonumber(
-                ui.MinLifeInput
-                and ui.MinLifeInput.Text
-            )
-            or 30,
-            0,
-            420
-        )
-
-    HOLY_SERVER_FINDER_STATE.AutoJoinCooldown =
-        math.clamp(
-            tonumber(
-                ui.CooldownInput
-                and ui.CooldownInput.Text
-            )
-            or 10,
-            1,
-            120
-        )
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    HolyQueueSaveServerFinderSettings()
-
-    HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    return true
-end
-
-function HolyServerFinderSetRuleSelected(index)
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    index =
-        math.clamp(
-            math.floor(
-                tonumber(index)
-                or 1
-            ),
-            1,
-            math.max(
-                1,
-                #HOLY_SERVER_FINDER_STATE.AutoJoinRules
-            )
-        )
-
-    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-        index
-
-    HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    return index
-end
-
-function HolyServerFinderCloneRule(rule)
-
-    rule =
-        HolyServerFinderNormalizeAutoJoinRule(
-            rule
-        )
-
-    local copy = {
-        PetScope =
-            rule.PetScope,
-
-        Pets =
-            {},
-
-        Sizes =
-            {},
-
-        Variants =
-            {},
-
-        Rarities =
-            {},
-
-        MatchMode =
-            rule.MatchMode,
-
-        Enabled =
-            rule.Enabled ~= false,
-    }
-
-    for _, value in ipairs(rule.Pets or {}) do
-        table.insert(copy.Pets, value)
-    end
-
-    for _, value in ipairs(rule.Sizes or {}) do
-        table.insert(copy.Sizes, value)
-    end
-
-    for _, value in ipairs(rule.Variants or {}) do
-        table.insert(copy.Variants, value)
-    end
-
-    for _, value in ipairs(rule.Rarities or {}) do
-        table.insert(copy.Rarities, value)
-    end
-
-    return copy
-end
-
-function HolyServerFinderDefaultEditableRule()
-
-    return HolyServerFinderCloneRule({
-        PetScope =
-            "Selected Pets",
-
-        Pets =
-            {
-                "Bunny",
-            },
-
-        Sizes =
-            {
-                "Big",
-                "Huge",
-            },
-
-        Variants =
-            {
-                "Rainbow",
-            },
-
-        Rarities =
-            {
-                "Any",
-            },
-
-        MatchMode =
-            "Any Selected",
-
-        Enabled =
-            true,
-    })
-end
-
-function HolyServerFinderToggleRuleListValue(list, value)
-
-    list =
-        type(list) == "table"
-        and list
-        or {
-            "Any",
-        }
-
-    value =
-        HolyCleanText(
+        return HolyCleanText(
             value
         )
-
-    if value == "" then
-        return list
     end
 
-    if value == "Any" then
-        return {
-            "Any",
-        }
+    for key, enabled in pairs(value) do
+
+        if enabled == true then
+
+            return HolyCleanText(
+                key
+            )
+        end
+    end
+
+    return HolyCleanText(
+        value[1]
+    )
+end
+
+function HolyServerFinderCloneTarget(target)
+
+    target =
+        HolyServerFinderNormalizeAutoJoinRule(
+            target
+        )
+
+    return {
+        PetScope =
+            target.PetScope,
+
+        Pets =
+            table.clone(
+                target.Pets
+            ),
+
+        Sizes =
+            table.clone(
+                target.Sizes
+            ),
+
+        Variants =
+            table.clone(
+                target.Variants
+            ),
+
+        Rarities =
+            table.clone(
+                target.Rarities
+            ),
+
+        MatchMode =
+            target.MatchMode,
+
+        Enabled =
+            target.Enabled ~= false,
+    }
+end
+
+function HolyServerFinderTargetSelectionList(value, anyLabel)
+
+    local values =
+        {}
+
+    if type(value) == "table" then
+
+        values =
+            HolyServerFinderSelectionValues(
+                value
+            )
+
+    else
+
+        local text =
+            HolyCleanText(
+                value
+            )
+
+        if text ~= "" then
+
+            values[1] =
+                text
+        end
+    end
+
+    anyLabel =
+        HolyCleanText(
+            anyLabel
+        )
+
+    for _, item in ipairs(values) do
+
+        local lower =
+            HolyCleanText(
+                item
+            )
+            :lower()
+
+        if lower == "any"
+        or lower == "all"
+        or lower == anyLabel:lower() then
+
+            return {
+                "Any",
+            }
+        end
     end
 
     local output =
         {}
 
-    local removed =
-        false
+    local seen =
+        {}
 
-    for _, current in ipairs(list) do
+    for _, item in ipairs(values) do
 
-        if current ~= "Any" then
+        local text =
+            HolyCleanText(
+                item
+            )
 
-            if current == value then
+        local key =
+            text:lower()
 
-                removed =
-                    true
+        if text ~= ""
+        and seen[key] ~= true then
 
-            else
+            seen[key] =
+                true
 
-                table.insert(
-                    output,
-                    current
-                )
-            end
+            table.insert(
+                output,
+                text
+            )
         end
     end
 
-    if removed ~= true then
+    if #output == 0 then
 
-        table.insert(
-            output,
-            value
-        )
-    end
-
-    if #output <= 0 then
         return {
             "Any",
         }
     end
 
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
     return output
 end
 
-function HolyServerFinderListContainsExact(list, value)
+function HolyServerFinderTargetSummary(target, index)
 
-    if HolyServerFinderAutoJoinListHasAny(list) == true then
-        return value == "Any"
-    end
-
-    for _, current in ipairs(list or {}) do
-
-        if current == value then
-            return true
-        end
-    end
-
-    return false
-end
-
-function HolyServerFinderRefreshEditPopup()
-
-    local ui =
-        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
-
-    if type(ui) ~= "table"
-    or type(ui.DraftRule) ~= "table" then
-        return false
-    end
-
-    local rule =
+    target =
         HolyServerFinderNormalizeAutoJoinRule(
-            ui.DraftRule
+            target
         )
 
-    ui.DraftRule =
-        rule
-
-    if ui.ScopeButton then
-
-        ui.ScopeButton.Text =
-            rule.PetScope == "Any Pet"
-            and "Scope: Any Pet"
-            or "Scope: Selected Pets"
-
-        HolyServerFinderStyleBox(
-            ui.ScopeButton,
-            rule.PetScope == "Any Pet"
+    local petText =
+        HolyServerFinderAutoJoinRulePetText(
+            target
         )
-    end
 
-    if ui.PetsInput then
-
-        if UserInputService:GetFocusedTextBox() ~= ui.PetsInput then
-
-            ui.PetsInput.Text =
-                rule.PetScope == "Any Pet"
-                and ""
-                or HolyServerFinderAutoJoinJoinList(
-                    rule.Pets,
-                    ""
-                )
-        end
-
-        ui.PetsInput.PlaceholderText =
-            rule.PetScope == "Any Pet"
-            and "Any Pet"
-            or "Bunny, Raccoon..."
-
-        ui.PetsInput.TextEditable =
-            rule.PetScope ~= "Any Pet"
-
-        ui.PetsInput.BackgroundTransparency =
-            rule.PetScope == "Any Pet"
-            and 0.52
-            or 0.28
-    end
-
-    for value, button in pairs(ui.SizeButtons or {}) do
-
-        HolyServerFinderStyleBox(
-            button,
-            HolyServerFinderListContainsExact(
-                rule.Sizes,
-                value
-            )
+    local detailText =
+        HolyServerFinderAutoJoinRuleDetailText(
+            target
         )
-    end
 
-    for value, button in pairs(ui.VariantButtons or {}) do
+    local stateText =
+        target.Enabled ~= false
+        and "ON"
+        or "OFF"
 
-        HolyServerFinderStyleBox(
-            button,
-            HolyServerFinderListContainsExact(
-                rule.Variants,
-                value
-            )
-        )
-    end
-
-    for value, button in pairs(ui.RarityButtons or {}) do
-
-        HolyServerFinderStyleBox(
-            button,
-            HolyServerFinderListContainsExact(
-                rule.Rarities,
-                value
-            )
-        )
-    end
-
-    for value, button in pairs(ui.MatchButtons or {}) do
-
-        HolyServerFinderStyleBox(
-            button,
-            rule.MatchMode == value
-        )
-    end
-
-    return true
+    return tostring(index)
+        .. ". "
+        .. tostring(petText)
+        .. " · "
+        .. tostring(detailText)
+        .. " · "
+        .. stateText
 end
 
-function HolyServerFinderSaveAutoJoinEditPopup()
-
-    local ui =
-        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
-
-    if type(ui) ~= "table"
-    or type(ui.DraftRule) ~= "table" then
-        return false
-    end
-
-    local draft =
-        HolyServerFinderCloneRule(
-            ui.DraftRule
-        )
-
-    draft.PetScope =
-        HolyServerFinderNormalizeAutoJoinPetScope(
-            draft.PetScope
-        )
-
-    if draft.PetScope == "Any Pet" then
-
-        draft.Pets =
-            {
-                "Any",
-            }
-
-    else
-
-        draft.Pets =
-            HolyServerFinderAutoJoinUniqueList(
-                ui.PetsInput
-                and ui.PetsInput.Text
-                or draft.Pets,
-                HolyServerFinderNormalizeAutoJoinPetName,
-                "Bunny"
-            )
-
-        if HolyServerFinderAutoJoinListHasAny(draft.Pets) == true then
-
-            draft.Pets =
-                {
-                    "Bunny",
-                }
-        end
-    end
-
-    draft =
-        HolyServerFinderNormalizeAutoJoinRule(
-            draft
-        )
-
-    HOLY_SERVER_FINDER_STATE.AutoJoinRules =
-        type(HOLY_SERVER_FINDER_STATE.AutoJoinRules) == "table"
-        and HOLY_SERVER_FINDER_STATE.AutoJoinRules
-        or {}
-
-    local index =
-        tonumber(
-            ui.EditingIndex
-        )
-
-    if index
-    and HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] ~= nil then
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] =
-            draft
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-            index
-
-    else
-
-        table.insert(
-            HOLY_SERVER_FINDER_STATE.AutoJoinRules,
-            draft
-        )
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-            #HOLY_SERVER_FINDER_STATE.AutoJoinRules
-    end
+function HolyServerFinderMoveSelectedTarget(delta)
 
     HolyServerFinderEnsureAutoJoinState()
 
-    HolyQueueSaveServerFinderSettings()
-
-    HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    if ui.Holder then
-
-        ui.Holder.Visible =
-            false
-    end
-
-    if type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
-    and HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder then
-
-        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder.Visible =
-            true
-    end
-
-    return true
-end
-
-function HolyServerFinderOpenAutoJoinEditPopup(index)
-
-    local ui =
-        HolyServerFinderCreateAutoJoinEditPopup()
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    index =
-        tonumber(index)
-
-    ui.EditingIndex =
-        index
-
-    local rule =
-        index
-        and HOLY_SERVER_FINDER_STATE.AutoJoinRules[index]
-        or nil
-
-    ui.DraftRule =
-        rule
-        and HolyServerFinderCloneRule(
-            rule
-        )
-        or HolyServerFinderDefaultEditableRule()
-
-    local rulesHolder =
-        type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
-        and HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder
-        or nil
-
-    if typeof(rulesHolder) == "Instance" then
-
-        rulesHolder.Visible =
-            true
-    end
-
-    HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    HolyServerFinderRefreshEditPopup()
-
-    HolyServerFinderApplyScaleEverywhere()
-
-    if typeof(rulesHolder) == "Instance"
-    and typeof(ui.Holder) == "Instance" then
-
-        local camera =
-            workspace.CurrentCamera
-
-        local viewport =
-            camera
-            and camera.ViewportSize
-            or Vector2.new(
-                1280,
-                720
-            )
-
-        local rulesPosition =
-            rulesHolder.AbsolutePosition
-
-        local rulesSize =
-            rulesHolder.AbsoluteSize
-
-        local editWidth =
-            tonumber(ui.Holder.Size.X.Offset)
-            or 360
-
-        local editHeight =
-            tonumber(ui.Holder.Size.Y.Offset)
-            or 430
-
-        local x =
-            math.floor(
-                rulesPosition.X
-                + rulesSize.X
-                + 10
-            )
-
-        if x + editWidth > viewport.X - 8 then
-
-            x =
-                math.floor(
-                    rulesPosition.X
-                    - editWidth
-                    - 10
-                )
-        end
-
-        x =
-            math.clamp(
-                x,
-                8,
-                math.max(
-                    8,
-                    viewport.X
-                    - editWidth
-                    - 8
-                )
-            )
-
-        local y =
-            math.clamp(
-                math.floor(
-                    rulesPosition.Y
-                ),
-                8,
-                math.max(
-                    8,
-                    viewport.Y
-                    - editHeight
-                    - 8
-                )
-            )
-
-        ui.Holder.Position =
-            UDim2.fromOffset(
-                x,
-                y
-            )
-    end
-
-    ui.Holder.Visible =
-        true
-
-    return true
-end
-
-function HolyServerFinderRemoveSelectedAutoJoinRule()
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    local rules =
+    local targets =
         HOLY_SERVER_FINDER_STATE.AutoJoinRules
 
-    local index =
-        tonumber(
-            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
-        )
-        or 1
-
-    if #rules <= 1 then
-
-        rules[1] =
-            HolyServerFinderDefaultEditableRule()
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-            1
-
-    else
-
-        table.remove(
-            rules,
-            index
-        )
-
-        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
-            math.clamp(
-                index,
-                1,
-                #rules
-            )
-    end
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    HolyQueueSaveServerFinderSettings()
-
-    HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    return true
-end
-
-function HolyServerFinderMoveSelectedAutoJoinRule(delta)
-
-    HolyServerFinderEnsureAutoJoinState()
-
-    local rules =
-        HOLY_SERVER_FINDER_STATE.AutoJoinRules
-
-    local index =
+    local currentIndex =
         tonumber(
             HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
         )
@@ -73548,28 +72047,34 @@ function HolyServerFinderMoveSelectedAutoJoinRule(delta)
 
     local newIndex =
         math.clamp(
-            index + (
+            currentIndex
+            + (
                 tonumber(delta)
                 or 0
             ),
             1,
-            #rules
+            math.max(
+                1,
+                #targets
+            )
         )
 
-    if newIndex == index then
+    if targets[currentIndex] == nil
+    or newIndex == currentIndex then
+
         return false
     end
 
-    local rule =
+    local target =
         table.remove(
-            rules,
-            index
+            targets,
+            currentIndex
         )
 
     table.insert(
-        rules,
+        targets,
         newIndex,
-        rule
+        target
     )
 
     HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
@@ -73577,556 +72082,471 @@ function HolyServerFinderMoveSelectedAutoJoinRule(delta)
 
     HolyQueueSaveServerFinderSettings()
 
-    HolyServerFinderRefreshAutoJoinRulesPopup()
+    if type(HolyServerFinderRefreshMainUI) == "function" then
+
+        HolyServerFinderRefreshMainUI()
+    end
 
     return true
 end
 
-function HolyServerFinderCreateAutoJoinRulesPopup()
+function HolyServerFinderRemoveSelectedTarget()
 
-    if type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
-    and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder) == "Instance" then
+    HolyServerFinderEnsureAutoJoinState()
 
-        return HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
+    local targets =
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+
+    local index =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+        )
+        or 1
+
+    if targets[index] == nil then
+
+        HolyNotify(
+            "Auto Join Watchlist",
+            "Select a target first.",
+            3
+        )
+
+        return false
     end
 
-    local holder,
-        container,
-        closeButton =
-        HolyServerFinderCreateFixedPopup(
-            "AUTO JOIN PRIORITY",
-            386,
-            314,
-            UDim2.fromOffset(
-                420,
-                92
-            ),
-            9650
-        )
-
-    local ui = {
-        Holder =
-            holder,
-
-        Container =
-            container,
-
-        CloseButton =
-            closeButton,
-
-        ModeButtons =
-            {},
-
-        RuleRows =
-            {},
-    }
-
-    if closeButton then
-
-        closeButton.MouseButton1Click:Connect(function()
-
-            if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
-            and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder) == "Instance" then
-
-                HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder.Visible =
-                    false
-            end
-        end)
-    end
-
-    local modeRow =
-        HolyServerFinderMakeHorizontalRow(
-            container,
-            27,
-            7
-        )
-
-    for _, modeName in ipairs({
-        "Off",
-        "Notify",
-        "Join Best",
-    }) do
-
-        ui.ModeButtons[modeName] =
-            HolyServerFinderMakePopupButton(
-                modeRow,
-                modeName,
-                function()
-
-                    HolyServerFinderSetAutoJoinMode(
-                        modeName
-                    )
-
-                    HolyServerFinderRefreshAutoJoinRulesPopup()
-                end
-            )
-    end
-
-    local settingsRow =
-        HolyServerFinderMakeHorizontalRow(
-            container,
-            27,
-            7
-        )
-
-    HolyServerFinderMakePopupLabel(
-        settingsRow,
-        "Min Life",
-        27,
-        0.38
+    table.remove(
+        targets,
+        index
     )
 
-    ui.MinLifeInput =
-        HolyServerFinderMakePopupInput(
-            settingsRow,
-            "30",
-            "30"
-        )
-
-    HolyServerFinderMakePopupLabel(
-        settingsRow,
-        "Cooldown",
-        27,
-        0.38
-    )
-
-    ui.CooldownInput =
-        HolyServerFinderMakePopupInput(
-            settingsRow,
-            "10",
-            "10"
-        )
-
-    ui.MinLifeInput.FocusLost:Connect(function()
-
-        HolyServerFinderApplyAutoJoinRulesPopup()
-    end)
-
-    ui.CooldownInput.FocusLost:Connect(function()
-
-        HolyServerFinderApplyAutoJoinRulesPopup()
-    end)
-
-    HolyServerFinderMakePopupLabel(
-        container,
-        "Priority List",
-        18,
-        0.16
-    )
-
-    local listHolder =
-        HolyServerFinderMakePopupRow(
-            container,
-            132
-        )
-
-    ui.ListHolder =
-        listHolder
-
-    local listLayout =
-        Instance.new(
-            "UIListLayout"
-        )
-
-    listLayout.Padding =
-        UDim.new(
-            0,
-            5
-        )
-
-    listLayout.SortOrder =
-        Enum.SortOrder.LayoutOrder
-
-    listLayout.Parent =
-        listHolder
-
-    ui.EmptyLabel =
-        HolyServerFinderMakePopupLabel(
-            listHolder,
-            "No rules. Add one to start.",
-            26,
-            0.48
-        )
-
-    local actionRow =
-        HolyServerFinderMakeHorizontalRow(
-            container,
-            27,
-            6
-        )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "Add",
-        function()
-
-            HolyServerFinderOpenAutoJoinEditPopup(
-                nil
-            )
-        end
-    )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "Edit",
-        function()
-
-            HolyServerFinderOpenAutoJoinEditPopup(
-                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
-            )
-        end
-    )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "↑",
-        function()
-
-            HolyServerFinderMoveSelectedAutoJoinRule(
-                -1
-            )
-        end
-    )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "↓",
-        function()
-
-            HolyServerFinderMoveSelectedAutoJoinRule(
-                1
-            )
-        end
-    )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "Remove",
-        function()
-
-            HolyServerFinderRemoveSelectedAutoJoinRule()
-        end
-    )
-
-    HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI =
-        ui
-
-    HolyServerFinderRefreshAutoJoinRulesPopup()
-
-    return ui
-end
-
-function HolyServerFinderMakeChipGrid(parent, title, values, buttonMap, onClick)
-
-    HolyServerFinderMakePopupLabel(
-        parent,
-        title,
-        18,
-        0.24
-    )
-
-    local rowCount =
-        math.ceil(
-            #values / 4
-        )
-
-    local grid =
-        HolyServerFinderMakePopupRow(
-            parent,
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        math.clamp(
+            index,
+            1,
             math.max(
-                27,
-                rowCount * 29
+                1,
+                #targets
             )
         )
 
-    local layout =
-        Instance.new(
-            "UIGridLayout"
-        )
+    HolyQueueSaveServerFinderSettings()
 
-    layout.CellPadding =
-        UDim2.fromOffset(
-            6,
-            6
-        )
+    if type(HolyServerFinderRefreshMainUI) == "function" then
 
-    layout.CellSize =
-        UDim2.new(
-            0.25,
-            -6,
-            0,
-            23
-        )
-
-    layout.SortOrder =
-        Enum.SortOrder.LayoutOrder
-
-    layout.Parent =
-        grid
-
-    for _, value in ipairs(values) do
-
-        buttonMap[value] =
-            HolyServerFinderMakePopupButton(
-                grid,
-                value,
-                function()
-
-                    onClick(
-                        value
-                    )
-                end
-            )
+        HolyServerFinderRefreshMainUI()
     end
 
-    return grid
+    return true
 end
 
-function HolyServerFinderCreateAutoJoinEditPopup()
-
-    if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
-    and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder) == "Instance" then
-
-        return HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
-    end
-
-    local holder,
-        container =
-        HolyServerFinderCreateFixedPopup(
-            "EDIT AUTO JOIN RULE",
-            360,
-            430,
-            UDim2.fromOffset(
-                460,
-                126
-            ),
-            9750
-        )
-
-    local ui = {
-        Holder =
-            holder,
-
-        Container =
-            container,
-
-        EditingIndex =
-            nil,
-
-        DraftRule =
-            HolyServerFinderDefaultEditableRule(),
-
-        SizeButtons =
-            {},
-
-        VariantButtons =
-            {},
-
-        RarityButtons =
-            {},
-
-        MatchButtons =
-            {},
-    }
-
-    ui.ScopeButton =
-        HolyServerFinderMakePopupButton(
-            HolyServerFinderMakePopupRow(
-                container,
-                27
-            ),
-            "Scope: Selected Pets",
-            function()
-
-                ui.DraftRule.PetScope =
-                    ui.DraftRule.PetScope == "Any Pet"
-                    and "Selected Pets"
-                    or "Any Pet"
-
-                HolyServerFinderRefreshEditPopup()
-            end
-        )
-
-    HolyServerFinderMakePopupLabel(
-        container,
-        "Pets",
-        18,
-        0.24
-    )
-
-    ui.PetsInput =
-        HolyServerFinderMakePopupInput(
-            HolyServerFinderMakePopupRow(
-                container,
-                27
-            ),
-            "Bunny",
-            "Bunny, Raccoon..."
-        )
-
-    ui.PetsInput.FocusLost:Connect(function()
-
-        if ui.DraftRule.PetScope ~= "Any Pet" then
-
-            ui.DraftRule.Pets =
-                HolyServerFinderAutoJoinUniqueList(
-                    ui.PetsInput.Text,
-                    HolyServerFinderNormalizeAutoJoinPetName,
-                    "Bunny"
-                )
-        end
-
-        HolyServerFinderRefreshEditPopup()
-    end)
-
-    HolyServerFinderMakeChipGrid(
-        container,
-        "Sizes",
-        HOLY_SERVER_FINDER_AUTO_JOIN_SIZE_CHOICES,
-        ui.SizeButtons,
-        function(value)
-
-            ui.DraftRule.Sizes =
-                HolyServerFinderToggleRuleListValue(
-                    ui.DraftRule.Sizes,
-                    value
-                )
-
-            HolyServerFinderRefreshEditPopup()
-        end
-    )
-
-    HolyServerFinderMakeChipGrid(
-        container,
-        "Variants",
-        HOLY_SERVER_FINDER_AUTO_JOIN_VARIANT_CHOICES,
-        ui.VariantButtons,
-        function(value)
-
-            ui.DraftRule.Variants =
-                HolyServerFinderToggleRuleListValue(
-                    ui.DraftRule.Variants,
-                    value
-                )
-
-            HolyServerFinderRefreshEditPopup()
-        end
-    )
-
-    HolyServerFinderMakeChipGrid(
-        container,
-        "Rarities",
-        HOLY_SERVER_FINDER_AUTO_JOIN_RARITY_CHOICES,
-        ui.RarityButtons,
-        function(value)
-
-            ui.DraftRule.Rarities =
-                HolyServerFinderToggleRuleListValue(
-                    ui.DraftRule.Rarities,
-                    value
-                )
-
-            HolyServerFinderRefreshEditPopup()
-        end
-    )
-
-    HolyServerFinderMakePopupLabel(
-        container,
-        "Match",
-        18,
-        0.24
-    )
-
-    local matchRow =
-        HolyServerFinderMakeHorizontalRow(
-            container,
-            27,
-            7
-        )
-
-    for _, value in ipairs({
-        "Any Selected",
-        "All Selected",
-    }) do
-
-        ui.MatchButtons[value] =
-            HolyServerFinderMakePopupButton(
-                matchRow,
-                value,
-                function()
-
-                    ui.DraftRule.MatchMode =
-                        value
-
-                    HolyServerFinderRefreshEditPopup()
-                end
-            )
-    end
-
-    local actionRow =
-        HolyServerFinderMakeHorizontalRow(
-            container,
-            27,
-            7
-        )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "Save Rule",
-        function()
-
-            HolyServerFinderSaveAutoJoinEditPopup()
-        end
-    )
-
-    HolyServerFinderMakePopupButton(
-        actionRow,
-        "Cancel",
-        function()
-
-            holder.Visible =
-                false
-        end
-    )
-
-    HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI =
-        ui
-
-    HolyServerFinderRefreshEditPopup()
-
-    return ui
-end
-
-function HolyServerFinderShowAutoJoinRulesPopup()
+function HolyServerFinderOpenTargetDialog(targetIndex)
 
     if HolyAuthRequireServerSniper(
-        "Auto Join Rules",
+        "Auto Join Watchlist",
         true
     ) ~= true then
 
         return false
     end
 
-    local ui =
-        HolyServerFinderCreateAutoJoinRulesPopup()
+    HolyServerFinderEnsureAutoJoinState()
 
-    if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
-    and HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder then
+    targetIndex =
+        tonumber(
+            targetIndex
+        )
 
-        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder.Visible =
-            false
+    local editing =
+        targetIndex ~= nil
+        and HOLY_SERVER_FINDER_STATE.AutoJoinRules[targetIndex] ~= nil
+
+    local target =
+        editing
+        and HolyServerFinderCloneTarget(
+            HOLY_SERVER_FINDER_STATE.AutoJoinRules[targetIndex]
+        )
+        or HolyServerFinderNormalizeAutoJoinRule({
+            PetScope = "Any Pet",
+            Pets = {
+                "Any",
+            },
+            Sizes = {
+                "Any",
+            },
+            Variants = {
+                "Any",
+            },
+            Rarities = {
+                "Any",
+            },
+            MatchMode = "All Selected",
+            Enabled = true,
+        })
+
+    local filterOptions =
+        HolyServerFinderBuildFilterOptions()
+
+    local petOptions = {
+        "Any Pet",
+    }
+
+    for _, petName in ipairs(filterOptions.Pets or {}) do
+
+        table.insert(
+            petOptions,
+            petName
+        )
     end
 
-    HolyServerFinderRefreshAutoJoinRulesPopup()
+    local rarityOptions =
+        table.clone(
+            HOLY_SERVER_FINDER_AUTO_JOIN_RARITY_CHOICES
+        )
 
-    HolyServerFinderApplyScaleEverywhere()
+    local seenRarities =
+        {}
 
-    ui.Holder.Visible =
-        true
+    for _, rarityName in ipairs(rarityOptions) do
+
+        seenRarities[
+            tostring(rarityName):lower()
+        ] =
+            true
+    end
+
+    for _, rarityName in ipairs(filterOptions.Rarities or {}) do
+
+        local key =
+            tostring(rarityName):lower()
+
+        if seenRarities[key] ~= true then
+
+            seenRarities[key] =
+                true
+
+            table.insert(
+                rarityOptions,
+                rarityName
+            )
+        end
+    end
+
+    local selectedPets =
+        target.PetScope == "Any Pet"
+        and {
+            "Any Pet",
+        }
+        or table.clone(
+            target.Pets
+        )
+
+    local selectedSizes =
+        table.clone(
+            target.Sizes
+        )
+
+    local selectedVariants =
+        table.clone(
+            target.Variants
+        )
+
+    local selectedRarities =
+        table.clone(
+            target.Rarities
+        )
+
+    local selectedEnabled =
+        target.Enabled ~= false
+
+    local dialog
+
+    dialog =
+        Window:AddDialog(
+            "HolyServerFinderTargetDialog",
+            {
+                Title =
+                    editing
+                    and "Edit Auto Join Target"
+                    or "Add Auto Join Target",
+
+                Description =
+                    "Choose which pets and traits HOLY should watch for.",
+
+                AutoDismiss =
+                    false,
+
+                OutsideClickDismiss =
+                    true,
+
+                FooterButtons = {
+                    Cancel = {
+                        Title =
+                            "Cancel",
+
+                        Variant =
+                            "Ghost",
+
+                        Order =
+                            1,
+
+                        Callback =
+                            function()
+
+                                dialog:Dismiss()
+                            end,
+                    },
+
+                    Save = {
+                        Title =
+                            editing
+                            and "Save Target"
+                            or "Add Target",
+
+                        Variant =
+                            "Primary",
+
+                        Order =
+                            2,
+
+                        Callback =
+                            function()
+
+                                local pets =
+                                    HolyServerFinderTargetSelectionList(
+                                        selectedPets,
+                                        "Any Pet"
+                                    )
+
+                                local anyPet =
+                                    HolyServerFinderAutoJoinListHasAny(
+                                        pets
+                                    )
+
+                                local savedTarget =
+                                    HolyServerFinderNormalizeAutoJoinRule({
+                                        PetScope =
+                                            anyPet
+                                            and "Any Pet"
+                                            or "Selected Pets",
+
+                                        Pets =
+                                            anyPet
+                                            and {
+                                                "Any",
+                                            }
+                                            or pets,
+
+                                        Sizes =
+                                            HolyServerFinderTargetSelectionList(
+                                                selectedSizes,
+                                                "Any"
+                                            ),
+
+                                        Variants =
+                                            HolyServerFinderTargetSelectionList(
+                                                selectedVariants,
+                                                "Any"
+                                            ),
+
+                                        Rarities =
+                                            HolyServerFinderTargetSelectionList(
+                                                selectedRarities,
+                                                "Any"
+                                            ),
+
+                                        MatchMode =
+                                            "All Selected",
+
+                                        Enabled =
+                                            selectedEnabled,
+                                    })
+
+                                if editing then
+
+                                    HOLY_SERVER_FINDER_STATE.AutoJoinRules[targetIndex] =
+                                        savedTarget
+
+                                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+                                        targetIndex
+
+                                else
+
+                                    table.insert(
+                                        HOLY_SERVER_FINDER_STATE.AutoJoinRules,
+                                        savedTarget
+                                    )
+
+                                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+                                        #HOLY_SERVER_FINDER_STATE.AutoJoinRules
+                                end
+
+                                HolyServerFinderEnsureAutoJoinState()
+
+                                HolyQueueSaveServerFinderSettings()
+
+                                if type(HolyServerFinderRefreshMainUI) == "function" then
+
+                                    HolyServerFinderRefreshMainUI()
+                                end
+
+                                dialog:Dismiss()
+                            end,
+                    },
+                },
+            }
+        )
+
+    dialog:AddToggle(
+        "HolyServerFinderTargetEnabled",
+        {
+            Text =
+                "Enabled",
+
+            Default =
+                selectedEnabled,
+
+            Tooltip =
+                "Controls whether this target can trigger an alert or auto join.",
+        }
+    ):OnChanged(function(value)
+
+        selectedEnabled =
+            value == true
+    end)
+
+    dialog:AddDropdown(
+        "HolyServerFinderTargetPets",
+        {
+            Text =
+                "Pets",
+
+            Values =
+                petOptions,
+
+            Default =
+                selectedPets,
+
+            Multi =
+                true,
+
+            Searchable =
+                true,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                8,
+
+            Tooltip =
+                "Select Any Pet or choose specific pets.",
+        }
+    ):OnChanged(function(value)
+
+        selectedPets =
+            value
+    end)
+
+    dialog:AddDropdown(
+        "HolyServerFinderTargetSizes",
+        {
+            Text =
+                "Sizes",
+
+            Values =
+                HOLY_SERVER_FINDER_AUTO_JOIN_SIZE_CHOICES,
+
+            Default =
+                selectedSizes,
+
+            Multi =
+                true,
+
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                4,
+        }
+    ):OnChanged(function(value)
+
+        selectedSizes =
+            value
+    end)
+
+    dialog:AddDropdown(
+        "HolyServerFinderTargetVariants",
+        {
+            Text =
+                "Variants",
+
+            Values =
+                HOLY_SERVER_FINDER_AUTO_JOIN_VARIANT_CHOICES,
+
+            Default =
+                selectedVariants,
+
+            Multi =
+                true,
+
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                3,
+        }
+    ):OnChanged(function(value)
+
+        selectedVariants =
+            value
+    end)
+
+    dialog:AddDropdown(
+        "HolyServerFinderTargetRarities",
+        {
+            Text =
+                "Rarities",
+
+            Values =
+                rarityOptions,
+
+            Default =
+                selectedRarities,
+
+            Multi =
+                true,
+
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                8,
+        }
+    ):OnChanged(function(value)
+
+        selectedRarities =
+            value
+    end)
 
     return true
 end
 
+function HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    if type(HolyServerFinderRefreshMainUI) == "function" then
+
+        HolyServerFinderRefreshMainUI()
+    end
+end
 
 function HolyServerFinderBuildSavePayload()
 
@@ -74286,6 +72706,28 @@ function HolyQueueSaveServerFinderSettings()
 end
 
 function HolyLoadServerFinderSettings()
+
+    -- The compact HUD only uses its search box.
+HOLY_SERVER_FINDER_STATE.HideFull =
+    false
+
+HOLY_SERVER_FINDER_STATE.SelectedPets =
+    {}
+
+HOLY_SERVER_FINDER_STATE.SelectedRarities =
+    {}
+
+HOLY_SERVER_FINDER_STATE.SelectedSizes =
+    {}
+
+HOLY_SERVER_FINDER_STATE.SelectedVariants =
+    {}
+
+HOLY_SERVER_FINDER_STATE.SelectedTraits =
+    {}
+
+HOLY_SERVER_FINDER_STATE.FilterPosition =
+    nil
 
     if HolyCanUseFiles() ~= true then
         return false
@@ -78045,18 +76487,15 @@ function HolyServerFinderSetHudVisible(value)
     return true
 end
 
-function HolyServerFinderOpenHud()
+function HolyServerFinderOpenHud(showHud)
 
     if HolyAuthRequireServerSniper(
-        "Server Pet Finder HUD",
-        true
+        "Server Finder HUD",
+        showHud ~= false
     ) ~= true then
 
         return false
     end
-
-    local filterOptions =
-        HolyServerFinderBuildFilterOptions()
 
     if HOLY_SERVER_FINDER_HUD == nil then
 
@@ -78068,14 +76507,17 @@ function HolyServerFinderOpenHud()
                 CurrentServer =
                     tostring(game.JobId),
 
+                SimpleMode =
+                    true,
+
+                HideFull =
+                    false,
+
                 AutoRefresh =
                     HOLY_SERVER_FINDER_STATE.AutoRefresh == true,
 
                 RefreshDelay =
                     HOLY_SERVER_FINDER_STATE.RefreshDelay,
-
-                HideFull =
-                    HOLY_SERVER_FINDER_STATE.HideFull ~= false,
 
                 HudScale =
                     HolyServerFinderGetHudScale(),
@@ -78088,46 +76530,11 @@ function HolyServerFinderOpenHud()
                         HOLY_SERVER_FINDER_STATE.AutoJoinMode
                     ),
 
-                SelectedPets =
-                    HolyServerFinderArrayFromMap(
-                        HOLY_SERVER_FINDER_STATE.SelectedPets
-                    ),
-
-                SelectedRarities =
-                    HolyServerFinderArrayFromMap(
-                        HOLY_SERVER_FINDER_STATE.SelectedRarities
-                    ),
-
-                SelectedSizes =
-                    HolyServerFinderArrayFromMap(
-                        HOLY_SERVER_FINDER_STATE.SelectedSizes
-                    ),
-
-                SelectedVariants =
-                    HolyServerFinderArrayFromMap(
-                        HOLY_SERVER_FINDER_STATE.SelectedVariants
-                    ),
-
                 Minimized =
                     HOLY_SERVER_FINDER_STATE.Minimized == true,
 
                 Position =
                     HOLY_SERVER_FINDER_STATE.Position,
-
-                FilterPosition =
-                    HOLY_SERVER_FINDER_STATE.FilterPosition,
-
-                FilterPets =
-                    filterOptions.Pets,
-
-                FilterRarities =
-                    filterOptions.Rarities,
-
-                FilterSizes =
-                    filterOptions.Sizes,
-
-                FilterVariants =
-                    filterOptions.Variants,
 
                 OnVisibleChanged =
                     function(visible, hud)
@@ -78159,24 +76566,6 @@ function HolyServerFinderOpenHud()
                         HolyQueueSaveServerFinderSettings()
                     end,
 
-                OnAutoJoinModeChanged =
-                    function(mode, hud)
-
-                        HolyServerFinderSetAutoJoinMode(
-                            mode
-                        )
-
-                        HolyServerFinderEvaluateAutoJoin(
-                            hud
-                        )
-                    end,
-
-                OnOpenAutoJoinRules =
-                    function()
-
-                        HolyServerFinderShowAutoJoinRulesPopup()
-                    end,
-
                 OnRefresh =
                     function(hud)
 
@@ -78201,22 +76590,102 @@ function HolyServerFinderOpenHud()
         HOLY_SERVER_FINDER_HUD
     )
 
-    HolyServerFinderApplyFilterOptions(
-        HOLY_SERVER_FINDER_HUD
-    )
-
     HolyServerFinderRefreshRows(
         HOLY_SERVER_FINDER_HUD,
-        "hud open"
+        showHud == false
+        and "background refresh"
+        or "hud open"
     )
 
     HOLY_SERVER_FINDER_HUD:SetCurrentServer(
         tostring(game.JobId)
     )
 
-    HOLY_SERVER_FINDER_HUD:Show()
+    if showHud ~= false then
+
+        HOLY_SERVER_FINDER_HUD:Show()
+    end
+
+    return true
 end
 
+HOLY_SERVER_FINDER_BACKGROUND_TOKEN = {
+    Active = true,
+}
+
+do
+
+    local token =
+        HOLY_SERVER_FINDER_BACKGROUND_TOKEN
+
+    task.spawn(function()
+
+        local nextRefreshAt =
+            0
+
+        while token.Active == true
+        and HOLY_SERVER_FINDER_BACKGROUND_TOKEN == token do
+
+            HolyServerFinderEnsureAutoJoinState()
+
+            local mode =
+                HolyServerFinderNormalizeAutoJoinMode(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinMode
+                )
+
+            local shouldRun =
+                HOLY_SERVER_FINDER_STATE.AutoRefresh == true
+                or mode ~= "Off"
+
+            if shouldRun == true
+            and HolyAuthHasServerSniperSlot() == true
+            and os.clock() >= nextRefreshAt then
+
+                local delay =
+                    math.clamp(
+                        tonumber(
+                            HOLY_SERVER_FINDER_STATE.RefreshDelay
+                        )
+                        or 5,
+                        1,
+                        60
+                    )
+
+                nextRefreshAt =
+                    os.clock()
+                    + delay
+
+                if HOLY_SERVER_FINDER_HUD == nil then
+
+                    HolyServerFinderOpenHud(
+                        false
+                    )
+
+                else
+
+                    local hudVisible =
+                        HOLY_SERVER_FINDER_HUD.Visible == true
+
+                    local visibleAutoRefresh =
+                        hudVisible
+                        and HOLY_SERVER_FINDER_STATE.AutoRefresh == true
+
+                    if visibleAutoRefresh ~= true then
+
+                        HolyServerFinderRefreshRows(
+                            HOLY_SERVER_FINDER_HUD,
+                            "background automation"
+                        )
+                    end
+                end
+            end
+
+            task.wait(
+                0.5
+            )
+        end
+    end)
+end
 
 --==================================================
 -- [5.5] SNIPER TAB MODE
@@ -78293,6 +76762,16 @@ function HolySniperSetPageMode(value)
 
     HolySetGroupboxVisible(
         ServerSniperBox,
+        serverVisible
+    )
+
+    HolySetGroupboxVisible(
+        ServerAutoJoinBox,
+        serverVisible
+    )
+
+    HolySetGroupboxVisible(
+        ServerAutoJoinWatchlistBox,
         serverVisible
     )
 end
@@ -79672,40 +78151,597 @@ SniperWatchlistBox:AddButton({
         end,
 })
 
+function HolyServerFinderModeDisplay(value)
+
+    value =
+        HolyServerFinderNormalizeAutoJoinMode(
+            value
+        )
+
+    if value == "Notify" then
+        return "Notify Only"
+    end
+
+    if value == "Join Best" then
+        return "Auto Join"
+    end
+
+    return "Off"
+end
+
+function HolyServerFinderModeFromDisplay(value)
+
+    value =
+        HolyServerFinderReadSingleValue(
+            value
+        )
+
+    if value == "Notify Only" then
+        return "Notify"
+    end
+
+    if value == "Auto Join" then
+        return "Join Best"
+    end
+
+    return "Off"
+end
+
 HolySniperAddLabel(
     ServerSniperBox,
     HolyAuthHasServerSniperSlot() == true
-    and "✅ Server Sniper slot active. Server Pet Finder HUD, auto join, and join buttons are unlocked."
-    or "🔒 Server Sniper Slot Required\nServer Pet Finder HUD, auto join, server rows, and join buttons require an active slot. Sniper Setup still works normally."
+    and "Server finder access active."
+    or "Server finder access required."
 )
 
 HOLY_SERVER_FINDER_TOGGLE =
-    ServerSniperBox:AddCheckbox(
+    ServerSniperBox:AddToggle(
         "HolyServerFinderHudToggle",
         {
             Text =
-                HolyAuthHasServerSniperSlot() == true
-                and "Server Pet Finder HUD"
-                or "🔒 Server Pet Finder HUD",
+                "Server Finder HUD",
 
             Default =
                 HOLY_SERVER_FINDER_STATE.Enabled == true
                 and HolyAuthHasServerSniperSlot() == true,
 
             Tooltip =
-                "Requires an active Server Sniper slot.",
+                "Shows available pets and servers in a compact HUD.",
         }
     )
 
+HOLY_SERVER_FINDER_MAIN_UI.HudToggle =
+    HOLY_SERVER_FINDER_TOGGLE
+
+HOLY_SERVER_FINDER_MAIN_UI.AutoRefreshToggle =
+    ServerSniperBox:AddToggle(
+        "HolyServerFinderAutoRefresh",
+        {
+            Text =
+                "Auto Refresh",
+
+            Default =
+                HOLY_SERVER_FINDER_STATE.AutoRefresh == true,
+
+            Tooltip =
+                "Keeps server results up to date automatically.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.RefreshDelayInput =
+    ServerSniperBox:AddInput(
+        "HolyServerFinderRefreshDelay",
+        {
+            Text =
+                "Refresh Interval",
+
+            Default =
+                tostring(
+                    HOLY_SERVER_FINDER_STATE.RefreshDelay
+                    or 5
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Seconds between automatic refreshes.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.FinderStatus =
+    HolySniperAddLabel(
+        ServerSniperBox,
+        "HUD: OFF · Auto refresh: OFF"
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.ModeDropdown =
+    ServerAutoJoinBox:AddDropdown(
+        "HolyServerFinderMatchAction",
+        {
+            Text =
+                "Match Action",
+
+            Values = {
+                "Off",
+                "Notify Only",
+                "Auto Join",
+            },
+
+            Default =
+                HolyServerFinderModeDisplay(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinMode
+                ),
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                3,
+
+            Tooltip =
+                "Choose what happens when a watchlist target is found.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.MinLifeInput =
+    ServerAutoJoinBox:AddInput(
+        "HolyServerFinderMinTimeLeft",
+        {
+            Text =
+                "Minimum Time Left",
+
+            Default =
+                tostring(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
+                    or 30
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Ignores results with less time remaining.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.CooldownInput =
+    ServerAutoJoinBox:AddInput(
+        "HolyServerFinderJoinCooldown",
+        {
+            Text =
+                "Join Cooldown",
+
+            Default =
+                tostring(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
+                    or 10
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Minimum seconds between target actions.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.AutoJoinStatus =
+    HolySniperAddLabel(
+        ServerAutoJoinBox,
+        "Mode: Off"
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.TargetDropdown =
+    ServerAutoJoinWatchlistBox:AddDropdown(
+        "HolyServerFinderSelectedTarget",
+        {
+            Text =
+                "Selected Target",
+
+            Values = {
+                "Loading targets...",
+            },
+
+            Default =
+                1,
+
+            Multi =
+                false,
+
+            Searchable =
+                true,
+
+            AllowNull =
+                false,
+
+            MaxVisibleDropdownItems =
+                8,
+
+            Tooltip =
+                "Select a target to edit, reorder, or remove.",
+        }
+    )
+
+HOLY_SERVER_FINDER_MAIN_UI.TargetStatus =
+    HolySniperAddLabel(
+        ServerAutoJoinWatchlistBox,
+        "Loading watchlist..."
+    )
+
+ServerAutoJoinWatchlistBox:AddActionRow(
+    "HolyServerFinderTargetPrimaryActions",
+    {
+        Buttons = {
+            {
+                Id =
+                    "Add",
+
+                Text =
+                    "Add Target",
+
+                Tooltip =
+                    "Add a new auto join target.",
+
+                Callback =
+                    function()
+
+                        HolyServerFinderOpenTargetDialog(
+                            nil
+                        )
+                    end,
+            },
+
+            {
+                Id =
+                    "Edit",
+
+                Text =
+                    "Edit Target",
+
+                Tooltip =
+                    "Edit the selected target.",
+
+                Callback =
+                    function()
+
+                        local index =
+                            tonumber(
+                                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+                            )
+
+                        if HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] == nil then
+
+                            HolyNotify(
+                                "Auto Join Watchlist",
+                                "Select a target first.",
+                                3
+                            )
+
+                            return
+                        end
+
+                        HolyServerFinderOpenTargetDialog(
+                            index
+                        )
+                    end,
+            },
+        },
+    }
+)
+
+ServerAutoJoinWatchlistBox:AddActionRow(
+    "HolyServerFinderTargetOrderActions",
+    {
+        Buttons = {
+            {
+                Id =
+                    "Up",
+
+                Text =
+                    "Move Up",
+
+                Tooltip =
+                    "Give the selected target higher priority.",
+
+                Callback =
+                    function()
+
+                        HolyServerFinderMoveSelectedTarget(
+                            -1
+                        )
+                    end,
+            },
+
+            {
+                Id =
+                    "Down",
+
+                Text =
+                    "Move Down",
+
+                Tooltip =
+                    "Give the selected target lower priority.",
+
+                Callback =
+                    function()
+
+                        HolyServerFinderMoveSelectedTarget(
+                            1
+                        )
+                    end,
+            },
+        },
+    }
+)
+
+ServerAutoJoinWatchlistBox:AddButton({
+    Text =
+        "Remove Target",
+
+    Risky =
+        true,
+
+    DoubleClick =
+        true,
+
+    Tooltip =
+        "Double click to remove the selected target.",
+
+    Func =
+        function()
+
+            HolyServerFinderRemoveSelectedTarget()
+        end,
+})
+
+function HolyServerFinderRefreshMainUI()
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    local ui =
+        HOLY_SERVER_FINDER_MAIN_UI
+
+    if type(ui) ~= "table" then
+        return false
+    end
+
+    ui.Lock =
+        true
+
+    local function setValue(control, value)
+
+        if type(control) == "table"
+        and type(control.SetValue) == "function" then
+
+            pcall(function()
+
+                control:SetValue(
+                    value
+                )
+            end)
+        end
+    end
+
+    setValue(
+        ui.HudToggle,
+        HOLY_SERVER_FINDER_STATE.Enabled == true
+    )
+
+    setValue(
+        ui.AutoRefreshToggle,
+        HOLY_SERVER_FINDER_STATE.AutoRefresh == true
+    )
+
+    setValue(
+        ui.RefreshDelayInput,
+        tostring(
+            HOLY_SERVER_FINDER_STATE.RefreshDelay
+            or 5
+        )
+    )
+
+    setValue(
+        ui.ModeDropdown,
+        HolyServerFinderModeDisplay(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMode
+        )
+    )
+
+    setValue(
+        ui.MinLifeInput,
+        tostring(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
+            or 30
+        )
+    )
+
+    setValue(
+        ui.CooldownInput,
+        tostring(
+            HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
+            or 10
+        )
+    )
+
+    local targetValues =
+        {}
+
+    local targetMap =
+        {}
+
+    for index, target in ipairs(
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        or {}
+    ) do
+
+        local display =
+            HolyServerFinderTargetSummary(
+                target,
+                index
+            )
+
+        targetValues[index] =
+            display
+
+        targetMap[display] =
+            index
+    end
+
+    if #targetValues == 0 then
+
+        targetValues[1] =
+            "No targets added"
+    end
+
+    ui.TargetMap =
+        targetMap
+
+    if type(ui.TargetDropdown) == "table" then
+
+        pcall(function()
+
+            ui.TargetDropdown:SetValues(
+                targetValues
+            )
+        end)
+
+        local selectedIndex =
+            math.clamp(
+                tonumber(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+                )
+                or 1,
+                1,
+                math.max(
+                    1,
+                    #targetValues
+                )
+            )
+
+        pcall(function()
+
+            ui.TargetDropdown:SetValue(
+                targetValues[selectedIndex]
+            )
+        end)
+    end
+
+    ui.Lock =
+        false
+
+    local enabledTargets =
+        0
+
+    for _, target in ipairs(
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        or {}
+    ) do
+
+        if target.Enabled ~= false then
+
+            enabledTargets +=
+                1
+        end
+    end
+
+    HolySniperSetLabel(
+        ui.FinderStatus,
+        "HUD: "
+            .. (
+                HOLY_SERVER_FINDER_STATE.Enabled
+                and "ON"
+                or "OFF"
+            )
+            .. " · Auto refresh: "
+            .. (
+                HOLY_SERVER_FINDER_STATE.AutoRefresh
+                and "ON"
+                or "OFF"
+            )
+            .. " · "
+            .. tostring(
+                HOLY_SERVER_FINDER_STATE.RefreshDelay
+                or 5
+            )
+            .. "s"
+    )
+
+    HolySniperSetLabel(
+        ui.AutoJoinStatus,
+        "Mode: "
+            .. HolyServerFinderModeDisplay(
+                HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            )
+            .. " · "
+            .. tostring(enabledTargets)
+            .. " enabled"
+    )
+
+    local selectedTarget =
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules[
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+            )
+            or 1
+        ]
+
+    HolySniperSetLabel(
+        ui.TargetStatus,
+        selectedTarget
+        and (
+            "Priority "
+            .. tostring(
+                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+            )
+            .. " · "
+            .. (
+                selectedTarget.Enabled ~= false
+                and "Enabled"
+                or "Disabled"
+            )
+        )
+        or "No targets added."
+    )
+
+    return true
+end
+
 HOLY_SERVER_FINDER_TOGGLE:OnChanged(function(value)
 
-    if HOLY_SERVER_FINDER_TOGGLE_LOCK == true then
+    if HOLY_SERVER_FINDER_TOGGLE_LOCK == true
+    or HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+
         return
     end
 
     if value == true
     and HolyAuthRequireServerSniper(
-        "Server Pet Finder HUD",
+        "Server Finder HUD",
         true
     ) ~= true then
 
@@ -79716,15 +78752,144 @@ HOLY_SERVER_FINDER_TOGGLE:OnChanged(function(value)
         return
     end
 
-    HOLY_SERVER_FINDER_STATE.Enabled =
-        value == true
-
-    HolyQueueSaveServerFinderSettings()
-
     HolyServerFinderSetHudVisible(
         value == true
     )
+
+    HolyServerFinderRefreshMainUI()
 end)
+
+HOLY_SERVER_FINDER_MAIN_UI.AutoRefreshToggle:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    if value == true
+    and HolyAuthRequireServerSniper(
+        "Auto Refresh",
+        true
+    ) ~= true then
+
+        HolyServerFinderRefreshMainUI()
+
+        return
+    end
+
+    HOLY_SERVER_FINDER_STATE.AutoRefresh =
+        value == true
+
+    HolyServerFinderApplyStateToHud(
+        HOLY_SERVER_FINDER_HUD
+    )
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshMainUI()
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.RefreshDelayInput:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_STATE.RefreshDelay =
+        math.clamp(
+            tonumber(value)
+            or 5,
+            1,
+            60
+        )
+
+    HolyServerFinderApplyStateToHud(
+        HOLY_SERVER_FINDER_HUD
+    )
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshMainUI()
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.ModeDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HolyServerFinderSetAutoJoinMode(
+        HolyServerFinderModeFromDisplay(
+            value
+        )
+    )
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.MinLifeInput:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMinLife =
+        math.clamp(
+            tonumber(value)
+            or 30,
+            0,
+            420
+        )
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshMainUI()
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.CooldownInput:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinCooldown =
+        math.clamp(
+            tonumber(value)
+            or 10,
+            1,
+            120
+        )
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshMainUI()
+end)
+
+HOLY_SERVER_FINDER_MAIN_UI.TargetDropdown:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_MAIN_UI.Lock == true then
+        return
+    end
+
+    local display =
+        HolyServerFinderReadSingleValue(
+            value
+        )
+
+    local index =
+        HOLY_SERVER_FINDER_MAIN_UI.TargetMap[
+            display
+        ]
+
+    if index then
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+            index
+
+        HolyQueueSaveServerFinderSettings()
+
+        HolyServerFinderRefreshMainUI()
+    end
+end)
+
+HolyServerFinderRefreshMainUI()
 
 if HOLY_SERVER_FINDER_STATE.Enabled == true then
 
