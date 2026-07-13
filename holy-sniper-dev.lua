@@ -297,7 +297,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260713-black_rim_ui_v2"
+    "holy-premium-20260713-theme_studio_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -310,6 +310,10 @@ local UI_SETTINGS_FOLDER =
 local UI_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyDevUISettings.json"
+
+local THEME_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumThemes.json"
 
 local SHOP_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
@@ -2324,7 +2328,8 @@ function HolyLoadUISettings()
             or "Interface"
         )
 
-    if settingsDashboard ~= "Session"
+    if settingsDashboard ~= "Themes"
+    and settingsDashboard ~= "Session"
     and settingsDashboard ~= "Performance" then
 
         settingsDashboard =
@@ -64146,10 +64151,1565 @@ if type(Library) ~= "table" then
     )
 end
 
-HOLY_DEV_UI_STATE.ThemeName =
-    Library:SetTheme(
-        HOLY_DEV_UI_STATE.ThemeName
+local HOLY_THEME_STATE = {
+    Version =
+        "HOLY_THEME_MANAGER_V1",
+
+    BuiltInOrder = {},
+    BuiltInSet = {},
+    BuiltInData = {},
+
+    CustomThemes = {},
+    RegisteredCustom = {},
+
+    FontByName = {},
+    FontLabelByName = {},
+    FontNameByLabel = {},
+    FontLabels = {},
+
+    StatusDefaults = {},
+    UI = {},
+
+    ActiveName =
+        "HOLY Red",
+
+    Draft =
+        nil,
+
+    Dirty =
+        false,
+
+    SyncingEditor =
+        false,
+}
+
+local HOLY_THEME_COLOR_FIELDS = {
+    "Background",
+    "Surface",
+    "Accent",
+    "Border",
+    "Text",
+}
+
+local HOLY_THEME_STATUS_FIELDS = {
+    "SuccessColor",
+    "WarningColor",
+    "MutedColor",
+    "RedColor",
+    "DestructiveColor",
+    "DarkColor",
+    "WhiteColor",
+}
+
+local function HolyThemeCloneData(data)
+
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    return {
+        Background =
+            data.Background,
+
+        Surface =
+            data.Surface,
+
+        Accent =
+            data.Accent,
+
+        Border =
+            data.Border,
+
+        Text =
+            data.Text,
+
+        Font =
+            tostring(
+                data.Font
+                or "GothamMedium"
+            ),
+    }
+end
+
+local function HolyThemeFindFont(enumName)
+
+    for _, fontItem in ipairs(
+        Enum.Font:GetEnumItems()
+    ) do
+
+        if fontItem.Name == enumName then
+
+            return fontItem
+        end
+    end
+
+    return nil
+end
+
+local function HolyThemeRegisterFont(
+    label,
+    enumName
+)
+
+    local fontItem =
+        HolyThemeFindFont(
+            enumName
+        )
+
+    if typeof(fontItem) ~= "EnumItem" then
+        return
+    end
+
+    local success,
+        fontFace =
+        pcall(function()
+
+            return Font.fromEnum(
+                fontItem
+            )
+        end)
+
+    if success ~= true
+    or typeof(fontFace) ~= "Font" then
+
+        return
+    end
+
+    HOLY_THEME_STATE.FontByName[
+        enumName
+    ] =
+        fontFace
+
+    HOLY_THEME_STATE.FontLabelByName[
+        enumName
+    ] =
+        label
+
+    HOLY_THEME_STATE.FontNameByLabel[
+        label
+    ] =
+        enumName
+
+    table.insert(
+        HOLY_THEME_STATE.FontLabels,
+        label
     )
+end
+
+HolyThemeRegisterFont(
+    "Gotham Medium",
+    "GothamMedium"
+)
+
+HolyThemeRegisterFont(
+    "Gotham",
+    "Gotham"
+)
+
+HolyThemeRegisterFont(
+    "Gotham Semibold",
+    "GothamSemibold"
+)
+
+HolyThemeRegisterFont(
+    "Code",
+    "Code"
+)
+
+HolyThemeRegisterFont(
+    "Source Sans",
+    "SourceSans"
+)
+
+HolyThemeRegisterFont(
+    "Roboto Mono",
+    "RobotoMono"
+)
+
+HolyThemeRegisterFont(
+    "Ubuntu",
+    "Ubuntu"
+)
+
+if HOLY_THEME_STATE.FontByName.GothamMedium == nil then
+
+    HOLY_THEME_STATE.FontByName.GothamMedium =
+        Library.Scheme.Font
+
+    HOLY_THEME_STATE.FontLabelByName.GothamMedium =
+        "Gotham Medium"
+
+    HOLY_THEME_STATE.FontNameByLabel[
+        "Gotham Medium"
+    ] =
+        "GothamMedium"
+
+    table.insert(
+        HOLY_THEME_STATE.FontLabels,
+        1,
+        "Gotham Medium"
+    )
+end
+
+local function HolyThemeClampColor(color)
+
+    if typeof(color) ~= "Color3" then
+
+        return Color3.new(
+            1,
+            1,
+            1
+        )
+    end
+
+    return Color3.new(
+        math.clamp(
+            color.R,
+            0,
+            1
+        ),
+
+        math.clamp(
+            color.G,
+            0,
+            1
+        ),
+
+        math.clamp(
+            color.B,
+            0,
+            1
+        )
+    )
+end
+
+local function HolyThemeScaleColor(
+    color,
+    scale
+)
+
+    color =
+        HolyThemeClampColor(
+            color
+        )
+
+    scale =
+        tonumber(scale)
+        or 1
+
+    return HolyThemeClampColor(
+        Color3.new(
+            color.R * scale,
+            color.G * scale,
+            color.B * scale
+        )
+    )
+end
+
+local function HolyThemeOffsetColor(
+    color,
+    amount
+)
+
+    color =
+        HolyThemeClampColor(
+            color
+        )
+
+    amount =
+        tonumber(amount)
+        or 0
+
+    return HolyThemeClampColor(
+        Color3.new(
+            color.R + amount,
+            color.G + amount,
+            color.B + amount
+        )
+    )
+end
+
+local function HolyThemeBlendColor(
+    first,
+    second,
+    amount
+)
+
+    first =
+        HolyThemeClampColor(
+            first
+        )
+
+    second =
+        HolyThemeClampColor(
+            second
+        )
+
+    amount =
+        math.clamp(
+            tonumber(amount)
+            or 0,
+            0,
+            1
+        )
+
+    return Color3.new(
+        first.R
+            + (
+                second.R
+                - first.R
+            )
+            * amount,
+
+        first.G
+            + (
+                second.G
+                - first.G
+            )
+            * amount,
+
+        first.B
+            + (
+                second.B
+                - first.B
+            )
+            * amount
+    )
+end
+
+local function HolyThemeColorToHex(color)
+
+    color =
+        HolyThemeClampColor(
+            color
+        )
+
+    return string.format(
+        "#%02X%02X%02X",
+        math.floor(
+            color.R * 255 + 0.5
+        ),
+        math.floor(
+            color.G * 255 + 0.5
+        ),
+        math.floor(
+            color.B * 255 + 0.5
+        )
+    )
+end
+
+local function HolyThemeHexToColor(
+    value,
+    fallback
+)
+
+    if typeof(value) == "Color3" then
+
+        return HolyThemeClampColor(
+            value
+        )
+    end
+
+    local text =
+        tostring(
+            value
+            or ""
+        )
+        :gsub(
+            "#",
+            ""
+        )
+
+    if #text ~= 6
+    or text:match("^[%x]+$") == nil then
+
+        return fallback
+    end
+
+    local red =
+        tonumber(
+            text:sub(
+                1,
+                2
+            ),
+            16
+        )
+
+    local green =
+        tonumber(
+            text:sub(
+                3,
+                4
+            ),
+            16
+        )
+
+    local blue =
+        tonumber(
+            text:sub(
+                5,
+                6
+            ),
+            16
+        )
+
+    if red == nil
+    or green == nil
+    or blue == nil then
+
+        return fallback
+    end
+
+    return Color3.fromRGB(
+        red,
+        green,
+        blue
+    )
+end
+
+local function HolyThemeDataToRuntime(data)
+
+    local border =
+        HolyThemeClampColor(
+            data.Border
+        )
+
+    local controlBorder =
+        HolyThemeScaleColor(
+            border,
+            0.84
+        )
+
+    local separator =
+        HolyThemeBlendColor(
+            data.Background,
+            border,
+            0.55
+        )
+
+    local fontName =
+        tostring(
+            data.Font
+            or "GothamMedium"
+        )
+
+    local fontFace =
+        HOLY_THEME_STATE.FontByName[
+            fontName
+        ]
+        or HOLY_THEME_STATE.FontByName.GothamMedium
+        or Library.Scheme.Font
+
+    return {
+        BackgroundColor =
+            HolyThemeClampColor(
+                data.Background
+            ),
+
+        MainColor =
+            HolyThemeClampColor(
+                data.Surface
+            ),
+
+        AccentColor =
+            HolyThemeClampColor(
+                data.Accent
+            ),
+
+        OutlineColor =
+            controlBorder,
+
+        FontColor =
+            HolyThemeClampColor(
+                data.Text
+            ),
+
+        OuterRimColor =
+            Color3.fromRGB(
+                0,
+                0,
+                0
+            ),
+
+        InnerBorderColor =
+            border,
+
+        ControlBorderColor =
+            controlBorder,
+
+        SeparatorColor =
+            separator,
+
+        BorderColor =
+            border,
+
+        Font =
+            fontFace,
+
+        FontName =
+            fontName,
+    }
+end
+
+local function HolyThemeHydrateBuiltIns()
+
+    table.clear(
+        HOLY_THEME_STATE.BuiltInOrder
+    )
+
+    table.clear(
+        HOLY_THEME_STATE.BuiltInSet
+    )
+
+    table.clear(
+        HOLY_THEME_STATE.BuiltInData
+    )
+
+    for _, themeName in ipairs(
+        Library.ThemeOrder
+    ) do
+
+        table.insert(
+            HOLY_THEME_STATE.BuiltInOrder,
+            themeName
+        )
+
+        HOLY_THEME_STATE.BuiltInSet[
+            themeName
+        ] =
+            true
+
+        HOLY_THEME_STATE.BuiltInSet[
+            string.lower(
+                themeName
+            )
+        ] =
+            true
+
+        local theme =
+            Library.Themes[
+                themeName
+            ]
+
+        if type(theme) == "table" then
+
+            local outline =
+                typeof(theme.OutlineColor) == "Color3"
+                and theme.OutlineColor
+                or Library.Scheme.OutlineColor
+
+            local border =
+                typeof(theme.InnerBorderColor) == "Color3"
+                and theme.InnerBorderColor
+                or HolyThemeOffsetColor(
+                    outline,
+                    6 / 255
+                )
+
+            local fontName =
+                tostring(
+                    theme.FontName
+                    or "GothamMedium"
+                )
+
+            if HOLY_THEME_STATE.FontByName[
+                fontName
+            ] == nil then
+
+                fontName =
+                    "GothamMedium"
+            end
+
+            local publicData = {
+                Background =
+                    theme.BackgroundColor,
+
+                Surface =
+                    theme.MainColor,
+
+                Accent =
+                    theme.AccentColor,
+
+                Border =
+                    border,
+
+                Text =
+                    theme.FontColor,
+
+                Font =
+                    fontName,
+            }
+
+            HOLY_THEME_STATE.BuiltInData[
+                themeName
+            ] =
+                HolyThemeCloneData(
+                    publicData
+                )
+
+            local runtime =
+                HolyThemeDataToRuntime(
+                    publicData
+                )
+
+            for key, value in pairs(
+                runtime
+            ) do
+
+                theme[key] =
+                    value
+            end
+        end
+    end
+
+    local baseTheme =
+        Library.Themes[
+            "HOLY Red"
+        ]
+
+    if type(baseTheme) == "table" then
+
+        for _, key in ipairs(
+            HOLY_THEME_STATUS_FIELDS
+        ) do
+
+            HOLY_THEME_STATE.StatusDefaults[
+                key
+            ] =
+                baseTheme[key]
+        end
+    end
+end
+
+local function HolyThemeNormalizeData(
+    data,
+    fallback
+)
+
+    if type(data) ~= "table"
+    or type(fallback) ~= "table" then
+
+        return nil
+    end
+
+    local result = {
+        Background =
+            HolyThemeHexToColor(
+                data.Background
+                    or data.BackgroundColor,
+                fallback.Background
+            ),
+
+        Surface =
+            HolyThemeHexToColor(
+                data.Surface
+                    or data.MainColor,
+                fallback.Surface
+            ),
+
+        Accent =
+            HolyThemeHexToColor(
+                data.Accent
+                    or data.AccentColor,
+                fallback.Accent
+            ),
+
+        Border =
+            HolyThemeHexToColor(
+                data.Border
+                    or data.BorderColor
+                    or data.InnerBorderColor
+                    or data.OutlineColor,
+                fallback.Border
+            ),
+
+        Text =
+            HolyThemeHexToColor(
+                data.Text
+                    or data.FontColor,
+                fallback.Text
+            ),
+
+        Font =
+            tostring(
+                data.Font
+                    or data.FontName
+                    or fallback.Font
+                    or "GothamMedium"
+            ),
+    }
+
+    if HOLY_THEME_STATE.FontByName[
+        result.Font
+    ] == nil then
+
+        result.Font =
+            fallback.Font
+            or "GothamMedium"
+    end
+
+    return result
+end
+
+local function HolyThemeSerializeData(data)
+
+    return {
+        Background =
+            HolyThemeColorToHex(
+                data.Background
+            ),
+
+        Surface =
+            HolyThemeColorToHex(
+                data.Surface
+            ),
+
+        Accent =
+            HolyThemeColorToHex(
+                data.Accent
+            ),
+
+        Border =
+            HolyThemeColorToHex(
+                data.Border
+            ),
+
+        Text =
+            HolyThemeColorToHex(
+                data.Text
+            ),
+
+        Font =
+            tostring(
+                data.Font
+                or "GothamMedium"
+            ),
+    }
+end
+
+local function HolyThemeSaveCustomThemes()
+
+    if HolyCanUseFiles() ~= true then
+
+        return false,
+            "File access is unavailable."
+    end
+
+    HolyEnsureFolder()
+
+    local serializedThemes = {}
+
+    for themeName, data in pairs(
+        HOLY_THEME_STATE.CustomThemes
+    ) do
+
+        serializedThemes[
+            themeName
+        ] =
+            HolyThemeSerializeData(
+                data
+            )
+    end
+
+    local payload = {
+        Version =
+            HOLY_THEME_STATE.Version,
+
+        Themes =
+            serializedThemes,
+    }
+
+    local encodeSuccess,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeSuccess ~= true
+    or type(encoded) ~= "string" then
+
+        return false,
+            "The theme file could not be encoded."
+    end
+
+    local writeSuccess =
+        pcall(function()
+
+            writefile(
+                THEME_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    if writeSuccess ~= true then
+
+        return false,
+            "The theme file could not be saved."
+    end
+
+    return true
+end
+
+local function HolyThemeLoadCustomThemes()
+
+    table.clear(
+        HOLY_THEME_STATE.CustomThemes
+    )
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                THEME_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return true
+    end
+
+    local readSuccess,
+        raw =
+        pcall(function()
+
+            return readfile(
+                THEME_SETTINGS_FILE
+            )
+        end)
+
+    if readSuccess ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeSuccess,
+        decoded =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeSuccess ~= true
+    or type(decoded) ~= "table"
+    or type(decoded.Themes) ~= "table" then
+
+        return false
+    end
+
+    local fallback =
+        HOLY_THEME_STATE.BuiltInData[
+            "HOLY Red"
+        ]
+
+    local usedNames = {}
+
+    for themeName, rawData in pairs(
+        decoded.Themes
+    ) do
+
+        themeName =
+            tostring(
+                themeName
+                or ""
+            )
+            :match(
+                "^%s*(.-)%s*$"
+            )
+
+        local lowerName =
+            string.lower(
+                themeName
+            )
+
+        local validName =
+            themeName ~= ""
+            and #themeName <= 24
+            and themeName:match(
+                "^[%w%s_%-]+$"
+            ) ~= nil
+
+        if validName
+        and HOLY_THEME_STATE.BuiltInSet[
+            lowerName
+        ] ~= true
+        and usedNames[
+            lowerName
+        ] ~= true then
+
+            local normalized =
+                HolyThemeNormalizeData(
+                    rawData,
+                    fallback
+                )
+
+            if normalized then
+
+                HOLY_THEME_STATE.CustomThemes[
+                    themeName
+                ] =
+                    normalized
+
+                usedNames[
+                    lowerName
+                ] =
+                    true
+            end
+        end
+    end
+
+    return true
+end
+
+local function HolyThemeRebuildLibraryThemes()
+
+    for themeName in pairs(
+        HOLY_THEME_STATE.RegisteredCustom
+    ) do
+
+        Library.Themes[
+            themeName
+        ] =
+            nil
+    end
+
+    table.clear(
+        HOLY_THEME_STATE.RegisteredCustom
+    )
+
+    table.clear(
+        Library.ThemeOrder
+    )
+
+    for _, themeName in ipairs(
+        HOLY_THEME_STATE.BuiltInOrder
+    ) do
+
+        table.insert(
+            Library.ThemeOrder,
+            themeName
+        )
+    end
+
+    local customNames = {}
+
+    for themeName in pairs(
+        HOLY_THEME_STATE.CustomThemes
+    ) do
+
+        table.insert(
+            customNames,
+            themeName
+        )
+    end
+
+    table.sort(
+        customNames,
+        function(first, second)
+
+            return string.lower(first)
+                < string.lower(second)
+        end
+    )
+
+    for _, themeName in ipairs(
+        customNames
+    ) do
+
+        local runtime =
+            HolyThemeDataToRuntime(
+                HOLY_THEME_STATE.CustomThemes[
+                    themeName
+                ]
+            )
+
+        for _, key in ipairs(
+            HOLY_THEME_STATUS_FIELDS
+        ) do
+
+            runtime[key] =
+                HOLY_THEME_STATE.StatusDefaults[
+                    key
+                ]
+        end
+
+        runtime.IsLight =
+            false
+
+        Library.Themes[
+            themeName
+        ] =
+            runtime
+
+        HOLY_THEME_STATE.RegisteredCustom[
+            themeName
+        ] =
+            true
+
+        table.insert(
+            Library.ThemeOrder,
+            themeName
+        )
+    end
+end
+
+local function HolyThemeGetData(
+    themeName
+)
+
+    return HOLY_THEME_STATE.CustomThemes[
+        themeName
+    ]
+    or HOLY_THEME_STATE.BuiltInData[
+        themeName
+    ]
+end
+
+local function HolyThemeIsCustom(
+    themeName
+)
+
+    return HOLY_THEME_STATE.CustomThemes[
+        themeName
+    ] ~= nil
+end
+
+local function HolyThemeNotify(
+    title,
+    description,
+    warning
+)
+
+    if type(Library.Notify) == "function" then
+
+        Library:Notify({
+            Title =
+                tostring(
+                    title
+                    or "Theme Studio"
+                ),
+
+            Description =
+                tostring(
+                    description
+                    or ""
+                ),
+
+            Time =
+                warning == true
+                and 5
+                or 3,
+        })
+
+    elseif warning == true then
+
+        warn(
+            "[HOLY THEME] "
+            .. tostring(
+                description
+            )
+        )
+    end
+end
+
+function HolyThemeApplyByName(
+    themeName
+)
+
+    themeName =
+        tostring(
+            themeName
+            or ""
+        )
+
+    local data =
+        HolyThemeGetData(
+            themeName
+        )
+
+    if type(data) ~= "table"
+    or type(Library.Themes[themeName]) ~= "table" then
+
+        return false
+    end
+
+    local applied =
+        Library:SetTheme(
+            themeName
+        )
+
+    if applied ~= themeName then
+        return false
+    end
+
+    HOLY_THEME_STATE.ActiveName =
+        themeName
+
+    HOLY_THEME_STATE.Draft =
+        HolyThemeCloneData(
+            data
+        )
+
+    HOLY_THEME_STATE.Dirty =
+        false
+
+    if type(HOLY_SHOP_STATE) == "table" then
+
+        HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+            true
+    end
+
+    if type(HolyThemeRefreshUI) == "function" then
+
+        HolyThemeRefreshUI()
+    end
+
+    return true
+end
+
+local function HolyThemeApplyDraft()
+
+    local draft =
+        HOLY_THEME_STATE.Draft
+
+    if type(draft) ~= "table" then
+        return false
+    end
+
+    local runtime =
+        HolyThemeDataToRuntime(
+            draft
+        )
+
+    for key, value in pairs(
+        runtime
+    ) do
+
+        Library.Scheme[
+            key
+        ] =
+            value
+    end
+
+    Library.ThemeName =
+        HOLY_THEME_STATE.ActiveName
+
+    Library.IsLightTheme =
+        false
+
+    Library:UpdateColorsUsingRegistry()
+
+    if type(HOLY_SHOP_STATE) == "table" then
+
+        HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+            true
+    end
+
+    return true
+end
+
+function HolyThemeSetDraftColor(
+    key,
+    color
+)
+
+    if HOLY_THEME_STATE.SyncingEditor == true
+    or type(HOLY_THEME_STATE.Draft) ~= "table"
+    or typeof(color) ~= "Color3" then
+
+        return
+    end
+
+    if not table.find(
+        HOLY_THEME_COLOR_FIELDS,
+        key
+    ) then
+
+        return
+    end
+
+    HOLY_THEME_STATE.Draft[
+        key
+    ] =
+        color
+
+    HOLY_THEME_STATE.Dirty =
+        true
+
+    HolyThemeApplyDraft()
+
+    if type(HolyThemeRefreshStatus) == "function" then
+
+        HolyThemeRefreshStatus()
+    end
+end
+
+function HolyThemeSetDraftFont(
+    fontName
+)
+
+    if HOLY_THEME_STATE.SyncingEditor == true
+    or type(HOLY_THEME_STATE.Draft) ~= "table" then
+
+        return
+    end
+
+    fontName =
+        tostring(
+            fontName
+            or "GothamMedium"
+        )
+
+    if HOLY_THEME_STATE.FontByName[
+        fontName
+    ] == nil then
+
+        return
+    end
+
+    HOLY_THEME_STATE.Draft.Font =
+        fontName
+
+    HOLY_THEME_STATE.Dirty =
+        true
+
+    HolyThemeApplyDraft()
+
+    if type(HolyThemeRefreshStatus) == "function" then
+
+        HolyThemeRefreshStatus()
+    end
+end
+
+local function HolyThemeCleanName(
+    value
+)
+
+    local name =
+        tostring(
+            value
+            or ""
+        )
+        :match(
+            "^%s*(.-)%s*$"
+        )
+
+    if #name < 2 then
+
+        return nil,
+            "Theme names need at least 2 characters."
+    end
+
+    if #name > 24 then
+
+        return nil,
+            "Theme names can contain at most 24 characters."
+    end
+
+    if name:match(
+        "^[%w%s_%-]+$"
+    ) == nil then
+
+        return nil,
+            "Use letters, numbers, spaces, underscores or dashes."
+    end
+
+    local lowerName =
+        string.lower(
+            name
+        )
+
+    if HOLY_THEME_STATE.BuiltInSet[
+        lowerName
+    ] == true then
+
+        return nil,
+            "Built-in theme names are reserved."
+    end
+
+    for existingName in pairs(
+        HOLY_THEME_STATE.CustomThemes
+    ) do
+
+        if string.lower(
+            existingName
+        ) == lowerName then
+
+            return nil,
+                "A theme with this name already exists."
+        end
+    end
+
+    return name
+end
+
+function HolyThemeSaveAs(
+    requestedName
+)
+
+    if type(HOLY_THEME_STATE.Draft) ~= "table" then
+
+        return false,
+            "There is no theme to save."
+    end
+
+    local name,
+        nameError =
+        HolyThemeCleanName(
+            requestedName
+        )
+
+    if name == nil then
+
+        return false,
+            nameError
+    end
+
+    HOLY_THEME_STATE.CustomThemes[
+        name
+    ] =
+        HolyThemeCloneData(
+            HOLY_THEME_STATE.Draft
+        )
+
+    local saved,
+        saveError =
+        HolyThemeSaveCustomThemes()
+
+    if saved ~= true then
+
+        HOLY_THEME_STATE.CustomThemes[
+            name
+        ] =
+            nil
+
+        return false,
+            saveError
+    end
+
+    HolyThemeRebuildLibraryThemes()
+
+    HolyThemeApplyByName(
+        name
+    )
+
+    HolyThemeNotify(
+        "Theme saved",
+        name .. " is now available."
+    )
+
+    return true
+end
+
+function HolyThemeOverwriteActive()
+
+    local name =
+        HOLY_THEME_STATE.ActiveName
+
+    if HolyThemeIsCustom(name) ~= true then
+
+        HolyThemeNotify(
+            "Built-in theme",
+            "Save this theme as a new custom theme first.",
+            true
+        )
+
+        return false
+    end
+
+    if type(HOLY_THEME_STATE.Draft) ~= "table" then
+        return false
+    end
+
+    local previous =
+        HolyThemeCloneData(
+            HOLY_THEME_STATE.CustomThemes[
+                name
+            ]
+        )
+
+    HOLY_THEME_STATE.CustomThemes[
+        name
+    ] =
+        HolyThemeCloneData(
+            HOLY_THEME_STATE.Draft
+        )
+
+    local saved,
+        saveError =
+        HolyThemeSaveCustomThemes()
+
+    if saved ~= true then
+
+        HOLY_THEME_STATE.CustomThemes[
+            name
+        ] =
+            previous
+
+        HolyThemeNotify(
+            "Theme not saved",
+            saveError,
+            true
+        )
+
+        return false
+    end
+
+    HolyThemeRebuildLibraryThemes()
+
+    HolyThemeApplyByName(
+        name
+    )
+
+    HolyThemeNotify(
+        "Theme updated",
+        name .. " was overwritten."
+    )
+
+    return true
+end
+
+function HolyThemeDeleteActive()
+
+    local name =
+        HOLY_THEME_STATE.ActiveName
+
+    if HolyThemeIsCustom(name) ~= true then
+
+        HolyThemeNotify(
+            "Built-in theme",
+            "Built-in themes cannot be deleted.",
+            true
+        )
+
+        return false
+    end
+
+    local previous =
+        HOLY_THEME_STATE.CustomThemes[
+            name
+        ]
+
+    HOLY_THEME_STATE.CustomThemes[
+        name
+    ] =
+        nil
+
+    local saved,
+        saveError =
+        HolyThemeSaveCustomThemes()
+
+    if saved ~= true then
+
+        HOLY_THEME_STATE.CustomThemes[
+            name
+        ] =
+            previous
+
+        HolyThemeNotify(
+            "Theme not deleted",
+            saveError,
+            true
+        )
+
+        return false
+    end
+
+    if HOLY_DEV_UI_STATE.ThemeName == name then
+
+        HOLY_DEV_UI_STATE.ThemeName =
+            "HOLY Red"
+
+        HolySaveUISettings()
+    end
+
+    HolyThemeRebuildLibraryThemes()
+
+    HolyThemeApplyByName(
+        "HOLY Red"
+    )
+
+    HolyThemeNotify(
+        "Theme deleted",
+        name .. " was removed."
+    )
+
+    return true
+end
+
+function HolyThemeSetDefault()
+
+    if HOLY_THEME_STATE.Dirty == true then
+
+        HolyThemeNotify(
+            "Unsaved changes",
+            "Save or revert the current changes first.",
+            true
+        )
+
+        return false
+    end
+
+    local name =
+        HOLY_THEME_STATE.ActiveName
+
+    if type(HolyThemeGetData(name)) ~= "table" then
+        return false
+    end
+
+    HOLY_DEV_UI_STATE.ThemeName =
+        name
+
+    HolySaveUISettings()
+
+    if type(HolyThemeRefreshStatus) == "function" then
+
+        HolyThemeRefreshStatus()
+    end
+
+    HolyThemeNotify(
+        "Default theme",
+        name .. " will load next execution."
+    )
+
+    return true
+end
+
+function HolyThemeRevert()
+
+    return HolyThemeApplyByName(
+        HOLY_THEME_STATE.ActiveName
+    )
+end
+
+HolyThemeHydrateBuiltIns()
+HolyThemeLoadCustomThemes()
+HolyThemeRebuildLibraryThemes()
+
+if HolyThemeApplyByName(
+    HOLY_DEV_UI_STATE.ThemeName
+) ~= true then
+
+    HOLY_DEV_UI_STATE.ThemeName =
+        "HOLY Red"
+
+    HolyThemeApplyByName(
+        "HOLY Red"
+    )
+end
 
 Library:SetInterfaceTransparency(
     HOLY_DEV_UI_STATE.InterfaceTransparency
@@ -66899,6 +68459,22 @@ local SettingsLayoutBox =
         "Settings.Layout",
         "Layout",
         "panels-top-left"
+    )
+
+local SettingsThemeEditorBox =
+    HolyAddLeftGroupbox(
+        Tabs.Settings,
+        "Settings.ThemeEditor",
+        "Theme Editor",
+        "paintbrush"
+    )
+
+local SettingsThemeLibraryBox =
+    HolyAddRightGroupbox(
+        Tabs.Settings,
+        "Settings.ThemeLibrary",
+        "Theme Library",
+        "library"
     )
 
 local SettingsSessionBox =
@@ -83219,6 +84795,9 @@ function HolySettingsRefreshDashboard()
     local showInterface =
         dashboard == "Interface"
 
+    local showThemes =
+        dashboard == "Themes"
+
     local showSession =
         dashboard == "Session"
 
@@ -83233,6 +84812,16 @@ function HolySettingsRefreshDashboard()
     HolySetGroupboxVisible(
         SettingsLayoutBox,
         showInterface
+    )
+
+    HolySetGroupboxVisible(
+        SettingsThemeEditorBox,
+        showThemes
+    )
+
+    HolySetGroupboxVisible(
+        SettingsThemeLibraryBox,
+        showThemes
     )
 
     HolySetGroupboxVisible(
@@ -83254,7 +84843,8 @@ function HolySettingsSetDashboard(value)
             or "Interface"
         )
 
-    if value ~= "Session"
+    if value ~= "Themes"
+    and value ~= "Session"
     and value ~= "Performance" then
 
         value =
@@ -83282,6 +84872,7 @@ SettingsModeControl =
     Tabs.Settings:AddTopSegmentedControl({
         Values = {
             "Interface",
+            "Themes",
             "Session",
             "Performance",
         },
@@ -83309,42 +84900,603 @@ SettingsModeControl =
 
 HolySettingsRefreshDashboard()
 
-SettingsUIBox:AddThemePicker(
-    "HolyInterfaceTheme",
-    {
-        Text =
-            "Theme",
+local HolyQuickThemePicker =
+    SettingsUIBox:AddThemePicker(
+        "HolyInterfaceTheme",
+        {
+            Text =
+                "Theme",
 
-        Values =
-            Library:GetThemeNames(),
+            Values =
+                Library:GetThemeNames(),
 
-        Default =
-            HOLY_DEV_UI_STATE.ThemeName,
+            Default =
+                HOLY_THEME_STATE.ActiveName,
 
-        Animate =
-            true,
+            Animate =
+                true,
 
-        PopupTransparency =
-            0.08,
+            PopupTransparency =
+                0.08,
 
-        Tooltip =
-            "Changes the interface colors.",
-    }
-):OnChanged(function(value)
+            Tooltip =
+                "Changes the active interface theme.",
+        }
+    )
 
-    HOLY_DEV_UI_STATE.ThemeName =
-        Library:SetTheme(
-            value
+HolyQuickThemePicker:OnChanged(function(value)
+
+    HolyThemeApplyByName(
+        value
+    )
+end)
+
+HOLY_THEME_STATE.UI.QuickPicker =
+    HolyQuickThemePicker
+
+local function HolyThemeAddColorControl(
+    optionId,
+    text,
+    key
+)
+
+    local label =
+        SettingsThemeEditorBox:AddLabel(
+            text
         )
 
-    if type(HOLY_SHOP_STATE) == "table" then
+    label:AddColorPicker(
+        optionId,
+        {
+            Default =
+                HOLY_THEME_STATE.Draft[
+                    key
+                ],
 
-        HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
-            true
+            Title =
+                text,
+        }
+    )
+
+    local picker =
+        Options[
+            optionId
+        ]
+
+    picker:OnChanged(function(value)
+
+        HolyThemeSetDraftColor(
+            key,
+            value
+        )
+    end)
+
+    HOLY_THEME_STATE.UI.ColorPickers =
+        HOLY_THEME_STATE.UI.ColorPickers
+        or {}
+
+    HOLY_THEME_STATE.UI.ColorPickers[
+        key
+    ] =
+        picker
+end
+
+HolyThemeAddColorControl(
+    "HolyThemeBackground",
+    "Background",
+    "Background"
+)
+
+HolyThemeAddColorControl(
+    "HolyThemeSurface",
+    "Surface",
+    "Surface"
+)
+
+HolyThemeAddColorControl(
+    "HolyThemeAccent",
+    "Accent",
+    "Accent"
+)
+
+HolyThemeAddColorControl(
+    "HolyThemeBorder",
+    "Border",
+    "Border"
+)
+
+HolyThemeAddColorControl(
+    "HolyThemeText",
+    "Text",
+    "Text"
+)
+
+local HolyThemeFontDropdown =
+    SettingsThemeEditorBox:AddDropdown(
+        "HolyThemeFont",
+        {
+            Text =
+                "Font",
+
+            Values =
+                HOLY_THEME_STATE.FontLabels,
+
+            Default =
+                HOLY_THEME_STATE.FontLabelByName[
+                    HOLY_THEME_STATE.Draft.Font
+                ]
+                or "Gotham Medium",
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            Tooltip =
+                "Changes the interface font.",
+        }
+    )
+
+HolyThemeFontDropdown:OnChanged(function(value)
+
+    HolyThemeSetDraftFont(
+        HOLY_THEME_STATE.FontNameByLabel[
+            tostring(value)
+        ]
+    )
+end)
+
+HOLY_THEME_STATE.UI.FontDropdown =
+    HolyThemeFontDropdown
+
+local HolyThemeEditorStatus =
+    SettingsThemeEditorBox:AddLabel(
+        "Saved theme"
+    )
+
+HOLY_THEME_STATE.UI.EditorStatus =
+    HolyThemeEditorStatus
+
+local HolyThemeRevertButton =
+    SettingsThemeEditorBox:AddButton({
+        Text =
+            "Revert",
+
+        Func =
+            function()
+
+                HolyThemeRevert()
+            end,
+
+        Tooltip =
+            "Discards unsaved changes.",
+    })
+
+local HolyThemeSaveAsButton =
+    HolyThemeRevertButton:AddButton({
+        Text =
+            "Save as New",
+
+        Func =
+            function()
+
+                HolyThemeOpenSaveDialog()
+            end,
+
+        Tooltip =
+            "Saves the current appearance as a custom theme.",
+    })
+
+HOLY_THEME_STATE.UI.RevertButton =
+    HolyThemeRevertButton
+
+HOLY_THEME_STATE.UI.SaveAsButton =
+    HolyThemeSaveAsButton
+
+local HolyThemeActiveLabel =
+    SettingsThemeLibraryBox:AddLabel(
+        "Active: "
+        .. HOLY_THEME_STATE.ActiveName
+    )
+
+local HolyThemeDefaultLabel =
+    SettingsThemeLibraryBox:AddLabel(
+        "Default: "
+        .. tostring(
+            HOLY_DEV_UI_STATE.ThemeName
+        )
+    )
+
+HOLY_THEME_STATE.UI.ActiveLabel =
+    HolyThemeActiveLabel
+
+HOLY_THEME_STATE.UI.DefaultLabel =
+    HolyThemeDefaultLabel
+
+local HolyLibraryThemePicker =
+    SettingsThemeLibraryBox:AddThemePicker(
+        "HolyThemeLibraryPicker",
+        {
+            Text =
+                "Theme Library",
+
+            Values =
+                Library:GetThemeNames(),
+
+            Default =
+                HOLY_THEME_STATE.ActiveName,
+
+            Animate =
+                true,
+
+            PopupTransparency =
+                0.08,
+
+            Tooltip =
+                "Selects a built-in or saved custom theme.",
+        }
+    )
+
+HolyLibraryThemePicker:OnChanged(function(value)
+
+    HolyThemeApplyByName(
+        value
+    )
+end)
+
+HOLY_THEME_STATE.UI.LibraryPicker =
+    HolyLibraryThemePicker
+
+local HolyThemeDefaultButton =
+    SettingsThemeLibraryBox:AddButton({
+        Text =
+            "Set Default",
+
+        Func =
+            function()
+
+                HolyThemeSetDefault()
+            end,
+
+        Tooltip =
+            "Uses the active theme next execution.",
+    })
+
+local HolyThemeOverwriteButton =
+    HolyThemeDefaultButton:AddButton({
+        Text =
+            "Save Changes",
+
+        Func =
+            function()
+
+                HolyThemeOverwriteActive()
+            end,
+
+        DoubleClick =
+            true,
+
+        Tooltip =
+            "Overwrites the selected custom theme.",
+    })
+
+local HolyThemeDeleteButton =
+    SettingsThemeLibraryBox:AddButton({
+        Text =
+            "Delete Theme",
+
+        Func =
+            function()
+
+                HolyThemeDeleteActive()
+            end,
+
+        DoubleClick =
+            true,
+
+        Risky =
+            true,
+
+        Tooltip =
+            "Deletes the selected custom theme.",
+    })
+
+HOLY_THEME_STATE.UI.DefaultButton =
+    HolyThemeDefaultButton
+
+HOLY_THEME_STATE.UI.OverwriteButton =
+    HolyThemeOverwriteButton
+
+HOLY_THEME_STATE.UI.DeleteButton =
+    HolyThemeDeleteButton
+
+function HolyThemeRefreshStatus()
+
+    local ui =
+        HOLY_THEME_STATE.UI
+
+    local activeName =
+        tostring(
+            HOLY_THEME_STATE.ActiveName
+            or "HOLY Red"
+        )
+
+    local defaultName =
+        tostring(
+            HOLY_DEV_UI_STATE.ThemeName
+            or "HOLY Red"
+        )
+
+    local isCustom =
+        HolyThemeIsCustom(
+            activeName
+        )
+
+    local isDirty =
+        HOLY_THEME_STATE.Dirty == true
+
+    if ui.ActiveLabel then
+
+        ui.ActiveLabel:SetText(
+            "Active: "
+            .. activeName
+            .. (
+                isDirty
+                and "  •  UNSAVED"
+                or ""
+            )
+        )
     end
 
-    HolySaveUISettings()
-end)
+    if ui.DefaultLabel then
+
+        ui.DefaultLabel:SetText(
+            "Default: "
+            .. defaultName
+        )
+    end
+
+    if ui.EditorStatus then
+
+        if isDirty then
+
+            ui.EditorStatus:SetText(
+                "Unsaved changes"
+            )
+
+        elseif isCustom then
+
+            ui.EditorStatus:SetText(
+                "Custom theme"
+            )
+
+        else
+
+            ui.EditorStatus:SetText(
+                "Built-in theme"
+            )
+        end
+    end
+
+    if ui.RevertButton then
+
+        ui.RevertButton:SetDisabled(
+            not isDirty
+        )
+    end
+
+    if ui.OverwriteButton then
+
+        ui.OverwriteButton:SetDisabled(
+            not isCustom
+            or not isDirty
+        )
+    end
+
+    if ui.DeleteButton then
+
+        ui.DeleteButton:SetDisabled(
+            not isCustom
+        )
+    end
+
+    if ui.DefaultButton then
+
+        ui.DefaultButton:SetDisabled(
+            isDirty
+            or activeName == defaultName
+        )
+    end
+end
+
+function HolyThemeRefreshUI()
+
+    local ui =
+        HOLY_THEME_STATE.UI
+
+    local names =
+        Library:GetThemeNames()
+
+    HOLY_THEME_STATE.SyncingEditor =
+        true
+
+    for _, picker in ipairs({
+        ui.QuickPicker,
+        ui.LibraryPicker,
+    }) do
+
+        if type(picker) == "table" then
+
+            picker:SetValues(
+                names
+            )
+
+            picker:SetValue(
+                HOLY_THEME_STATE.ActiveName,
+                true
+            )
+        end
+    end
+
+    if type(HOLY_THEME_STATE.Draft) == "table"
+    and type(ui.ColorPickers) == "table" then
+
+        for _, key in ipairs(
+            HOLY_THEME_COLOR_FIELDS
+        ) do
+
+            local picker =
+                ui.ColorPickers[
+                    key
+                ]
+
+            if type(picker) == "table"
+            and type(picker.SetValueRGB) == "function" then
+
+                picker:SetValueRGB(
+                    HOLY_THEME_STATE.Draft[
+                        key
+                    ]
+                )
+            end
+        end
+    end
+
+    if ui.FontDropdown
+    and type(HOLY_THEME_STATE.Draft) == "table" then
+
+        ui.FontDropdown:SetValue(
+            HOLY_THEME_STATE.FontLabelByName[
+                HOLY_THEME_STATE.Draft.Font
+            ]
+            or "Gotham Medium"
+        )
+    end
+
+    HOLY_THEME_STATE.SyncingEditor =
+        false
+
+    HolyThemeRefreshStatus()
+end
+
+function HolyThemeOpenSaveDialog()
+
+    if type(Library.ActiveDialog) == "table"
+    and type(Library.ActiveDialog.Dismiss) == "function" then
+
+        Library.ActiveDialog:Dismiss()
+    end
+
+    local dialog =
+        Window:AddDialog(
+            "HolySaveThemeDialog",
+            {
+                Title =
+                    "Save Custom Theme",
+
+                Description =
+                    "Enter a name for the current appearance.",
+
+                AutoDismiss =
+                    false,
+
+                OutsideClickDismiss =
+                    true,
+
+                FooterButtons =
+                    {},
+            }
+        )
+
+    local nameInput =
+        dialog:AddInput(
+            "HolyThemeSaveNameInput",
+            {
+                Text =
+                    "Theme Name",
+
+                Default =
+                    "",
+
+                Placeholder =
+                    "My Theme",
+
+                AllowEmpty =
+                    true,
+
+                EmptyReset =
+                    "",
+
+                Finished =
+                    true,
+
+                MaxLength =
+                    24,
+            }
+        )
+
+    dialog:AddFooterButton(
+        "Cancel",
+        {
+            Title =
+                "Cancel",
+
+            Variant =
+                "Secondary",
+
+            Order =
+                1,
+
+            Callback =
+                function(activeDialog)
+
+                    activeDialog:Dismiss()
+                end,
+        }
+    )
+
+    dialog:AddFooterButton(
+        "Save",
+        {
+            Title =
+                "Save Theme",
+
+            Variant =
+                "Primary",
+
+            Order =
+                2,
+
+            Callback =
+                function(activeDialog)
+
+                    local success,
+                        errorMessage =
+                        HolyThemeSaveAs(
+                            nameInput.Value
+                        )
+
+                    if success == true then
+
+                        activeDialog:Dismiss()
+
+                    else
+
+                        HolyThemeNotify(
+                            "Theme not saved",
+                            errorMessage,
+                            true
+                        )
+                    end
+                end,
+        }
+    )
+
+    dialog:Resize()
+end
+
+HolyThemeRefreshUI()
 
 SettingsUIBox:AddSlider(
     "HolyInterfaceTransparency",
