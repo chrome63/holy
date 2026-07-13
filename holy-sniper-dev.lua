@@ -37717,22 +37717,119 @@ function HolyAuctionReadStock(value)
     )
 end
 
-function HolyAuctionReadCooldown()
+function HolyAuctionGetFlags()
 
-    local number =
-        tonumber(
-            tostring(
-                HOLY_SHOP_STATE.AuctionCooldown
-                or "10"
-            ):match("%d+%.?%d*")
+    HolyAuctionEnsureState()
+
+    if type(
+        HOLY_SHOP_STATE.AuctionFlagsModule
+    ) == "table" then
+
+        return HOLY_SHOP_STATE.AuctionFlagsModule
+    end
+
+    local flags =
+        HolyShopRequireModule(
+            "SharedModules.Flags.AuctioneerFlags"
         )
 
+    if type(flags) == "table" then
+
+        HOLY_SHOP_STATE.AuctionFlagsModule =
+            flags
+
+        return flags
+    end
+
+    return nil
+end
+
+function HolyAuctionReadFlagNumber(
+    flagName,
+    fallback
+)
+
+    local flags =
+        HolyAuctionGetFlags()
+
+    local flag =
+        type(flags) == "table"
+        and flags[flagName]
+        or nil
+
+    local value =
+        nil
+
+    if type(flag) == "table" then
+
+        value =
+            flag.Value
+
+        if type(value) == "function" then
+
+            local ok,
+                result =
+                pcall(
+                    value,
+                    flag
+                )
+
+            if ok == true then
+
+                value =
+                    result
+            end
+        end
+
+        if tonumber(value) == nil then
+
+            value =
+                flag.DefaultValue
+        end
+
+    elseif tonumber(flag) ~= nil then
+
+        value =
+            flag
+    end
+
+    return tonumber(value)
+        or tonumber(fallback)
+        or 0
+end
+
+function HolyAuctionReadDebounce()
+
     return math.clamp(
-        tonumber(number)
-        or 10,
-        0.2,
-        60
+        HolyAuctionReadFlagNumber(
+            "PurchaseDebounceSeconds",
+            0.2
+        ),
+        0.05,
+        5
     )
+end
+
+function HolyAuctionReadCooldown()
+
+    local serverCooldown =
+        math.clamp(
+            HolyAuctionReadFlagNumber(
+                "PurchaseCooldownSeconds",
+                10
+            ),
+            0.2,
+            120
+        )
+
+    local safetyMargin =
+        math.max(
+            0.25,
+            HolyAuctionReadDebounce()
+        )
+
+    return serverCooldown
+        + safetyMargin
 end
 
 function HolyAuctionAddCandidate(rows, name, source, data)
@@ -42195,6 +42292,8 @@ end
 
 function HolyAuctionFindBuyTarget()
 
+    HolyAuctionEnsureState()
+
     local rows =
         HolyAuctionScanLiveLots()
 
@@ -42207,14 +42306,17 @@ function HolyAuctionFindBuyTarget()
     if desiredPrice <= 0 then
 
         return nil,
-            "Set desired price first"
+            "Set Max Price first"
     end
 
     if #rows <= 0 then
 
         return nil,
-            "Waiting auction data"
+            "Loading auctions"
     end
+
+    local eligible =
+        {}
 
     local selectedTooExpensive =
         nil
@@ -42222,62 +42324,139 @@ function HolyAuctionFindBuyTarget()
     local selectedStale =
         nil
 
+    local selectedBoughtOnce =
+        false
+
+    local selectedFound =
+        false
+
     for _, row in ipairs(rows) do
 
-        if row.Active == true
-        and HolyAuctionSelectionAllows(row.Name) == true then
+        if HolyAuctionSelectionAllows(
+            row.Name
+        ) == true then
 
-            local stale,
-                staleReason =
-                HolyAuctionRowStale(
-                    row,
+            selectedFound =
+                true
+
+            local alreadyAttempted =
+                HOLY_SHOP_STATE
+                    .AuctionAttemptedLots[
+                        tostring(row.LotId)
+                    ] == true
+
+            if HOLY_SHOP_STATE
+                .AuctionBuyUntilSoldOut ~= true
+            and alreadyAttempted == true then
+
+                selectedBoughtOnce =
                     true
-                )
 
-            if stale == true then
+            elseif row.Active == true then
 
-                selectedStale =
-                    selectedStale
-                    or staleReason
+                local stale,
+                    staleReason =
+                    HolyAuctionRowStale(
+                        row,
+                        true
+                    )
 
-            elseif HolyAuctionPriceAllows(row) == true then
+                if stale == true then
 
-                return row,
-                    "ok"
+                    selectedStale =
+                        selectedStale
+                        or staleReason
 
-            else
+                elseif HolyAuctionPriceAllows(
+                    row
+                ) == true then
 
-                selectedTooExpensive =
-                    selectedTooExpensive
-                    or row
+                    eligible[#eligible + 1] =
+                        row
+
+                else
+
+                    if selectedTooExpensive == nil
+                    or tonumber(row.Price)
+                        < tonumber(
+                            selectedTooExpensive.Price
+                        ) then
+
+                        selectedTooExpensive =
+                            row
+                    end
+                end
             end
         end
+    end
+
+    if #eligible > 0 then
+
+        table.sort(eligible, function(a, b)
+
+            local priceA =
+                tonumber(a.Price)
+                or math.huge
+
+            local priceB =
+                tonumber(b.Price)
+                or math.huge
+
+            if priceA ~= priceB then
+
+                return priceA < priceB
+            end
+
+            return (
+                tonumber(a.SortIndex)
+                or 999
+            ) < (
+                tonumber(b.SortIndex)
+                or 999
+            )
+        end)
+
+        return eligible[1],
+            "Ready"
+    end
+
+    if selectedBoughtOnce == true
+    and HOLY_SHOP_STATE
+        .AuctionBuyUntilSoldOut ~= true then
+
+        return nil,
+            "Bought once"
     end
 
     if type(selectedTooExpensive) == "table" then
 
         return nil,
-            "Waiting price: "
-                .. tostring(selectedTooExpensive.Name)
-                .. " "
-                .. HolyAuctionFormatMoney(
-                    selectedTooExpensive.Price
-                )
-                .. " > "
-                .. HolyAuctionFormatMoney(
-                    desiredPrice
-                )
+            "Waiting: "
+            .. tostring(selectedTooExpensive.Name)
+            .. " "
+            .. HolyAuctionFormatMoney(
+                selectedTooExpensive.Price
+            )
+            .. " > "
+            .. HolyAuctionFormatMoney(
+                desiredPrice
+            )
     end
 
     if selectedStale ~= nil then
 
         return nil,
-            "Waiting data: "
-                .. tostring(selectedStale)
+            "Waiting for stock"
+    end
+
+    if selectedFound == true then
+
+        return nil,
+            "Selected auction unavailable"
     end
 
     return nil,
-        "Waiting selected auction item"
+        "Select an auction item"
 end
 
 function HolyAuctionManualBuyOnce(reason)
@@ -42853,7 +43032,25 @@ function HolyAuctionEnsureState()
     HOLY_SHOP_STATE.AuctionLastDecision =
         tostring(
             HOLY_SHOP_STATE.AuctionLastDecision
-            or "Waiting network data"
+            or "Loading auctions"
+        )
+
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionNextRetryAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionPendingSentAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionPendingSentAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionLastBlockReason =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastBlockReason
+            or ""
         )
 
     return HOLY_SHOP_STATE
@@ -44537,10 +44734,52 @@ function HolyAuctionRepriceRow(row)
     result.Manifest =
         manifestLot
 
-    if HolyAuctionLotAllowed(result) ~= true then
+    if result.Active ~= true then
 
         return nil,
-            "final safety check blocked"
+            "Auction unavailable"
+    end
+
+    if HolyAuctionSelectionAllows(
+        result.Name
+    ) ~= true then
+
+        return nil,
+            "Item is not selected"
+    end
+
+    if HolyAuctionPriceAllows(
+        result
+    ) ~= true then
+
+        return nil,
+            "Price is above Max Price"
+    end
+
+    local stale,
+        staleReason =
+        HolyAuctionRowStale(
+            result,
+            true
+        )
+
+    if stale == true then
+
+        return nil,
+            staleReason == "stock stale"
+            and "Waiting for stock"
+            or "Auction data is updating"
+    end
+
+    if HOLY_SHOP_STATE
+        .AuctionBuyUntilSoldOut ~= true
+    and HOLY_SHOP_STATE
+        .AuctionAttemptedLots[
+            tostring(result.LotId)
+        ] == true then
+
+        return nil,
+            "Bought once"
     end
 
     return result
@@ -44635,8 +44874,17 @@ function HolyAuctionFirePurchase(row)
     HOLY_SHOP_STATE.AuctionPendingPrice =
         price
 
+    HOLY_SHOP_STATE.AuctionPendingName =
+        tostring(
+            finalRow.Name
+            or "Auction item"
+        )
+
+    HOLY_SHOP_STATE.AuctionPendingSentAt =
+        os.clock()
+
     HOLY_SHOP_STATE.AuctionLastDecision =
-        "Packet 333 fired: "
+        "Purchase sent: "
         .. tostring(finalRow.Name)
         .. " at "
         .. HolyAuctionFormatMoney(price)
@@ -44659,6 +44907,52 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     local now =
         os.clock()
 
+    local pendingLotId =
+        HolyCleanText(
+            HOLY_SHOP_STATE.AuctionPendingLotId
+        )
+
+    local pendingSentAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionPendingSentAt
+        )
+        or 0
+
+    local pendingTimeout =
+        math.max(
+            2,
+            HolyAuctionReadDebounce()
+                + 0.5
+        )
+
+    if pendingLotId ~= ""
+    and pendingSentAt > 0
+    and now - pendingSentAt < pendingTimeout then
+
+        HolyAuctionSetStatus(
+            "Processing purchase..."
+        )
+
+        return false
+    end
+
+    if pendingLotId ~= ""
+    and pendingSentAt > 0
+    and now - pendingSentAt >= pendingTimeout then
+
+        HOLY_SHOP_STATE.AuctionPendingLotId =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingPrice =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingName =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingSentAt =
+            0
+    end
+
     local nextBuyAt =
         tonumber(
             HOLY_SHOP_STATE.AuctionNextBuyAt
@@ -44671,7 +44965,7 @@ function HolyAuctionAttemptPurchase(reason, automatic)
             "Cooldown "
             .. tostring(
                 math.max(
-                    0,
+                    1,
                     math.ceil(
                         nextBuyAt - now
                     )
@@ -44683,23 +44977,70 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         return false
     end
 
+    local nextRetryAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionNextRetryAt
+        )
+        or 0
+
+    if now < nextRetryAt then
+
+        return false
+    end
+
     local target,
         targetReason =
         HolyAuctionFindBuyTarget()
 
     if type(target) ~= "table" then
 
-        HOLY_SHOP_STATE.AuctionLastDecision =
+        targetReason =
             tostring(
                 targetReason
-                or "no target"
+                or "Waiting"
             )
 
+        HOLY_SHOP_STATE.AuctionLastDecision =
+            targetReason
+
+        HOLY_SHOP_STATE.AuctionLastBlockReason =
+            targetReason
+
+        local lowerReason =
+            targetReason:lower()
+
+        local retryDelay =
+            1
+
+        if lowerReason:find(
+            "stock",
+            1,
+            true
+        )
+        or lowerReason:find(
+            "updating",
+            1,
+            true
+        ) then
+
+            retryDelay =
+                2
+
+        elseif lowerReason:find(
+            "bought once",
+            1,
+            true
+        ) then
+
+            retryDelay =
+                5
+        end
+
+        HOLY_SHOP_STATE.AuctionNextRetryAt =
+            now + retryDelay
+
         HolyAuctionSetStatus(
-            tostring(
-                targetReason
-                or "Waiting selected auction item"
-            )
+            targetReason
         )
 
         return false
@@ -44714,30 +45055,43 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
     if ok ~= true then
 
-        HOLY_SHOP_STATE.AuctionNextBuyAt =
-            os.clock() + 1
+        local blockReason =
+            tostring(
+                fireMode
+                or "Purchase unavailable"
+            )
+
+        HOLY_SHOP_STATE.AuctionLastBlockReason =
+            blockReason
+
+        HOLY_SHOP_STATE.AuctionLastDecision =
+            blockReason
+
+        HOLY_SHOP_STATE.AuctionNextRetryAt =
+            now + 2
 
         HolyAuctionSetStatus(
-            "Buy blocked: "
-            .. tostring(fireMode)
+            blockReason
         )
 
         return false
     end
-
-    HOLY_SHOP_STATE.AuctionNextBuyAt =
-        os.clock()
-        + HolyAuctionReadCooldown()
 
     finalRow =
         type(finalRow) == "table"
         and finalRow
         or target
 
+    HOLY_SHOP_STATE.AuctionLastBlockReason =
+        ""
+
     if fireMode == "dry run" then
 
+        HOLY_SHOP_STATE.AuctionNextRetryAt =
+            now + 1
+
         HolyAuctionSetStatus(
-            "DRY RUN eligible: "
+            "Test ready: "
             .. tostring(finalRow.Name)
             .. " at "
             .. tostring(finalRow.PriceText)
@@ -44746,8 +45100,15 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         return true
     end
 
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        now
+        + HolyAuctionReadCooldown()
+
     HolyAuctionSetStatus(
-        "Sent purchase: "
+        "Buying "
         .. tostring(finalRow.Name)
         .. " at "
         .. tostring(finalRow.PriceText)
@@ -44911,6 +45272,9 @@ function HolyAuctionConnectPacketSignals()
                 local ready =
                     HolyAuctionRefreshNetworkReady()
 
+                HOLY_SHOP_STATE.AuctionNextRetryAt =
+                    0
+
                 if ready == true then
 
                     HolyAuctionSetStatus(
@@ -45006,27 +45370,109 @@ function HolyAuctionConnectPacketSignals()
                     )
             end
 
+            local pendingName =
+                tostring(
+                    HOLY_SHOP_STATE.AuctionPendingName
+                    or "Auction item"
+                )
+
+            local pendingSentAt =
+                tonumber(
+                    HOLY_SHOP_STATE.AuctionPendingSentAt
+                )
+                or os.clock()
+
             if success == true then
 
-                HolyAuctionSetStatus(
-                    "Purchase confirmed: "
-                    .. lotId
-                )
+                local nextAllowedAt =
+                    pendingSentAt
+                    + HolyAuctionReadCooldown()
+
+                HOLY_SHOP_STATE.AuctionNextBuyAt =
+                    math.max(
+                        tonumber(
+                            HOLY_SHOP_STATE.AuctionNextBuyAt
+                        )
+                        or 0,
+                        nextAllowedAt
+                    )
+
+                HOLY_SHOP_STATE.AuctionNextRetryAt =
+                    0
+
+                if HOLY_SHOP_STATE
+                    .AuctionBuyUntilSoldOut == true then
+
+                    HolyAuctionSetStatus(
+                        "Bought "
+                        .. pendingName
+                    )
+
+                else
+
+                    HolyAuctionSetStatus(
+                        "Bought once"
+                    )
+                end
 
             else
 
                 HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
                     nil
 
-                HolyAuctionSetStatus(
-                    "Purchase rejected: "
-                    .. lotId
-                    .. " "
-                    .. tostring(
+                local reasonText =
+                    tostring(
                         resultReason
-                        or "unknown reason"
+                        or "unknown"
                     )
+
+                local lowerReason =
+                    reasonText:lower()
+
+                warn(
+                    "[HOLY Auction] Purchase rejected: "
+                    .. reasonText
                 )
+
+                if lowerReason:find(
+                    "cooldown",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "too fast",
+                    1,
+                    true
+                )
+                or lowerReason:find(
+                    "debounce",
+                    1,
+                    true
+                ) then
+
+                    HOLY_SHOP_STATE.AuctionNextBuyAt =
+                        os.clock()
+                        + HolyAuctionReadCooldown()
+
+                    HOLY_SHOP_STATE.AuctionNextRetryAt =
+                        0
+
+                    HolyAuctionSetStatus(
+                        "Waiting for cooldown"
+                    )
+
+                else
+
+                    HOLY_SHOP_STATE.AuctionNextBuyAt =
+                        0
+
+                    HOLY_SHOP_STATE.AuctionNextRetryAt =
+                        os.clock() + 2
+
+                    HolyAuctionSetStatus(
+                        "Purchase failed"
+                    )
+                end
             end
 
             HOLY_SHOP_STATE.AuctionPendingLotId =
@@ -45034,6 +45480,12 @@ function HolyAuctionConnectPacketSignals()
 
             HOLY_SHOP_STATE.AuctionPendingPrice =
                 nil
+
+            HOLY_SHOP_STATE.AuctionPendingName =
+                nil
+
+            HOLY_SHOP_STATE.AuctionPendingSentAt =
+                0
 
             task.defer(function()
 
@@ -80463,6 +80915,21 @@ ShopAuctionBox:AddToggle(
     HOLY_SHOP_STATE.AuctionNextBuyAt =
         0
 
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
+    HOLY_SHOP_STATE.AuctionPendingLotId =
+        nil
+
+    HOLY_SHOP_STATE.AuctionPendingPrice =
+        nil
+
+    HOLY_SHOP_STATE.AuctionPendingName =
+        nil
+
+    HOLY_SHOP_STATE.AuctionPendingSentAt =
+        0
+
     HolyAuctionSetStatus(
         HOLY_SHOP_STATE.AuctionDryRun == true
         and "Safety dry run enabled"
@@ -80566,41 +81033,6 @@ ShopAuctionBox:AddInput(
     end
 end)
 
-ShopAuctionBox:AddInput(
-    "HolyShopAuctionCooldown",
-    {
-        Text =
-            "Buy Cooldown",
-
-        Default =
-            tostring(
-                HOLY_SHOP_STATE.AuctionCooldown
-                or "10"
-            ),
-
-        Placeholder =
-            "10",
-
-        Numeric =
-            true,
-
-        Finished =
-            true,
-
-        ClearTextOnFocus =
-            false,
-
-        Tooltip =
-            "How long to wait between auction purchases.",
-    }
-):OnChanged(function(value)
-
-    HOLY_SHOP_STATE.AuctionCooldown =
-        tostring(value or "10")
-
-    HolySaveShopSettings()
-end)
-
 ShopAuctionBox:AddToggle(
     "HolyShopAuctionBuyUntilSoldOut",
     {
@@ -80618,7 +81050,18 @@ ShopAuctionBox:AddToggle(
     HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
         value == true
 
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
     HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true
+    and value == true then
+
+        HolyAuctionQueueWorker(
+            "buy until enabled"
+        )
+    end
 end)
 
 ShopAuctionBox:AddToggle(
