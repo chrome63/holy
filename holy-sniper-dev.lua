@@ -38855,11 +38855,13 @@ function HolyAuctionRefreshDropdown(forceRefresh)
         forceRefresh == true
     )
 
-    if type(HolyAuctionRefreshWatchlistUI) == "function" then
+    HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+        true
 
-        HolyAuctionRefreshWatchlistUI(
-            forceRefresh == true
-        )
+    if forceRefresh == true then
+
+        HOLY_SHOP_STATE.AuctionWatchlistUIForceRebuild =
+            true
     end
 
     return true
@@ -40061,12 +40063,8 @@ function HolyAuctionRefreshUI()
         HOLY_SHOP_STATE.AuctionStatus
     )
 
-    if type(HolyAuctionRefreshWatchlistUI) == "function" then
-
-        HolyAuctionRefreshWatchlistUI(
-            false
-        )
-    end
+    HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+        true
 
     if HOLY_SHOP_STATE.AuctionHudEnabled == true then
 
@@ -81385,9 +81383,15 @@ function HolyAuctionCreateWatchlistRow(entry, index)
         HOLY_SHOP_STATE.AuctionWatchlistSelectedKey =
             key
 
-        HolyAuctionRefreshWatchlistUI(
-            false
-        )
+        HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+            true
+
+        pcall(function()
+
+            HolyAuctionRefreshWatchlistUI(
+                false
+            )
+        end)
     end)
 
     HOLY_AUCTION_WATCHLIST_UI.Rows[key] = {
@@ -81586,9 +81590,77 @@ function HolyAuctionRefreshWatchlistUI(forceRebuild)
     return true
 end
 
-HolyAuctionRefreshWatchlistUI(
+HOLY_AUCTION_WATCHLIST_REFRESH_TOKEN =
+    {}
+
+local HolyAuctionWatchlistRefreshToken =
+    HOLY_AUCTION_WATCHLIST_REFRESH_TOKEN
+
+HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
     true
-)
+
+HOLY_SHOP_STATE.AuctionWatchlistUIForceRebuild =
+    true
+
+pcall(function()
+
+    HolyAuctionRefreshWatchlistUI(
+        true
+    )
+end)
+
+task.spawn(function()
+
+    while HOLY_AUCTION_WATCHLIST_REFRESH_TOKEN
+        == HolyAuctionWatchlistRefreshToken do
+
+        local surfaceAlive =
+            false
+
+        pcall(function()
+
+            surfaceAlive =
+                AuctionWatchlistSurface.Parent
+                ~= nil
+        end)
+
+        if surfaceAlive ~= true then
+            break
+        end
+
+        if HOLY_SHOP_STATE.AuctionWatchlistUIDirty == true then
+
+            local forceRebuild =
+                HOLY_SHOP_STATE
+                    .AuctionWatchlistUIForceRebuild
+                    == true
+
+            HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+                false
+
+            HOLY_SHOP_STATE.AuctionWatchlistUIForceRebuild =
+                false
+
+            local refreshed =
+                pcall(function()
+
+                    HolyAuctionRefreshWatchlistUI(
+                        forceRebuild
+                    )
+                end)
+
+            if refreshed ~= true then
+
+                HOLY_SHOP_STATE.AuctionWatchlistUIDirty =
+                    true
+            end
+        end
+
+        task.wait(
+            0.25
+        )
+    end
+end)
 
 ShopAuctionBox:AddToggle(
     "HolyShopAuctionBuyUntilSoldOut",
