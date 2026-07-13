@@ -297,7 +297,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260713-precision_ui_v1"
+    "holy-premium-20260713-black_rim_ui_v2"
 
 local LIBRARY_URL =
     REPO_URL
@@ -66472,7 +66472,7 @@ local Window =
             ),
 
         CornerRadius =
-            4,
+            6,
 
         GlobalSearch =
             true,
@@ -83293,10 +83293,10 @@ SettingsModeControl =
             390,
 
         Height =
-            46,
+            42,
 
         PillHeight =
-            32,
+            30,
 
         Callback =
             function(value)
