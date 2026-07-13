@@ -71302,47 +71302,18 @@ function HolyMoonHudCreate()
 
     holderStroke.Color =
         Color3.fromRGB(
-            232,
             45,
-            67
+            49,
+            58
         )
 
     holderStroke.Transparency =
-        0.18
+        0.10
 
     holderStroke.Thickness =
-        1.2
+        1
 
     holderStroke.Parent =
-        holder
-
-    local accent =
-        Instance.new(
-            "Frame"
-        )
-
-    accent.BackgroundColor3 =
-        Color3.fromRGB(
-            232,
-            45,
-            67
-        )
-
-    accent.BackgroundTransparency =
-        0.05
-
-    accent.BorderSizePixel =
-        0
-
-    accent.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            2
-        )
-
-    accent.Parent =
         holder
 
     local header =
@@ -71432,7 +71403,7 @@ function HolyMoonHudCreate()
     currentLabel.Size =
         UDim2.new(
             1,
-            -72,
+            -42,
             1,
             0
         )
@@ -71465,50 +71436,6 @@ function HolyMoonHudCreate()
         3
 
     currentLabel.Parent =
-        header
-
-    local grip =
-        Instance.new(
-            "TextLabel"
-        )
-
-    grip.BackgroundTransparency =
-        1
-
-    grip.Position =
-        UDim2.new(
-            1,
-            -34,
-            0,
-            0
-        )
-
-    grip.Size =
-        UDim2.fromOffset(
-            26,
-            28
-        )
-
-    grip.FontFace =
-        Library.Scheme.Font
-
-    grip.Text =
-        "⋮⋮"
-
-    grip.TextColor3 =
-        Color3.fromRGB(
-            148,
-            163,
-            184
-        )
-
-    grip.TextSize =
-        13
-
-    grip.ZIndex =
-        3
-
-    grip.Parent =
         header
 
     local cards =
