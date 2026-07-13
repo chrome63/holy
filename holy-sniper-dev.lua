@@ -73893,6 +73893,9 @@ local FarmExtraExperimentalBox =
         "flask-conical"
     )
 
+local SHOW_PATCHED_VULN_TOOLS =
+    false
+
 local VulnRollbackBox =
     HolyAddLeftGroupbox(
         Tabs.Vuln,
@@ -93231,7 +93234,6 @@ if DevPacketBox then
     )
 end
 
-
 if Tabs.Dev then
 
     HolyDevRefreshToolDropdown()
@@ -93686,6 +93688,16 @@ HOLY_WATERING_REJOIN_UI.RejoinDelaySlider:OnChanged(function(value)
     )
 end)
 
+HolySetGroupboxVisible(
+    VulnRollbackBox,
+    SHOW_PATCHED_VULN_TOOLS
+)
+
+HolySetGroupboxVisible(
+    VulnWateringRejoinBox,
+    SHOW_PATCHED_VULN_TOOLS
+)
+
 --==================================================
 -- [8] FINISH
 --==================================================
@@ -93700,7 +93712,8 @@ if type(HolyRareAlertStart) == "function" then
     end)
 end
 
-if HOLY_WATERING_REJOIN_STATE.Enabled == true then
+if SHOW_PATCHED_VULN_TOOLS == true
+and HOLY_WATERING_REJOIN_STATE.Enabled == true then
 
     task.defer(function()
 
