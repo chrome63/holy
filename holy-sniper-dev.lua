@@ -38800,38 +38800,6 @@ function HolyAuctionStockAge()
     return os.clock() - at
 end
 
-function HolyAuctionFormatAge(seconds)
-
-    seconds =
-        tonumber(seconds)
-        or 0
-
-    if seconds <= 0 then
-        return "now"
-    end
-
-    if seconds < 10 then
-
-        return string.format(
-            "%.1fs ago",
-            seconds
-        )
-    end
-
-    if seconds < 60 then
-
-        return tostring(
-            math.floor(seconds + 0.5)
-        )
-        .. "s ago"
-    end
-
-    return tostring(
-        math.floor(seconds / 60)
-    )
-    .. "m ago"
-end
-
 function HolyAuctionFormatDuration(seconds)
 
     seconds =
@@ -39187,30 +39155,49 @@ function HolyAuctionHudCorner(parent, radius)
     )
 end
 
-function HolyAuctionHudStroke(parent, color, transparency, thickness)
+function HolyAuctionHudStroke(
+    parent,
+    color,
+    transparency,
+    thickness
+)
 
-    return HolyAuctionHudCreate(
-        "UIStroke",
-        {
-            Color =
-                color
-                or Color3.fromRGB(255, 184, 60),
+    local stroke =
+        HolyAuctionHudCreate(
+            "UIStroke",
+            {
+                Color =
+                    color
+                    or Color3.fromRGB(
+                        67,
+                        72,
+                        86
+                    ),
 
-            Transparency =
-                transparency
-                or 0.15,
+                Transparency =
+                    transparency ~= nil
+                    and transparency
+                    or 0.20,
 
-            Thickness =
-                thickness
-                or 1,
+                Thickness =
+                    thickness
+                    or 1,
 
-            ApplyStrokeMode =
-                Enum.ApplyStrokeMode.Border,
+                ApplyStrokeMode =
+                    Enum.ApplyStrokeMode.Border,
 
-            Parent =
-                parent,
-        }
-    )
+                Parent =
+                    parent,
+            }
+        )
+
+    pcall(function()
+
+        stroke.LineJoinMode =
+            Enum.LineJoinMode.Miter
+    end)
+
+    return stroke
 end
 
 function HolyAuctionHudLabel(parent, text, x, y, w, h, size, color, bold)
@@ -39316,13 +39303,20 @@ function HolyAuctionHudButton(parent, text, x, y, w, h)
 
     HolyAuctionHudCorner(
         button,
-        UDim.new(0, 7)
+        UDim.new(
+            0,
+            4
+        )
     )
 
     HolyAuctionHudStroke(
         button,
-        Color3.fromRGB(75, 68, 60),
-        0.25,
+        Color3.fromRGB(
+            72,
+            77,
+            91
+        ),
+        0.16,
         1
     )
 
@@ -39379,90 +39373,319 @@ function HolyAuctionHudSavePosition(frame)
     return true
 end
 
-function HolyAuctionHudMakeDraggable(frame, handle)
+function HolyAuctionHudMakeDraggable(
+    frame,
+    handles
+)
 
-    handle =
-        handle
-        or frame
+    if typeof(frame) ~= "Instance"
+    or frame:IsA("GuiObject") ~= true then
 
-    local dragging =
-        false
+        return nil
+    end
 
-    local dragStart =
-        nil
+    local handleList =
+        {}
 
-    local startPosition =
-        nil
+    if typeof(handles) == "Instance" then
 
-    local dragInput =
-        nil
+        handleList[1] =
+            handles
 
-    HolyAuctionHudAddConnection(
-        handle.InputBegan:Connect(function(input)
+    elseif type(handles) == "table" then
 
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+        for _, handle in ipairs(handles) do
 
-                dragging =
-                    true
+            if typeof(handle) == "Instance"
+            and handle:IsA("GuiObject") then
 
-                dragStart =
-                    input.Position
-
-                startPosition =
-                    frame.Position
-
-                input.Changed:Connect(function()
-
-                    if input.UserInputState == Enum.UserInputState.End then
-
-                        dragging =
-                            false
-
-                        HolyAuctionHudSavePosition(
-                            frame
-                        )
-
-                        HolySaveShopSettings()
-                    end
-                end)
+                handleList[#handleList + 1] =
+                    handle
             end
-        end)
+        end
+    end
+
+    if #handleList <= 0 then
+
+        handleList[1] =
+            frame
+    end
+
+    local controller = {
+        Active =
+            false,
+
+        ActiveHandle =
+            nil,
+
+        PointerInput =
+            nil,
+
+        DragStart =
+            nil,
+
+        StartPosition =
+            nil,
+
+        Dragged =
+            false,
+
+        SuppressUntil =
+            {},
+    }
+
+    function controller:ConsumeClick(handle)
+
+        local suppressUntil =
+            tonumber(
+                self.SuppressUntil[handle]
+            )
+            or 0
+
+        self.SuppressUntil[handle] =
+            nil
+
+        return os.clock()
+            <= suppressUntil
+    end
+
+    local function clampPosition(
+        x,
+        y
     )
 
-    HolyAuctionHudAddConnection(
-        handle.InputChanged:Connect(function(input)
+        local viewportSize =
+            Vector2.new(
+                1920,
+                1080
+            )
 
-            if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
+        pcall(function()
 
-                dragInput =
+            local camera =
+                workspace.CurrentCamera
+
+            if camera then
+
+                viewportSize =
+                    camera.ViewportSize
+            end
+        end)
+
+        local frameSize =
+            frame.AbsoluteSize
+
+        local maximumX =
+            math.max(
+                0,
+                viewportSize.X
+                    - frameSize.X
+            )
+
+        local maximumY =
+            math.max(
+                0,
+                viewportSize.Y
+                    - frameSize.Y
+            )
+
+        return math.clamp(
+            x,
+            0,
+            maximumX
+        ),
+            math.clamp(
+                y,
+                0,
+                maximumY
+            )
+    end
+
+    local function beginDrag(
+        handle,
+        input
+    )
+
+        if controller.Active == true then
+            return
+        end
+
+        local inputType =
+            input.UserInputType
+
+        if inputType ~= Enum.UserInputType.MouseButton1
+        and inputType ~= Enum.UserInputType.Touch then
+
+            return
+        end
+
+        controller.Active =
+            true
+
+        controller.ActiveHandle =
+            handle
+
+        controller.PointerInput =
+            input
+
+        controller.DragStart =
+            input.Position
+
+        controller.StartPosition =
+            frame.Position
+
+        controller.Dragged =
+            false
+    end
+
+    local function finishDrag()
+
+        if controller.Active ~= true then
+            return
+        end
+
+        local activeHandle =
+            controller.ActiveHandle
+
+        local wasDragged =
+            controller.Dragged == true
+
+        controller.Active =
+            false
+
+        controller.ActiveHandle =
+            nil
+
+        controller.PointerInput =
+            nil
+
+        controller.DragStart =
+            nil
+
+        controller.StartPosition =
+            nil
+
+        controller.Dragged =
+            false
+
+        if wasDragged == true then
+
+            controller.SuppressUntil[
+                activeHandle
+            ] =
+                os.clock() + 0.40
+
+            HolyAuctionHudSavePosition(
+                frame
+            )
+
+            HolySaveShopSettings()
+        end
+    end
+
+    for _, handle in ipairs(handleList) do
+
+        HolyAuctionHudAddConnection(
+            handle.InputBegan:Connect(function(input)
+
+                beginDrag(
+                    handle,
                     input
-            end
-        end)
-    )
+                )
+            end)
+        )
+    end
 
     HolyAuctionHudAddConnection(
         UserInputService.InputChanged:Connect(function(input)
 
-            if dragging ~= true
-            or input ~= dragInput
-            or dragStart == nil
-            or startPosition == nil then
+            if controller.Active ~= true
+            or controller.DragStart == nil
+            or controller.StartPosition == nil then
+
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType ~= Enum.UserInputType.MouseMovement
+            and inputType ~= Enum.UserInputType.Touch then
+
+                return
+            end
+
+            if inputType == Enum.UserInputType.Touch
+            and input ~= controller.PointerInput then
 
                 return
             end
 
             local delta =
-                input.Position - dragStart
+                input.Position
+                - controller.DragStart
+
+            if delta.Magnitude >= 4 then
+
+                controller.Dragged =
+                    true
+
+                controller.SuppressUntil[
+                    controller.ActiveHandle
+                ] =
+                    os.clock() + 0.40
+            end
+
+            if controller.Dragged ~= true then
+                return
+            end
+
+            local x =
+                controller.StartPosition.X.Offset
+                + delta.X
+
+            local y =
+                controller.StartPosition.Y.Offset
+                + delta.Y
+
+            x,
+                y =
+                clampPosition(
+                    x,
+                    y
+                )
 
             frame.Position =
                 UDim2.fromOffset(
-                    startPosition.X.Offset + delta.X,
-                    startPosition.Y.Offset + delta.Y
+                    x,
+                    y
                 )
         end)
     )
+
+    HolyAuctionHudAddConnection(
+        UserInputService.InputEnded:Connect(function(input)
+
+            if controller.Active ~= true then
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType == Enum.UserInputType.MouseButton1 then
+
+                finishDrag()
+
+            elseif inputType == Enum.UserInputType.Touch
+            and input == controller.PointerInput then
+
+                finishDrag()
+            end
+        end)
+    )
+
+    return controller
 end
 
 function HolyAuctionHudStart()
@@ -41292,9 +41515,6 @@ function HolyAuctionRowStale(row, requireServerStock)
             return true,
                 "stock missing"
         end
-
-    local ready =
-        HOLY_SHOP_STATE.AuctionNetworkReady == true
     end
 
     return false,
@@ -42780,7 +43000,7 @@ function HolyAuctionHudCreateUI()
                 BackgroundTransparency =
                     minimized
                     and 1
-                    or 0.38,
+                    or 0.12,
 
                 BorderSizePixel = 0,
                 ClipsDescendants = true,
@@ -42818,7 +43038,7 @@ function HolyAuctionHudCreateUI()
         holder,
         UDim.new(
             0,
-            13
+            6
         )
     )
 
@@ -42826,12 +43046,12 @@ function HolyAuctionHudCreateUI()
         HolyAuctionHudStroke(
             holder,
             Color3.fromRGB(
-                255,
-                255,
-                255
+                222,
+                43,
+                82
             ),
-            0.84,
-            1
+            0.16,
+            1.5
         )
 
     holderStroke.Enabled =
@@ -42866,7 +43086,7 @@ function HolyAuctionHudCreateUI()
                         17
                     ),
 
-                BackgroundTransparency = 0.14,
+                BackgroundTransparency = 0.08,
                 BorderSizePixel = 0,
                 ClipsDescendants = true,
 
@@ -42890,19 +43110,41 @@ function HolyAuctionHudCreateUI()
         top,
         UDim.new(
             0,
-            12
+            5
         )
     )
 
-    HolyAuctionHudStroke(
-        top,
-        Color3.fromRGB(
-            255,
-            255,
-            255
-        ),
-        0.86,
-        1
+    HolyAuctionHudCreate(
+        "Frame",
+        {
+            BackgroundColor3 =
+                Color3.fromRGB(
+                    222,
+                    43,
+                    82
+                ),
+
+            BackgroundTransparency =
+                0.10,
+
+            BorderSizePixel =
+                0,
+
+            Position =
+                UDim2.fromOffset(
+                    0,
+                    36
+                ),
+
+            Size =
+                UDim2.fromOffset(
+                    480,
+                    2
+                ),
+
+            Parent =
+                top,
+        }
     )
 
     local logo =
@@ -42939,7 +43181,7 @@ function HolyAuctionHudCreateUI()
         logo,
         UDim.new(
             0,
-            7
+            4
         )
     )
 
@@ -42947,10 +43189,10 @@ function HolyAuctionHudCreateUI()
         logo,
         Color3.fromRGB(
             255,
-            104,
-            177
+            79,
+            157
         ),
-        0.48,
+        0.05,
         1
     )
 
@@ -43171,7 +43413,7 @@ function HolyAuctionHudCreateUI()
                         18
                     ),
 
-                BackgroundTransparency = 0.31,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
 
                 Position =
@@ -43197,18 +43439,18 @@ function HolyAuctionHudCreateUI()
         summarySurface,
         UDim.new(
             0,
-            11
+            5
         )
     )
 
     HolyAuctionHudStroke(
         summarySurface,
         Color3.fromRGB(
-            255,
-            255,
-            255
+            62,
+            68,
+            82
         ),
-        0.86,
+        0.20,
         1
     )
 
@@ -43357,7 +43599,7 @@ function HolyAuctionHudCreateUI()
                         15
                     ),
 
-                BackgroundTransparency = 0.43,
+                BackgroundTransparency = 0.16,
                 BorderSizePixel = 0,
                 ClipsDescendants = true,
 
@@ -43384,18 +43626,18 @@ function HolyAuctionHudCreateUI()
         listSurface,
         UDim.new(
             0,
-            11
+            5
         )
     )
 
     HolyAuctionHudStroke(
         listSurface,
         Color3.fromRGB(
-            255,
-            255,
-            255
+            62,
+            68,
+            82
         ),
-        0.86,
+        0.20,
         1
     )
 
@@ -43536,9 +43778,21 @@ function HolyAuctionHudCreateUI()
             rowHolder,
             UDim.new(
                 0,
-                8
+                3
             )
         )
+
+        local rowStroke =
+            HolyAuctionHudStroke(
+                rowHolder,
+                Color3.fromRGB(
+                    54,
+                    59,
+                    72
+                ),
+                0.32,
+                1
+            )
 
         local accent =
             HolyAuctionHudCreate(
@@ -43695,6 +43949,7 @@ function HolyAuctionHudCreateUI()
 
         HOLY_AUCTION_HUD.RowFrames[index] = {
             Holder = rowHolder,
+            Stroke = rowStroke,
             Accent = accent,
             Name = nameLabel,
             Price = priceLabel,
@@ -43785,6 +44040,10 @@ function HolyAuctionHudCreateUI()
     HOLY_AUCTION_HUD.MiniDot =
         miniDot
 
+        local dragController =
+        nil
+
+
     local function applyMinimizedState(isMinimized)
 
         HOLY_SHOP_STATE.AuctionHudMinimized =
@@ -43805,7 +44064,7 @@ function HolyAuctionHudCreateUI()
         holder.BackgroundTransparency =
             currentMinimized
             and 1
-            or 0.38
+            or 0.12
 
         holderStroke.Enabled =
             not currentMinimized
@@ -43841,6 +44100,14 @@ function HolyAuctionHudCreateUI()
     HolyAuctionHudAddConnection(
         miniButton.MouseButton1Click:Connect(function()
 
+            if dragController
+            and dragController:ConsumeClick(
+                miniButton
+            ) == true then
+
+                return
+            end
+
             applyMinimizedState(
                 false
             )
@@ -43857,10 +44124,14 @@ function HolyAuctionHudCreateUI()
         end)
     )
 
-    HolyAuctionHudMakeDraggable(
-        holder,
-        top
-    )
+    dragController =
+        HolyAuctionHudMakeDraggable(
+            holder,
+            {
+                top,
+                miniButton,
+            }
+        )
 
     HolyAuctionHudApplyScale()
 
@@ -43894,7 +44165,6 @@ function HolyAuctionHudRefresh(rows)
 
     local networkHealthy =
         HOLY_SHOP_STATE.AuctionNetworkReady == true
-        and HolyAuctionStockAge() < 40
 
     local selected =
         HolyShopSelectionArray(
@@ -44329,6 +44599,22 @@ function HolyAuctionHudRefresh(rows)
                     rowUi.Accent.Visible =
                         true
 
+                    if typeof(rowUi.Stroke) == "Instance" then
+
+                        rowUi.Stroke.Color =
+                            Color3.fromRGB(
+                                255,
+                                79,
+                                157
+                            )
+
+                        rowUi.Stroke.Transparency =
+                            0.05
+
+                        rowUi.Stroke.Thickness =
+                            1.25
+                    end
+
                     rowUi.Name.TextColor3 =
                         Color3.fromRGB(
                             255,
@@ -44352,6 +44638,24 @@ function HolyAuctionHudRefresh(rows)
 
                     rowUi.Accent.Visible =
                         false
+
+                    if typeof(rowUi.Stroke) == "Instance" then
+
+                        rowUi.Stroke.Color =
+                            Color3.fromRGB(
+                                54,
+                                59,
+                                72
+                            )
+
+                        rowUi.Stroke.Transparency =
+                            decision.Inactive == true
+                            and 0.55
+                            or 0.32
+
+                        rowUi.Stroke.Thickness =
+                            1
+                    end
 
                     rowUi.Name.TextColor3 =
                         decision.Inactive == true
