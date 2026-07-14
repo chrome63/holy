@@ -21,6 +21,9 @@ local ReplicatedStorage =
 local CoreGui =
     game:GetService("CoreGui")
 
+local Lighting =
+    game:GetService("Lighting")
+
 local UserInputService =
     game:GetService("UserInputService")
 
