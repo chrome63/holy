@@ -79203,7 +79203,7 @@ local Tabs = {
     Farm =
         Window:AddTab({
             Name = "Farm",
-            Icon = "sprout",
+            Icon = "leaf",
             Description = "Garden automation.",
         }),
 
@@ -79308,7 +79308,7 @@ local MainPetInventoryBox =
         Tabs.Main,
         "Main.PetInventory",
         "Pet Inventory",
-        "paw-print"
+        "panda"
     )
 
 local ServerControlsBox =
