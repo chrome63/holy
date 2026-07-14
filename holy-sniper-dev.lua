@@ -31135,12 +31135,34 @@ end
 
 function HolyPetInventoryScanRows()
 
-    local petModules =
-        HolyDataGetModule(
-            "PetModules"
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
         )
 
-    if type(petModules) ~= "table" then
+    local petModulesObject =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "PetModules"
+        )
+        or nil
+
+    if typeof(petModulesObject) ~= "Instance"
+    or petModulesObject:IsA("ModuleScript") ~= true then
+
+        return {}
+    end
+
+    local requireOk,
+        petModules =
+        pcall(
+            require,
+            petModulesObject
+        )
+
+    if requireOk ~= true
+    or type(petModules) ~= "table" then
+
         return {}
     end
 
