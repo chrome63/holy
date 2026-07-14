@@ -31091,6 +31091,887 @@ function HolyLivePetsStop(reason)
     return true
 end
 
+--==================================================
+-- PET INVENTORY
+--==================================================
+
+HOLY_PET_INVENTORY_RUNTIME =
+    type(HOLY_PET_INVENTORY_RUNTIME) == "table"
+    and HOLY_PET_INVENTORY_RUNTIME
+    or {
+        Running =
+            false,
+
+        Token =
+            nil,
+
+        Connections =
+            {},
+
+        ConnectedRoots =
+            {},
+
+        RefreshQueued =
+            false,
+
+        LastSignature =
+            "",
+    }
+
+HOLY_PET_INVENTORY_UI =
+    type(HOLY_PET_INVENTORY_UI) == "table"
+    and HOLY_PET_INVENTORY_UI
+    or {}
+
+function HolyPetInventoryEscapeRichText(value)
+
+    return tostring(value or "")
+        :gsub("&", "&amp;")
+        :gsub("<", "&lt;")
+        :gsub(">", "&gt;")
+        :gsub('"', "&quot;")
+        :gsub("'", "&apos;")
+end
+
+function HolyPetInventoryFindTopItem(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    local backpack =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil
+
+    local character =
+        LocalPlayer
+        and LocalPlayer.Character
+        or nil
+
+    local current =
+        instance
+
+    while current.Parent ~= nil
+    and current.Parent ~= backpack
+    and current.Parent ~= character do
+
+        current =
+            current.Parent
+    end
+
+    return current
+end
+
+function HolyPetInventoryFindEntryRoot(instance)
+
+    local topItem =
+        HolyPetInventoryFindTopItem(
+            instance
+        )
+
+    if typeof(topItem) ~= "Instance" then
+
+        return instance,
+            instance
+    end
+
+    local entryRoot =
+        instance
+
+    local current =
+        instance
+
+    while typeof(current) == "Instance" do
+
+        local hasPetId =
+            HolyDefenseReadPetId(
+                current
+            ) ~= ""
+
+        local hasPetName =
+            HolyDefenseReadPetName(
+                current
+            ) ~= ""
+
+        if hasPetId
+        or hasPetName then
+
+            entryRoot =
+                current
+        end
+
+        if current == topItem then
+            break
+        end
+
+        current =
+            current.Parent
+    end
+
+    return topItem,
+        entryRoot
+end
+
+function HolyPetInventoryReadAmount(...)
+
+    local attributeNames = {
+        "Quantity",
+        "Count",
+        "StackCount",
+        "Amount",
+        "PetCount",
+    }
+
+    for sourceIndex = 1, select("#", ...) do
+
+        local source =
+            select(
+                sourceIndex,
+                ...
+            )
+
+        if typeof(source) == "Instance" then
+
+            for _, attributeName in ipairs(
+                attributeNames
+            ) do
+
+                local ok,
+                    value =
+                    pcall(function()
+
+                        return source:GetAttribute(
+                            attributeName
+                        )
+                    end)
+
+                if ok == true
+                and value ~= nil then
+
+                    local number =
+                        tonumber(value)
+
+                    if number == nil then
+
+                        number =
+                            tonumber(
+                                tostring(value)
+                                    :match("%d+")
+                            )
+                    end
+
+                    if number ~= nil
+                    and number > 0 then
+
+                        return math.max(
+                            1,
+                            math.floor(
+                                number
+                            )
+                        )
+                    end
+                end
+
+                local valueObject =
+                    source:FindFirstChild(
+                        attributeName
+                    )
+
+                if typeof(valueObject) == "Instance" then
+
+                    local valueOk,
+                        objectValue =
+                        pcall(function()
+
+                            return valueObject.Value
+                        end)
+
+                    local number =
+                        valueOk == true
+                        and tonumber(objectValue)
+                        or nil
+
+                    if number ~= nil
+                    and number > 0 then
+
+                        return math.max(
+                            1,
+                            math.floor(
+                                number
+                            )
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    return 1
+end
+
+function HolyPetInventoryIsKnownPet(value)
+
+    local wanted =
+        HolySniperPetAliasKey(
+            value
+        )
+
+    if wanted == "" then
+        return false
+    end
+
+    HolySniperGetPetValues()
+
+    local keyToDisplay =
+        type(HOLY_SNIPER_STATE.PetKeyToDisplay) == "table"
+        and HOLY_SNIPER_STATE.PetKeyToDisplay
+        or {}
+
+    for internalKey, displayName in pairs(
+        keyToDisplay
+    ) do
+
+        if HolySniperPetAliasKey(internalKey) == wanted
+        or HolySniperPetAliasKey(displayName) == wanted then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyPetInventoryScanRows()
+
+    local grouped =
+        {}
+
+    local seenEntries =
+        {}
+
+    for _, defenseRow in ipairs(
+        HolyDefenseGetInventoryPetRows()
+    ) do
+
+        local instance =
+            defenseRow.Instance
+
+        if typeof(instance) == "Instance" then
+
+            local topItem,
+                entryRoot =
+                HolyPetInventoryFindEntryRoot(
+                    instance
+                )
+
+            local identity =
+                defenseRow.PetIdKey ~= ""
+                and (
+                    "id:"
+                    .. defenseRow.PetIdKey
+                )
+                or entryRoot
+
+            if seenEntries[identity] ~= true then
+
+                seenEntries[identity] =
+                    true
+
+                local explicitPetName =
+                    HolyCleanText(
+                        HolyDefenseReadAnyAttr(
+                            instance,
+                            {
+                                "PetName",
+                                "Pet",
+                                "WildPetName",
+                            }
+                        )
+                        or HolyDefenseReadAnyAttr(
+                            entryRoot,
+                            {
+                                "PetName",
+                                "Pet",
+                                "WildPetName",
+                            }
+                        )
+                        or HolyDefenseReadAnyAttr(
+                            topItem,
+                            {
+                                "PetName",
+                                "Pet",
+                                "WildPetName",
+                            }
+                        )
+                        or ""
+                    )
+
+                local rawPetName =
+                    explicitPetName
+
+                if rawPetName == "" then
+
+                    rawPetName =
+                        HolyDefenseReadPetName(
+                            instance
+                        )
+                end
+
+                if rawPetName == "" then
+
+                    rawPetName =
+                        HolyDefenseReadPetName(
+                            entryRoot
+                        )
+                end
+
+                if rawPetName == "" then
+
+                    rawPetName =
+                        HolySniperReadLivePetName(
+                            entryRoot,
+                            instance
+                        )
+                end
+
+                if rawPetName == ""
+                and typeof(topItem) == "Instance"
+                and topItem:IsA("Tool") then
+
+                    rawPetName =
+                        HolyCleanText(
+                            topItem.Name
+                        )
+                end
+
+                local confirmedPet =
+                    defenseRow.PetIdKey ~= ""
+                    or explicitPetName ~= ""
+                    or HolyPetInventoryIsKnownPet(
+                        rawPetName
+                    )
+
+                if confirmedPet == true
+                and rawPetName ~= "" then
+
+                    local petName =
+                        HolySniperResolvePetDisplay(
+                            rawPetName
+                        )
+
+                    if petName ~= ""
+                    and petName ~= "Any Pet" then
+
+                        local sizeName =
+                            HolySniperNormalizeSizeName(
+                                HolySniperReadLiveSize(
+                                    entryRoot,
+                                    instance
+                                )
+                            )
+
+                        local variantName =
+                            HolySniperNormalizeVariantName(
+                                HolySniperReadLiveVariant(
+                                    entryRoot,
+                                    instance
+                                )
+                            )
+
+                        local amount =
+                            HolyPetInventoryReadAmount(
+                                instance,
+                                entryRoot,
+                                topItem
+                            )
+
+                        local groupKey =
+                            HolySniperPetAliasKey(
+                                petName
+                            )
+                            .. "|"
+                            .. HolySniperPetAliasKey(
+                                sizeName
+                            )
+                            .. "|"
+                            .. HolySniperPetAliasKey(
+                                variantName
+                            )
+
+                        local group =
+                            grouped[groupKey]
+
+                        if type(group) ~= "table" then
+
+                            group = {
+                                Key =
+                                    groupKey,
+
+                                Name =
+                                    petName,
+
+                                Size =
+                                    sizeName,
+
+                                Variant =
+                                    variantName,
+
+                                Amount =
+                                    0,
+                            }
+
+                            grouped[groupKey] =
+                                group
+                        end
+
+                        group.Amount +=
+                            amount
+                    end
+                end
+            end
+        end
+    end
+
+    local rows =
+        {}
+
+    for _, group in pairs(grouped) do
+
+        local details =
+            {}
+
+        if group.Size ~= ""
+        and group.Size ~= "Normal"
+        and group.Size ~= "Any" then
+
+            table.insert(
+                details,
+                group.Size
+            )
+        end
+
+        if group.Variant ~= ""
+        and group.Variant ~= "Normal"
+        and group.Variant ~= "Any" then
+
+            table.insert(
+                details,
+                group.Variant
+            )
+        end
+
+        table.insert(
+            rows,
+            {
+                Key =
+                    group.Key,
+
+                Name =
+                    group.Name,
+
+                Details =
+                    table.concat(
+                        details,
+                        " · "
+                    ),
+
+                Size =
+                    group.Size,
+
+                Variant =
+                    group.Variant,
+
+                Amount =
+                    group.Amount,
+            }
+        )
+    end
+
+    local sizeOrder = {
+        Normal =
+            1,
+
+        Big =
+            2,
+
+        Huge =
+            3,
+    }
+
+    table.sort(rows, function(a, b)
+
+        local nameA =
+            tostring(a.Name or "")
+                :lower()
+
+        local nameB =
+            tostring(b.Name or "")
+                :lower()
+
+        if nameA ~= nameB then
+            return nameA < nameB
+        end
+
+        local sizeA =
+            sizeOrder[a.Size]
+            or 50
+
+        local sizeB =
+            sizeOrder[b.Size]
+            or 50
+
+        if sizeA ~= sizeB then
+            return sizeA < sizeB
+        end
+
+        return tostring(a.Variant or "")
+            < tostring(b.Variant or "")
+    end)
+
+    return rows
+end
+
+function HolyPetInventoryBuildSignature(rows)
+
+    local parts =
+        {}
+
+    for _, row in ipairs(rows or {}) do
+
+        table.insert(
+            parts,
+            tostring(row.Key or "")
+            .. ":"
+            .. tostring(row.Amount or 0)
+        )
+    end
+
+    return table.concat(
+        parts,
+        "|"
+    )
+end
+
+function HolyPetInventoryApplyListStyle(list)
+
+    if type(list) ~= "table" then
+        return
+    end
+
+    for _, row in ipairs(
+        list.Rows
+        or {}
+    ) do
+
+        if row.KeyLabel then
+
+            row.KeyLabel.Font =
+                Enum.Font.GothamBold
+
+            row.KeyLabel.TextSize =
+                14
+
+            row.KeyLabel.TextTransparency =
+                0
+
+            row.KeyLabel.TextXAlignment =
+                Enum.TextXAlignment.Left
+        end
+
+        if row.ValueLabel then
+
+            row.ValueLabel.Font =
+                Enum.Font.GothamBold
+
+            row.ValueLabel.TextSize =
+                14
+
+            row.ValueLabel.TextTransparency =
+                0
+
+            row.ValueLabel.TextXAlignment =
+                Enum.TextXAlignment.Right
+        end
+    end
+end
+
+function HolyPetInventoryRefreshUI(force)
+
+    local rows =
+        HolyPetInventoryScanRows()
+
+    local list =
+        HOLY_PET_INVENTORY_UI.List
+
+    if type(list) ~= "table"
+    or type(list.SetRows) ~= "function" then
+
+        return rows
+    end
+
+    local signature =
+        HolyPetInventoryBuildSignature(
+            rows
+        )
+
+    if force ~= true
+    and signature
+        == HOLY_PET_INVENTORY_RUNTIME.LastSignature then
+
+        return rows
+    end
+
+    HOLY_PET_INVENTORY_RUNTIME.LastSignature =
+        signature
+
+    local renderedRows =
+        {}
+
+    if #rows <= 0 then
+
+        table.insert(
+            renderedRows,
+            {
+                Key =
+                    '<font color="#8E95A5">'
+                    .. "No pets in inventory."
+                    .. "</font>",
+
+                Value =
+                    "",
+            }
+        )
+
+    else
+
+        for _, row in ipairs(rows) do
+
+            local leftText =
+                '<font color="#F2F4F8">'
+                .. HolyPetInventoryEscapeRichText(
+                    row.Name
+                )
+                .. "</font>"
+
+            if row.Details ~= "" then
+
+                leftText =
+                    leftText
+                    .. '<font color="#8E95A5">'
+                    .. " · "
+                    .. HolyPetInventoryEscapeRichText(
+                        row.Details
+                    )
+                    .. "</font>"
+            end
+
+            table.insert(
+                renderedRows,
+                {
+                    Key =
+                        leftText,
+
+                    Value =
+                        '<font color="#FF2F68">'
+                        .. "×"
+                        .. tostring(row.Amount)
+                        .. "</font>",
+                }
+            )
+        end
+    end
+
+    list:SetRows(
+        renderedRows
+    )
+
+    HolyPetInventoryApplyListStyle(
+        list
+    )
+
+    return rows
+end
+
+function HolyPetInventoryScheduleRefresh()
+
+    if HOLY_PET_INVENTORY_RUNTIME.RefreshQueued == true then
+        return
+    end
+
+    HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
+        true
+
+    task.defer(function()
+
+        HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
+            false
+
+        HolyPetInventoryRefreshUI()
+    end)
+end
+
+function HolyPetInventoryDisconnect()
+
+    for _, connection in ipairs(
+        HOLY_PET_INVENTORY_RUNTIME.Connections
+        or {}
+    ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    HOLY_PET_INVENTORY_RUNTIME.Connections =
+        {}
+
+    HOLY_PET_INVENTORY_RUNTIME.ConnectedRoots =
+        {}
+end
+
+function HolyPetInventoryStop(reason)
+
+    HOLY_PET_INVENTORY_RUNTIME.Token =
+        nil
+
+    HOLY_PET_INVENTORY_RUNTIME.Running =
+        false
+
+    HolyPetInventoryDisconnect()
+
+    return true
+end
+
+function HolyPetInventoryStart()
+
+    if HOLY_PET_INVENTORY_RUNTIME.Running == true then
+
+        HolyPetInventoryStop(
+            "restart"
+        )
+    end
+
+    HOLY_PET_INVENTORY_RUNTIME.Running =
+        true
+
+    HOLY_PET_INVENTORY_RUNTIME.LastSignature =
+        ""
+
+    local token =
+        {}
+
+    HOLY_PET_INVENTORY_RUNTIME.Token =
+        token
+
+    local function addConnection(connection)
+
+        if connection ~= nil then
+
+            table.insert(
+                HOLY_PET_INVENTORY_RUNTIME.Connections,
+                connection
+            )
+        end
+    end
+
+    local function connectRoot(root)
+
+        if typeof(root) ~= "Instance"
+        or HOLY_PET_INVENTORY_RUNTIME.ConnectedRoots[root] == true then
+
+            return
+        end
+
+        HOLY_PET_INVENTORY_RUNTIME.ConnectedRoots[root] =
+            true
+
+        addConnection(
+            root.DescendantAdded:Connect(function()
+
+                HolyPetInventoryScheduleRefresh()
+            end)
+        )
+
+        addConnection(
+            root.DescendantRemoving:Connect(function()
+
+                HolyPetInventoryScheduleRefresh()
+            end)
+        )
+    end
+
+    local function connectCurrentRoots()
+
+        if not LocalPlayer then
+            return
+        end
+
+        connectRoot(
+            LocalPlayer.Character
+        )
+
+        connectRoot(
+            LocalPlayer:FindFirstChildOfClass(
+                "Backpack"
+            )
+        )
+    end
+
+    connectCurrentRoots()
+
+    if LocalPlayer then
+
+        addConnection(
+            LocalPlayer.CharacterAdded:Connect(function(character)
+
+                connectRoot(
+                    character
+                )
+
+                HolyPetInventoryScheduleRefresh()
+            end)
+        )
+
+        addConnection(
+            LocalPlayer.ChildAdded:Connect(function(child)
+
+                if child:IsA("Backpack") then
+
+                    connectRoot(
+                        child
+                    )
+
+                    HolyPetInventoryScheduleRefresh()
+                end
+            end)
+        )
+    end
+
+    task.spawn(function()
+
+        while HOLY_PET_INVENTORY_RUNTIME.Token == token do
+
+            connectCurrentRoots()
+
+            HolyPetInventoryRefreshUI()
+
+            task.wait(
+                0.75
+            )
+        end
+    end)
+
+    HolyPetInventoryRefreshUI(
+        true
+    )
+
+    return true
+end
+
 function HolySniperAutoHopReset(reason)
 
     HOLY_SNIPER_RUNTIME.NoMatchSince =
@@ -78550,6 +79431,14 @@ local MainMoonPredictorBox =
         "moon"
     )
 
+local MainPetInventoryBox =
+    HolyAddRightGroupbox(
+        Tabs.Main,
+        "Main.PetInventory",
+        "Pet Inventory",
+        "paw-print"
+    )
+
 local ServerControlsBox =
     HolyAddLeftGroupbox(
         Tabs.Server,
@@ -87553,6 +88442,21 @@ HOLY_SNIPER_UI.LivePetsActions =
         }
     )
 
+HOLY_PET_INVENTORY_UI.List =
+    MainPetInventoryBox:AddStatusList(
+        "HolyMainPetInventory",
+        {
+            RowHeight =
+                24,
+
+            KeyWidth =
+                0.78,
+
+            Rows =
+                {},
+        }
+    )
+
 HolyMoonBuildMainUI(
     MainMoonPredictorBox
 )
@@ -87561,6 +88465,13 @@ HolyMoonStart()
 
 HolyLivePetsRefreshUI()
 HolyLivePetsStart()
+
+HolyPetInventoryRefreshUI(
+    true
+)
+
+HolyPetInventoryStart()
+
 HolyServerFinderStartReporter()
 
 ServerControlsBox:AddInput(
