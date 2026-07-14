@@ -456,6 +456,7 @@ HOLY_DEV_UI_STATE = {
 
     AutoSkipLoading = true,
     AntiAfk = true,
+    AntiKnockback = false,
     AutoFarmMiddle = true,
 
     LowEndMode = false,
@@ -1357,6 +1358,49 @@ HOLY_ANTI_AFK_STATE = {
     OldOverrideCaptured = false,
     OldOverride = nil,
     LogsPrinted = 0,
+}
+
+if type(HOLY_ANTI_KNOCKBACK_STATE) == "table"
+and type(HOLY_ANTI_KNOCKBACK_STATE.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_ANTI_KNOCKBACK_STATE.Stop(
+            "restart"
+        )
+    end)
+end
+
+HOLY_ANTI_KNOCKBACK_STATE = {
+    Running =
+        false,
+
+    Character =
+        nil,
+
+    Humanoid =
+        nil,
+
+    Root =
+        nil,
+
+    RagdollModule =
+        nil,
+
+    OriginalRequiresNeck =
+        nil,
+
+    Connections =
+        {},
+
+    CharacterConnections =
+        {},
+
+    RecoveryQueued =
+        false,
+
+    LastRagdollAt =
+        0,
 }
 
 if type(HOLY_SHOP_STATE) == "table" then
@@ -2348,6 +2392,9 @@ function HolySaveUISettings()
         AntiAfk =
             HOLY_DEV_UI_STATE.AntiAfk == true,
 
+        AntiKnockback =
+            HOLY_DEV_UI_STATE.AntiKnockback == true,
+
         AutoFarmMiddle =
             HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
 
@@ -2541,6 +2588,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.AntiAfk =
             data.AntiAfk
+    end
+
+    if type(data.AntiKnockback) == "boolean" then
+
+        HOLY_DEV_UI_STATE.AntiKnockback =
+            data.AntiKnockback
     end
 
     if type(data.AutoFarmMiddle) == "boolean" then
@@ -42174,6 +42227,718 @@ end
 HOLY_ANTI_AFK_STATE.Stop =
     HolyAntiAfkStop
 
+--==================================================
+-- ANTI KNOCKBACK
+--==================================================
+
+function HolyAntiKnockbackDisconnectList(list)
+
+    for _, connection in ipairs(
+        list
+        or {}
+    ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    if type(list) == "table" then
+
+        table.clear(
+            list
+        )
+    end
+end
+
+function HolyAntiKnockbackLoadModule()
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    if type(runtime.RagdollModule) == "table"
+    and type(runtime.RagdollModule.Unragdoll) == "function" then
+
+        return runtime.RagdollModule
+    end
+
+    local clientModules =
+        ReplicatedStorage:FindFirstChild(
+            "ClientModules"
+        )
+
+    local moduleObject =
+        clientModules
+        and clientModules:FindFirstChild(
+            "RagdollModule"
+        )
+        or nil
+
+    if typeof(moduleObject) ~= "Instance"
+    or moduleObject:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local ok,
+        module =
+        pcall(
+            require,
+            moduleObject
+        )
+
+    if ok ~= true
+    or type(module) ~= "table"
+    or type(module.Unragdoll) ~= "function" then
+
+        return nil
+    end
+
+    runtime.RagdollModule =
+        module
+
+    return module
+end
+
+function HolyAntiKnockbackGetCharacter()
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    local character =
+        runtime.Character
+
+    local humanoid =
+        runtime.Humanoid
+
+    local root =
+        runtime.Root
+
+    if typeof(character) ~= "Instance"
+    or character.Parent == nil
+    or LocalPlayer.Character ~= character then
+
+        return nil,
+            nil,
+            nil
+    end
+
+    if typeof(humanoid) ~= "Instance"
+    or humanoid.Parent == nil then
+
+        return character,
+            nil,
+            nil
+    end
+
+    if typeof(root) ~= "Instance"
+    or root.Parent == nil
+    or root:IsA("BasePart") ~= true then
+
+        return character,
+            humanoid,
+            nil
+    end
+
+    return character,
+        humanoid,
+        root
+end
+
+function HolyAntiKnockbackIsForce(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    return instance:IsA("BodyVelocity")
+        or instance:IsA("BodyAngularVelocity")
+end
+
+function HolyAntiKnockbackRemoveForces(root)
+
+    if typeof(root) ~= "Instance" then
+        return 0
+    end
+
+    local removed =
+        0
+
+    for _, child in ipairs(
+        root:GetChildren()
+    ) do
+
+        if HolyAntiKnockbackIsForce(
+            child
+        ) == true then
+
+            removed +=
+                1
+
+            pcall(function()
+
+                child:Destroy()
+            end)
+        end
+    end
+
+    return removed
+end
+
+function HolyAntiKnockbackNeckConnected(character)
+
+    if typeof(character) ~= "Instance" then
+        return false
+    end
+
+    for _, descendant in ipairs(
+        character:GetDescendants()
+    ) do
+
+        if descendant:IsA("Motor6D")
+        and descendant.Name == "Neck"
+        and descendant.Enabled == true
+        and descendant.Part0 ~= nil
+        and descendant.Part1 ~= nil then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyAntiKnockbackRestoreRequiresNeck()
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    local character =
+        runtime.Character
+
+    local humanoid =
+        runtime.Humanoid
+
+    local originalValue =
+        runtime.OriginalRequiresNeck
+
+    if typeof(character) ~= "Instance"
+    or typeof(humanoid) ~= "Instance"
+    or type(originalValue) ~= "boolean" then
+
+        return false
+    end
+
+    if originalValue == false then
+
+        pcall(function()
+
+            humanoid.RequiresNeck =
+                false
+        end)
+
+        return true
+    end
+
+    local currentlyRagdolled =
+        character:GetAttribute(
+            "Ragdolled"
+        ) == true
+        or humanoid.PlatformStand == true
+
+    if currentlyRagdolled == true
+    or HolyAntiKnockbackNeckConnected(
+        character
+    ) ~= true then
+
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            humanoid.RequiresNeck =
+                originalValue
+        end)
+
+    return ok == true
+end
+
+function HolyAntiKnockbackStabilize(
+    humanoid,
+    root,
+    clearVelocity
+)
+
+    if typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance" then
+
+        return false
+    end
+
+    pcall(function()
+
+        humanoid.PlatformStand =
+            false
+
+        humanoid.Sit =
+            false
+
+        humanoid.AutoRotate =
+            true
+
+        root.CanCollide =
+            false
+    end)
+
+    if clearVelocity == true then
+
+        pcall(function()
+
+            root.AssemblyLinearVelocity =
+                Vector3.zero
+
+            root.AssemblyAngularVelocity =
+                Vector3.zero
+        end)
+    end
+
+    if humanoid.Health > 0 then
+
+        pcall(function()
+
+            humanoid:ChangeState(
+                Enum.HumanoidStateType.GettingUp
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyAntiKnockbackLateCleanup(
+    expectedCharacter
+)
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    if runtime.Running ~= true
+    or runtime.Character ~= expectedCharacter then
+
+        return false
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiKnockbackGetCharacter()
+
+    if character ~= expectedCharacter
+    or not humanoid
+    or not root then
+
+        return false
+    end
+
+    HolyAntiKnockbackRemoveForces(
+        root
+    )
+
+    pcall(function()
+
+        if humanoid.Health > 0
+        and humanoid.PlatformStand == true then
+
+            humanoid.PlatformStand =
+                false
+        end
+
+        if humanoid.Health > 0
+        and humanoid.AutoRotate ~= true then
+
+            humanoid.AutoRotate =
+                true
+        end
+    end)
+
+    return true
+end
+
+function HolyAntiKnockbackRecover(reason)
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    runtime.RecoveryQueued =
+        false
+
+    if runtime.Running ~= true then
+        return false
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiKnockbackGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root
+    or humanoid.Health <= 0 then
+
+        return false
+    end
+
+    local ragdollModule =
+        HolyAntiKnockbackLoadModule()
+
+    if type(ragdollModule) == "table"
+    and type(ragdollModule.Unragdoll) == "function" then
+
+        pcall(function()
+
+            ragdollModule:Unragdoll(
+                character
+            )
+        end)
+    end
+
+    HolyAntiKnockbackRemoveForces(
+        root
+    )
+
+    HolyAntiKnockbackStabilize(
+        humanoid,
+        root,
+        true
+    )
+
+    for _, delayTime in ipairs({
+        0.05,
+        0.15,
+        0.30,
+    }) do
+
+        task.delay(
+            delayTime,
+            function()
+
+                HolyAntiKnockbackLateCleanup(
+                    character
+                )
+            end
+        )
+    end
+
+    return true
+end
+
+function HolyAntiKnockbackQueueRecovery(reason)
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    if runtime.Running ~= true then
+        return
+    end
+
+    runtime.LastRagdollAt =
+        os.clock()
+
+    if runtime.RecoveryQueued == true then
+        return
+    end
+
+    runtime.RecoveryQueued =
+        true
+
+    task.defer(function()
+
+        HolyAntiKnockbackRecover(
+            reason
+        )
+    end)
+end
+
+function HolyAntiKnockbackBindCharacter(character)
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    HolyAntiKnockbackDisconnectList(
+        runtime.CharacterConnections
+    )
+
+    runtime.Character =
+        character
+
+    runtime.Humanoid =
+        nil
+
+    runtime.Root =
+        nil
+
+    runtime.OriginalRequiresNeck =
+        nil
+
+    runtime.RecoveryQueued =
+        false
+
+    runtime.LastRagdollAt =
+        0
+
+    if typeof(character) ~= "Instance" then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+        or character:WaitForChild(
+            "Humanoid",
+            8
+        )
+
+    local root =
+        character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+        or character:WaitForChild(
+            "HumanoidRootPart",
+            8
+        )
+
+    if typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    runtime.Humanoid =
+        humanoid
+
+    runtime.Root =
+        root
+
+    runtime.OriginalRequiresNeck =
+        humanoid.RequiresNeck
+
+    pcall(function()
+
+        humanoid.RequiresNeck =
+            false
+    end)
+
+    table.insert(
+        runtime.CharacterConnections,
+        character:GetAttributeChangedSignal(
+            "Ragdolled"
+        ):Connect(function()
+
+            if character:GetAttribute(
+                "Ragdolled"
+            ) == true then
+
+                HolyAntiKnockbackQueueRecovery(
+                    "ragdoll"
+                )
+            end
+        end)
+    )
+
+    table.insert(
+        runtime.CharacterConnections,
+        character.DescendantAdded:Connect(
+            function(descendant)
+
+                if runtime.Running ~= true
+                or HolyAntiKnockbackIsForce(
+                    descendant
+                ) ~= true then
+
+                    return
+                end
+
+                local currentlyRagdolled =
+                    character:GetAttribute(
+                        "Ragdolled"
+                    ) == true
+
+                local recentlyRagdolled =
+                    os.clock()
+                    - (
+                        tonumber(
+                            runtime.LastRagdollAt
+                        )
+                        or 0
+                    )
+                    <= 0.75
+
+                if currentlyRagdolled ~= true
+                and recentlyRagdolled ~= true then
+
+                    return
+                end
+
+                task.defer(function()
+
+                    if runtime.Running ~= true
+                    or descendant.Parent == nil then
+
+                        return
+                    end
+
+                    pcall(function()
+
+                        descendant:Destroy()
+                    end)
+                end)
+            end
+        )
+    )
+
+    if character:GetAttribute(
+        "Ragdolled"
+    ) == true then
+
+        HolyAntiKnockbackQueueRecovery(
+            "character bind"
+        )
+    end
+
+    return true
+end
+
+function HolyAntiKnockbackStop(reason)
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    if type(runtime) ~= "table" then
+        return false
+    end
+
+    runtime.Running =
+        false
+
+    runtime.RecoveryQueued =
+        false
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiKnockbackGetCharacter()
+
+    local ragdollModule =
+        runtime.RagdollModule
+
+    if character
+    and humanoid
+    and root
+    and humanoid.Health > 0 then
+
+        if type(ragdollModule) == "table"
+        and type(ragdollModule.Unragdoll) == "function" then
+
+            pcall(function()
+
+                ragdollModule:Unragdoll(
+                    character
+                )
+            end)
+        end
+
+        HolyAntiKnockbackRemoveForces(
+            root
+        )
+
+        HolyAntiKnockbackStabilize(
+            humanoid,
+            root,
+            false
+        )
+    end
+
+    HolyAntiKnockbackRestoreRequiresNeck()
+
+    HolyAntiKnockbackDisconnectList(
+        runtime.CharacterConnections
+    )
+
+    HolyAntiKnockbackDisconnectList(
+        runtime.Connections
+    )
+
+    runtime.Character =
+        nil
+
+    runtime.Humanoid =
+        nil
+
+    runtime.Root =
+        nil
+
+    runtime.OriginalRequiresNeck =
+        nil
+
+    return true
+end
+
+function HolyAntiKnockbackStart(reason)
+
+    local runtime =
+        HOLY_ANTI_KNOCKBACK_STATE
+
+    if runtime.Running == true then
+        return false
+    end
+
+    if HolyAntiKnockbackLoadModule() == nil then
+        return false
+    end
+
+    runtime.Running =
+        true
+
+    runtime.Connections =
+        {}
+
+    runtime.CharacterConnections =
+        {}
+
+    table.insert(
+        runtime.Connections,
+        LocalPlayer.CharacterAdded:Connect(
+            function(character)
+
+                task.defer(function()
+
+                    if runtime.Running == true then
+
+                        HolyAntiKnockbackBindCharacter(
+                            character
+                        )
+                    end
+                end)
+            end
+        )
+    )
+
+    HolyAntiKnockbackBindCharacter(
+        LocalPlayer.Character
+        or LocalPlayer.CharacterAdded:Wait()
+    )
+
+    return true
+end
+
+HOLY_ANTI_KNOCKBACK_STATE.Stop =
+    HolyAntiKnockbackStop
+
 function HolySetGroupboxVisible(groupbox, visible)
 
     if type(groupbox) ~= "table" then
@@ -72371,6 +73136,13 @@ if HOLY_DEV_UI_STATE.AntiAfk == true then
     )
 end
 
+if HOLY_DEV_UI_STATE.AntiKnockback == true then
+
+    HolyAntiKnockbackStart(
+        "startup"
+    )
+end
+
 if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
 
     HolyFarmMiddleRestoreState()
@@ -85479,6 +86251,14 @@ local SettingsSessionBox =
         "Settings.Session",
         "Session",
         "activity"
+    )
+
+local SettingsProtectionBox =
+    HolyAddRightGroupbox(
+        Tabs.Settings,
+        "Settings.Protection",
+        "Protection",
+        "shield"
     )
 
 local SettingsPerformanceBox =
@@ -101521,6 +102301,11 @@ function HolySettingsRefreshDashboard()
     )
 
     HolySetGroupboxVisible(
+        SettingsProtectionBox,
+        showSession
+    )
+
+    HolySetGroupboxVisible(
         SettingsPerformanceBox,
         showPerformance
     )
@@ -102631,6 +103416,39 @@ SettingsSessionBox:AddToggle(
         and "toggle on"
         or "toggle off"
     )
+end)
+
+SettingsProtectionBox:AddToggle(
+    "HolyAntiKnockback",
+    {
+        Text =
+            "Anti Knockback",
+
+        Default =
+            HOLY_DEV_UI_STATE.AntiKnockback == true,
+
+        Tooltip =
+            "Prevents knockback and launch effects.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.AntiKnockback =
+        value == true
+
+    HolySaveUISettings()
+
+    if HOLY_DEV_UI_STATE.AntiKnockback == true then
+
+        HolyAntiKnockbackStart(
+            "toggle on"
+        )
+
+    else
+
+        HolyAntiKnockbackStop(
+            "toggle off"
+        )
+    end
 end)
 
 SettingsLayoutBox:AddToggle(
