@@ -403,6 +403,18 @@ local DEV_PACKET_WATCHER_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyDevPacketWatcher.json"
 
+local DEV_TEST_RECORDER_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevTestRecorder.json"
+
+local DEV_TEST_CHECKPOINT_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevTestRecorderCheckpoint.json"
+
+local DEV_QUICK_SNAPSHOT_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevQuickSnapshot.json"
+
 local DEV_TOOLS = {
     {
         Name = "Remote Spy",
@@ -811,6 +823,13 @@ end
 HOLY_DEV_SUITE_STATE = {
     PersistenceTarget = "",
     ActionScope = "Player Tools",
+
+    RecorderArea = "Auction",
+    RecorderMode = "Manual Test",
+    RecorderNote = "",
+
+    SnapshotScope = "Auction",
+
     DataModule = "",
 
     PacketDirection = "Both",
@@ -869,6 +888,34 @@ HOLY_DEV_SUITE_RUNTIME = {
     PacketLastName = "",
     PacketCoverage = {},
     LastPacketReport = nil,
+
+    RecorderActive = false,
+    RecorderStartedAt = nil,
+    RecorderStartedClock = 0,
+    RecorderSequence = 0,
+
+    RecorderTimeline = {},
+    RecorderTimelineHead = 1,
+    RecorderTimelineTail = 0,
+    RecorderDropped = 0,
+
+    RecorderConnections = {},
+    RecorderBefore = nil,
+    RecorderAfter = nil,
+    RecorderTrigger = nil,
+    RecorderTriggerGeneration = 0,
+    RecorderGeneration = 0,
+
+    RecorderOwnsPacketCapture = false,
+    RecorderSavedPacketConfig = nil,
+
+    RecorderUiState = {},
+    RecorderUiTracked = 0,
+    RecorderCapabilities = {},
+    RecorderStatusClock = 0,
+
+    LastRecorderReport = nil,
+    LastQuickSnapshot = nil,
 
     Stop = nil,
 }
@@ -40500,7 +40547,54 @@ function HolyAuctionQueueWorker(reason)
 
     HolyAuctionEnsureState()
 
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "WorkerQueued",
+            {
+                Reason =
+                    tostring(
+                        reason
+                        or "queue"
+                    ),
+
+                WorkerRunning =
+                    HOLY_SHOP_STATE.AuctionWorkerRunning
+                    == true,
+
+                PendingLotId =
+                    HOLY_SHOP_STATE.AuctionPendingLotId,
+
+                NextBuyIn =
+                    math.max(
+                        0,
+                        (
+                            tonumber(
+                                HOLY_SHOP_STATE.AuctionNextBuyAt
+                            )
+                            or 0
+                        ) - os.clock()
+                    ),
+            }
+        )
+    end
+
     if HOLY_SHOP_STATE.AuctionWorkerRunning == true then
+
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "WorkerQueueSkipped",
+                {
+                    Reason =
+                        "already running",
+                },
+                "Warning"
+            )
+        end
+
         return false
     end
 
@@ -42483,6 +42577,19 @@ function HolyAuctionFirePurchase(row)
             "PurchaseLot packet missing"
     end
 
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "PurchaseFireBegin",
+            {
+                LotId = lotId,
+                Name = finalRow.Name,
+                Price = price,
+            }
+        )
+    end
+
     local ok,
         result =
         pcall(function()
@@ -42492,6 +42599,28 @@ function HolyAuctionFirePurchase(row)
                 price
             )
         end)
+
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "PurchaseFireReturned",
+            {
+                LotId = lotId,
+                Name = finalRow.Name,
+                Price = price,
+                LocalSuccess = ok == true,
+
+                Error =
+                    ok ~= true
+                    and tostring(result)
+                    or nil,
+            },
+            ok == true
+            and "Info"
+            or "Error"
+        )
+    end
 
     if ok ~= true then
 
@@ -42532,6 +42661,20 @@ function HolyAuctionFirePurchase(row)
     HOLY_SHOP_STATE.AuctionLastSentAt =
         sentAt
 
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "PendingSet",
+            {
+                LotId = lotId,
+                Name = sentName,
+                Price = price,
+                SentAt = sentAt,
+            }
+        )
+    end
+
     HOLY_SHOP_STATE.AuctionLastDecision =
         "Purchase sent: "
         .. tostring(finalRow.Name)
@@ -42556,6 +42699,50 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     local now =
         os.clock()
 
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "PurchaseAttempt",
+            {
+                Reason =
+                    tostring(
+                        reason
+                        or "unknown"
+                    ),
+
+                Automatic =
+                    automatic == true,
+
+                WorkerRunning =
+                    HOLY_SHOP_STATE.AuctionWorkerRunning
+                    == true,
+
+                PendingLotId =
+                    HOLY_SHOP_STATE.AuctionPendingLotId,
+
+                NextBuyIn =
+                    math.max(
+                        0,
+                        (
+                            tonumber(
+                                HOLY_SHOP_STATE.AuctionNextBuyAt
+                            )
+                            or 0
+                        ) - now
+                    ),
+
+                Decision =
+                    HOLY_DEV_SUITE_RUNTIME.RecorderActive
+                        == true
+                    and type(HolyDevRecorderAuctionDecisionState)
+                        == "function"
+                    and HolyDevRecorderAuctionDecisionState()
+                    or nil,
+            }
+        )
+    end
+
     local pendingLotId =
         HolyCleanText(
             HOLY_SHOP_STATE.AuctionPendingLotId
@@ -42578,6 +42765,29 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     and pendingSentAt > 0
     and now - pendingSentAt < pendingTimeout then
 
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "PurchaseBlocked",
+                {
+                    Reason = "pending result",
+                    LotId = pendingLotId,
+
+                    Remaining =
+                        math.max(
+                            0,
+                            pendingTimeout
+                            - (
+                                now
+                                - pendingSentAt
+                            )
+                        ),
+                },
+                "Warning"
+            )
+        end
+
         HolyAuctionSetStatus(
             "Processing purchase..."
         )
@@ -42588,6 +42798,20 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     if pendingLotId ~= ""
     and pendingSentAt > 0
     and now - pendingSentAt >= pendingTimeout then
+
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "PendingExpired",
+                {
+                    LotId = pendingLotId,
+                    Age = now - pendingSentAt,
+                    Timeout = pendingTimeout,
+                },
+                "Warning"
+            )
+        end
 
         HOLY_SHOP_STATE.AuctionPendingLotId =
             nil
@@ -42609,6 +42833,19 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         or 0
 
     if now < nextBuyAt then
+
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "PurchaseBlocked",
+                {
+                    Reason = "client cooldown",
+                    Remaining = nextBuyAt - now,
+                },
+                "Warning"
+            )
+        end
 
         HolyAuctionSetStatus(
             "Cooldown "
@@ -42634,6 +42871,18 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
     if now < nextRetryAt then
 
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "PurchaseBlocked",
+                {
+                    Reason = "retry delay",
+                    Remaining = nextRetryAt - now,
+                }
+            )
+        end
+
         return false
     end
 
@@ -42654,6 +42903,25 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
         HOLY_SHOP_STATE.AuctionLastBlockReason =
             targetReason
+
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "NoTarget",
+                {
+                    Reason = targetReason,
+
+                    Decision =
+                        HOLY_DEV_SUITE_RUNTIME.RecorderActive
+                            == true
+                        and type(HolyDevRecorderAuctionDecisionState)
+                            == "function"
+                        and HolyDevRecorderAuctionDecisionState()
+                        or nil,
+                }
+            )
+        end
 
         local lowerReason =
             targetReason:lower()
@@ -42695,6 +42963,29 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         return false
     end
 
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "TargetSelected",
+            {
+                LotId = target.LotId,
+                Name = target.Name,
+                Price = target.Price,
+                Stock = target.Stock,
+                WatchlistIndex = target.WatchlistIndex,
+
+                Decision =
+                    HOLY_DEV_SUITE_RUNTIME.RecorderActive
+                        == true
+                    and type(HolyDevRecorderAuctionDecisionState)
+                        == "function"
+                    and HolyDevRecorderAuctionDecisionState()
+                    or nil,
+            }
+        )
+    end
+
     local ok,
         fireMode,
         finalRow =
@@ -42715,6 +43006,20 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
         HOLY_SHOP_STATE.AuctionLastDecision =
             blockReason
+
+        if type(HolyDevTrace) == "function" then
+
+            HolyDevTrace(
+                "Auction",
+                "PurchaseRejectedLocally",
+                {
+                    Reason = blockReason,
+                    LotId = target.LotId,
+                    Name = target.Name,
+                },
+                "Error"
+            )
+        end
 
         HOLY_SHOP_STATE.AuctionNextRetryAt =
             now + 2
@@ -42923,6 +43228,21 @@ function HolyAuctionConnectPacketSignals()
                 HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
                     os.clock()
 
+                if type(HolyDevTrace) == "function" then
+
+                    HolyDevTrace(
+                        "Auction",
+                        "StockUpdate",
+                        {
+                            Stock = nextStock,
+                            ServerNow = payload.serverNow,
+
+                            PendingLotId =
+                                HOLY_SHOP_STATE.AuctionPendingLotId,
+                        }
+                    )
+                end
+
                 HolyAuctionSetServerClock(
                     payload.serverNow
                 )
@@ -43067,6 +43387,38 @@ function HolyAuctionConnectPacketSignals()
 
                 pendingSentAt =
                     os.clock()
+            end
+
+            if type(HolyDevTrace) == "function" then
+
+                HolyDevTrace(
+                    "Auction",
+                    "PurchaseResult",
+                    {
+                        LotId = lotId,
+                        Success = success == true,
+                        Reason = resultReason,
+
+                        PendingLotId =
+                            HOLY_SHOP_STATE.AuctionPendingLotId,
+
+                        PendingName =
+                            pendingName,
+
+                        PendingSentAt =
+                            pendingSentAt,
+
+                        ResultLatency =
+                            math.max(
+                                0,
+                                os.clock()
+                                - pendingSentAt
+                            ),
+                    },
+                    success == true
+                    and "Info"
+                    or "Error"
+                )
             end
 
             if success == true then
@@ -65882,6 +66234,33 @@ Library.ShowToggleFrameInKeybinds =
 
 function HolyNotify(title, description, duration)
 
+    if type(HolyDevTrace) == "function" then
+
+        pcall(
+            HolyDevTrace,
+            "UI & Notifications",
+            "HolyNotify",
+            {
+                Title =
+                    tostring(
+                        title
+                        or "HOLY"
+                    ),
+
+                Text =
+                    tostring(
+                        description
+                        or ""
+                    ),
+
+                Duration =
+                    tonumber(duration)
+                    or 4,
+            },
+            "Info"
+        )
+    end
+
     if Library
     and type(Library.Notify) == "function" then
 
@@ -65981,7 +66360,75 @@ end
 -- DEV SUITE
 --==================================================
 
-function HolyDevSafeValue(value, depth, seen)
+function HolyDevSensitiveKey(key)
+
+    local normalized =
+        tostring(
+            key
+            or ""
+        ):lower():gsub(
+            "[^%w]",
+            ""
+        )
+
+    for _, fragment in ipairs({
+        "password",
+        "secret",
+        "authorization",
+        "apikey",
+        "webhook",
+        "sessionid",
+        "cookie",
+        "privatekey",
+        "adminkey",
+        "readkey",
+        "writekey",
+        "accesskey",
+        "token",
+        "bearertoken",
+        "authtoken",
+    }) do
+
+        if normalized:find(
+            fragment,
+            1,
+            true
+        ) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDevSensitiveString(value)
+
+    local lower =
+        tostring(
+            value
+            or ""
+        ):lower()
+
+    return lower:find(
+        "discord.com/api/webhooks/",
+        1,
+        true
+    ) ~= nil
+    or lower:find(
+        "discordapp.com/api/webhooks/",
+        1,
+        true
+    ) ~= nil
+end
+
+function HolyDevSafeValue(
+    value,
+    depth,
+    seen,
+    options,
+    keyName
+)
 
     depth =
         tonumber(depth)
@@ -65991,6 +66438,19 @@ function HolyDevSafeValue(value, depth, seen)
         type(seen) == "table"
         and seen
         or {}
+
+    options =
+        type(options) == "table"
+        and options
+        or {}
+
+    if keyName ~= nil
+    and HolyDevSensitiveKey(
+        keyName
+    ) == true then
+
+        return "<redacted>"
+    end
 
     local valueType =
         typeof(value)
@@ -66020,6 +66480,13 @@ function HolyDevSafeValue(value, depth, seen)
 
     if valueType == "string" then
 
+        if HolyDevSensitiveString(
+            value
+        ) == true then
+
+            return "<redacted webhook URL>"
+        end
+
         local valid,
             length =
             pcall(
@@ -66030,10 +66497,28 @@ function HolyDevSafeValue(value, depth, seen)
         if valid == true
         and length ~= nil then
 
-            if #value > 2000 then
+            local maximum =
+                math.max(
+                    250,
+                    math.floor(
+                        tonumber(
+                            options.MaxStringLength
+                        )
+                        or 4000
+                    )
+                )
 
-                return value:sub(1, 2000)
-                    .. "...<truncated>"
+            if #value > maximum then
+
+                return value:sub(
+                    1,
+                    maximum
+                )
+                    .. "...<truncated "
+                    .. tostring(
+                        #value - maximum
+                    )
+                    .. " bytes>"
             end
 
             return value
@@ -66042,7 +66527,13 @@ function HolyDevSafeValue(value, depth, seen)
         local bytes =
             {}
 
-        for index = 1, #value do
+        local byteLimit =
+            math.min(
+                #value,
+                512
+            )
+
+        for index = 1, byteLimit do
 
             bytes[#bytes + 1] =
                 string.format(
@@ -66057,6 +66548,8 @@ function HolyDevSafeValue(value, depth, seen)
         return {
             Type = "binary-string",
             Length = #value,
+            CapturedBytes = byteLimit,
+            Truncated = byteLimit < #value,
             Hex = table.concat(bytes, " "),
         }
     end
@@ -66080,14 +66573,22 @@ function HolyDevSafeValue(value, depth, seen)
         }
     end
 
-    if valueType == "Vector3" then
+    if valueType == "Vector2"
+    or valueType == "Vector3" then
 
-        return {
-            Type = "Vector3",
+        local output = {
+            Type = valueType,
             X = value.X,
             Y = value.Y,
-            Z = value.Z,
         }
+
+        if valueType == "Vector3" then
+
+            output.Z =
+                value.Z
+        end
+
+        return output
     end
 
     if valueType == "CFrame" then
@@ -66107,6 +66608,32 @@ function HolyDevSafeValue(value, depth, seen)
             R = value.R,
             G = value.G,
             B = value.B,
+        }
+    end
+
+    if valueType == "UDim" then
+
+        return {
+            Type = "UDim",
+            Scale = value.Scale,
+            Offset = value.Offset,
+        }
+    end
+
+    if valueType == "UDim2" then
+
+        return {
+            Type = "UDim2",
+
+            X = {
+                Scale = value.X.Scale,
+                Offset = value.X.Offset,
+            },
+
+            Y = {
+                Scale = value.Y.Scale,
+                Offset = value.Y.Offset,
+            },
         }
     end
 
@@ -66141,40 +66668,150 @@ function HolyDevSafeValue(value, depth, seen)
             return "<cycle>"
         end
 
-        if depth >= 6 then
+        local maxDepth =
+            math.max(
+                2,
+                math.floor(
+                    tonumber(
+                        options.MaxDepth
+                    )
+                    or 8
+                )
+            )
+
+        if depth >= maxDepth then
             return "<maximum depth>"
         end
 
         seen[value] =
             true
 
-        local output =
-            {}
-
         local count =
             0
 
-        for key, child in pairs(value) do
+        local maxIndex =
+            0
+
+        local sequential =
+            true
+
+        for key in pairs(value) do
 
             count +=
                 1
 
-            if count > 250 then
+            if type(key) ~= "number"
+            or key < 1
+            or key % 1 ~= 0 then
 
-                output.__Truncated =
-                    true
+                sequential =
+                    false
 
-                break
+            else
+
+                maxIndex =
+                    math.max(
+                        maxIndex,
+                        key
+                    )
+            end
+        end
+
+        sequential =
+            sequential == true
+            and count > 0
+            and maxIndex == count
+
+        local output =
+            {}
+
+        if sequential == true then
+
+            local maximum =
+                math.max(
+                    100,
+                    math.floor(
+                        tonumber(
+                            options.MaxArrayEntries
+                        )
+                        or 10000
+                    )
+                )
+
+            local captured =
+                math.min(
+                    count,
+                    maximum
+                )
+
+            for index = 1, captured do
+
+                output[index] =
+                    HolyDevSafeValue(
+                        value[index],
+                        depth + 1,
+                        seen,
+                        options,
+                        index
+                    )
             end
 
-            output[
-                tostring(key)
-            ] =
-                HolyDevSafeValue(
-                    child,
-                    depth + 1,
-                    seen
+            if captured < count then
+
+                output[captured + 1] = {
+                    __Truncated = true,
+                    TotalEntries = count,
+                    CapturedEntries = captured,
+                }
+            end
+
+        else
+
+            local maximum =
+                math.max(
+                    100,
+                    math.floor(
+                        tonumber(
+                            options.MaxMapEntries
+                        )
+                        or 1000
+                    )
                 )
+
+            local captured =
+                0
+
+            for key, child in pairs(value) do
+
+                captured +=
+                    1
+
+                if captured > maximum then
+
+                    output.__Truncated =
+                        true
+
+                    output.__TotalEntries =
+                        count
+
+                    output.__CapturedEntries =
+                        maximum
+
+                    break
+                end
+
+                local outputKey =
+                    tostring(key)
+
+                output[outputKey] =
+                    HolyDevSafeValue(
+                        child,
+                        depth + 1,
+                        seen,
+                        options,
+                        outputKey
+                    )
+            end
         end
 
         seen[value] =
@@ -66758,6 +67395,3091 @@ function HolyDevCaptureActionScope(scope)
     end
 
     return snapshot
+end
+
+function HolyDevRecorderArea(value)
+
+    value =
+        tostring(
+            value
+            or "Auction"
+        )
+
+    local allowed = {
+        ["Auction"] = true,
+        ["Player Tools"] = true,
+        ["Own Garden"] = true,
+        ["Wild Pets"] = true,
+        ["Sniper"] = true,
+        ["UI & Notifications"] = true,
+        ["Everything"] = true,
+    }
+
+    return allowed[value] == true
+        and value
+        or "Auction"
+end
+
+function HolyDevRecorderMode(value)
+
+    return tostring(value)
+        == "Rolling 30 Seconds"
+        and "Rolling 30 Seconds"
+        or "Manual Test"
+end
+
+function HolyDevRecorderCount()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    return math.max(
+        0,
+        (
+            runtime.RecorderTimelineTail
+            or 0
+        )
+        - (
+            runtime.RecorderTimelineHead
+            or 1
+        )
+        + 1
+    )
+end
+
+function HolyDevRecorderMatches(
+    source,
+    area,
+    eventName,
+    data
+)
+
+    local selected =
+        HolyDevRecorderArea(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    if selected == "Everything"
+    or source == "Recorder"
+    or source == "Marker"
+    or source == "Error"
+    or tostring(area) == "Errors" then
+
+        return true
+    end
+
+    if selected == "UI & Notifications"
+    and (
+        source == "UI"
+        or tostring(area)
+            == "UI & Notifications"
+    ) then
+
+        return true
+    end
+
+    local extra =
+        ""
+
+    if type(data) == "table" then
+
+        extra =
+            tostring(
+                data.Packet
+                or data.Text
+                or data.Title
+                or data.Reason
+                or data.Name
+                or ""
+            )
+
+    else
+
+        extra =
+            tostring(
+                data
+                or ""
+            )
+    end
+
+    local searchable =
+        (
+            tostring(area)
+            .. " "
+            .. tostring(eventName)
+            .. " "
+            .. extra
+        ):lower()
+
+    local keywords = {
+        Auction = {
+            "auction",
+            "purchaselot",
+            "purchaseresult",
+            "stockupdate",
+            "wait a moment",
+            "please wait",
+            "cooldown",
+        },
+
+        ["Player Tools"] = {
+            "player tools",
+            "tool",
+            "gear",
+            "watering",
+            "trowel",
+            "shovel",
+        },
+
+        ["Own Garden"] = {
+            "own garden",
+            "garden",
+            "plant",
+            "fruit",
+            "sprinkler",
+            "seed",
+        },
+
+        ["Wild Pets"] = {
+            "wild pets",
+            "wildpet",
+            "pet",
+        },
+
+        Sniper = {
+            "sniper",
+            "wildpet",
+            "teleport",
+            "serverhop",
+            "server finder",
+            "purchasepet",
+        },
+    }
+
+    for _, keyword in ipairs(
+        keywords[selected]
+        or {}
+    ) do
+
+        if searchable:find(
+            keyword,
+            1,
+            true
+        ) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDevRecorderRefreshStatus(extra)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local now =
+        os.clock()
+
+    if tostring(
+        extra
+        or ""
+    ) == ""
+    and now - (
+        runtime.RecorderStatusClock
+        or 0
+    ) < 0.15 then
+
+        return
+    end
+
+    runtime.RecorderStatusClock =
+        now
+
+    local status =
+        runtime.RecorderActive == true
+        and "Recording"
+        or "Ready"
+
+    if runtime.RecorderActive == true then
+
+        status =
+            status
+            .. " · "
+            .. HolyDevRecorderArea(
+                HOLY_DEV_SUITE_STATE.RecorderArea
+            )
+            .. " · "
+            .. tostring(
+                HolyDevRecorderCount()
+            )
+            .. " events"
+
+        if runtime.RecorderTrigger then
+
+            status =
+                status
+                .. " · issue marked"
+        end
+    end
+
+    if tostring(
+        extra
+        or ""
+    ) ~= "" then
+
+        status =
+            tostring(extra)
+    end
+
+    HolyDevSetStatus(
+        "RecorderStatusLabel",
+        status
+    )
+end
+
+function HolyDevRecorderPush(
+    source,
+    area,
+    eventName,
+    data,
+    severity
+)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.RecorderActive ~= true then
+        return nil
+    end
+
+    if HolyDevRecorderMatches(
+        source,
+        area,
+        eventName,
+        data
+    ) ~= true then
+
+        return nil
+    end
+
+    local now =
+        os.clock()
+
+    runtime.RecorderSequence =
+        (
+            runtime.RecorderSequence
+            or 0
+        )
+        + 1
+
+    local safeData =
+        nil
+
+    local safeOk =
+        pcall(function()
+
+            safeData =
+                HolyDevPacketSafeValue(
+                    data
+                )
+        end)
+
+    if safeOk ~= true then
+
+        safeData = {
+            SerializationError = true,
+            Text = tostring(data),
+        }
+    end
+
+    local row = {
+        Sequence =
+            runtime.RecorderSequence,
+
+        Elapsed =
+            now
+            - (
+                runtime.RecorderStartedClock
+                or now
+            ),
+
+        Clock =
+            now,
+
+        UnixTime =
+            os.time(),
+
+        Source =
+            tostring(
+                source
+                or "Internal"
+            ),
+
+        Area =
+            tostring(
+                area
+                or "Unknown"
+            ),
+
+        Event =
+            tostring(
+                eventName
+                or "Event"
+            ),
+
+        Severity =
+            tostring(
+                severity
+                or "Info"
+            ),
+
+        Data =
+            safeData,
+    }
+
+    local tail =
+        (
+            runtime.RecorderTimelineTail
+            or 0
+        )
+        + 1
+
+    runtime.RecorderTimelineTail =
+        tail
+
+    runtime.RecorderTimeline[tail] =
+        row
+
+    local head =
+        runtime.RecorderTimelineHead
+        or 1
+
+    local cutoff =
+        HolyDevRecorderMode(
+            HOLY_DEV_SUITE_STATE.RecorderMode
+        ) == "Rolling 30 Seconds"
+        and now - 30
+        or -math.huge
+
+    while head <= tail do
+
+        local first =
+            runtime.RecorderTimeline[head]
+
+        if first
+        and first.Clock >= cutoff
+        and tail - head + 1 <= 5000 then
+
+            break
+        end
+
+        runtime.RecorderTimeline[head] =
+            nil
+
+        head +=
+            1
+
+        runtime.RecorderDropped =
+            (
+                runtime.RecorderDropped
+                or 0
+            )
+            + 1
+    end
+
+    runtime.RecorderTimelineHead =
+        head
+
+    HolyDevRecorderRefreshStatus()
+
+    return row
+end
+
+function HolyDevTrace(
+    area,
+    eventName,
+    data,
+    severity
+)
+
+    local ok,
+        row =
+        pcall(
+            HolyDevRecorderPush,
+            "Internal",
+            area,
+            eventName,
+            data,
+            severity
+        )
+
+    if ok ~= true then
+        return nil
+    end
+
+    if row
+    and tostring(area) == "Auction"
+    and tostring(eventName)
+        == "PurchaseResult"
+    and type(data) == "table"
+    and data.Success ~= true then
+
+        pcall(
+            HolyDevRecorderAutoTrigger,
+            "Auction purchase failed",
+            data
+        )
+    end
+
+    return row
+end
+
+function HolyDevRecorderRecordPacket(
+    direction,
+    entry,
+    ...
+)
+
+    return HolyDevRecorderPush(
+        "Packet",
+        tostring(
+            entry
+            and entry.Path
+            or "Unknown"
+        ),
+        tostring(direction),
+        {
+            Packet =
+                tostring(
+                    entry
+                    and entry.Path
+                    or "Unknown"
+                ),
+
+            PacketId =
+                entry
+                and entry.PacketId
+                or nil,
+
+            Arguments =
+                HolyDevPacketArguments(...),
+        },
+        "Info"
+    )
+end
+
+function HolyDevRecorderAuctionDecisionState()
+
+    local state =
+        type(HOLY_SHOP_STATE) == "table"
+        and HOLY_SHOP_STATE
+        or {}
+
+    local eligible =
+        {}
+
+    for _, row in ipairs(
+        type(state.AuctionLastLots) == "table"
+        and state.AuctionLastLots
+        or {}
+    ) do
+
+        if type(row) ~= "table" then
+            continue
+        end
+
+        local entry,
+            watchIndex =
+            nil,
+            nil
+
+        if type(HolyAuctionGetWatchEntry)
+        == "function" then
+
+            local ok,
+                foundEntry,
+                foundIndex =
+                pcall(
+                    HolyAuctionGetWatchEntry,
+                    row.Name
+                )
+
+            if ok == true then
+
+                entry =
+                    foundEntry
+
+                watchIndex =
+                    foundIndex
+            end
+        end
+
+        if type(entry) == "table" then
+
+            local stale =
+                true
+
+            local allowed =
+                false
+
+            if type(HolyAuctionRowStale)
+            == "function" then
+
+                local ok,
+                    value =
+                    pcall(
+                        HolyAuctionRowStale,
+                        row,
+                        true
+                    )
+
+                if ok == true then
+
+                    stale =
+                        value == true
+                end
+            end
+
+            if type(HolyAuctionPriceAllows)
+            == "function" then
+
+                local ok,
+                    value =
+                    pcall(
+                        HolyAuctionPriceAllows,
+                        row
+                    )
+
+                if ok == true then
+
+                    allowed =
+                        value == true
+                end
+            end
+
+            local attempted =
+                type(state.AuctionAttemptedLots)
+                    == "table"
+                and state.AuctionAttemptedLots[
+                    tostring(row.LotId)
+                ] == true
+
+            if row.Active == true
+            and stale ~= true
+            and allowed == true
+            and (
+                state.AuctionBuyUntilSoldOut
+                    == true
+                or attempted ~= true
+            ) then
+
+                eligible[#eligible + 1] = {
+                    LotId = row.LotId,
+                    Name = row.Name,
+                    Price = row.Price,
+                    WatchlistIndex = watchIndex,
+                }
+            end
+        end
+    end
+
+    return {
+        EligibleCount =
+            #eligible,
+
+        EligibleItems =
+            eligible,
+
+        RoundRobinIndex =
+            state.AuctionRoundRobinIndex,
+    }
+end
+
+function HolyDevRecorderAuctionSnapshot()
+
+    if type(HolyAuctionEnsureState)
+    == "function" then
+
+        pcall(
+            HolyAuctionEnsureState
+        )
+    end
+
+    local state =
+        type(HOLY_SHOP_STATE) == "table"
+        and HOLY_SHOP_STATE
+        or {}
+
+    local rows =
+        state.AuctionLastLots
+
+    if type(HolyAuctionScanLiveLots)
+    == "function" then
+
+        local ok,
+            result =
+            pcall(
+                HolyAuctionScanLiveLots
+            )
+
+        if ok == true
+        and type(result) == "table" then
+
+            rows =
+                result
+        end
+    end
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local live =
+        {}
+
+    local eligible =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        if type(row) ~= "table" then
+            continue
+        end
+
+        local primitive = {
+            LotId = tostring(row.LotId or ""),
+            Name = tostring(row.Name or "Unknown"),
+            Stock = tonumber(row.Stock),
+            StockKnown = row.StockKnown == true,
+            Active = row.Active == true,
+            SoldOut = row.SoldOut == true,
+            Expired = row.Expired == true,
+            Price = tonumber(row.Price),
+            PriceText = tostring(row.PriceText or ""),
+            NetworkReady = row.NetworkReady == true,
+        }
+
+        local entry,
+            watchIndex =
+            nil,
+            nil
+
+        if type(HolyAuctionGetWatchEntry)
+        == "function" then
+
+            local ok,
+                foundEntry,
+                foundIndex =
+                pcall(
+                    HolyAuctionGetWatchEntry,
+                    row.Name
+                )
+
+            if ok == true then
+
+                entry =
+                    foundEntry
+
+                watchIndex =
+                    foundIndex
+            end
+        end
+
+        if type(entry) == "table" then
+
+            primitive.WatchlistIndex =
+                watchIndex
+
+            primitive.MaxPrice =
+                tonumber(entry.MaxPrice)
+
+            if type(HolyAuctionReadMoney)
+            == "function" then
+
+                primitive.MaxPrice =
+                    HolyAuctionReadMoney(
+                        entry.MaxPrice
+                    )
+            end
+
+            local stale =
+                true
+
+            local staleReason =
+                "unavailable"
+
+            if type(HolyAuctionRowStale)
+            == "function" then
+
+                local ok,
+                    result,
+                    reason =
+                    pcall(
+                        HolyAuctionRowStale,
+                        row,
+                        true
+                    )
+
+                if ok == true then
+
+                    stale =
+                        result == true
+
+                    staleReason =
+                        reason
+                end
+            end
+
+            local priceAllowed =
+                false
+
+            if type(HolyAuctionPriceAllows)
+            == "function" then
+
+                local ok,
+                    result =
+                    pcall(
+                        HolyAuctionPriceAllows,
+                        row
+                    )
+
+                priceAllowed =
+                    ok == true
+                    and result == true
+            end
+
+            local attempted =
+                type(state.AuctionAttemptedLots)
+                    == "table"
+                and state.AuctionAttemptedLots[
+                    tostring(row.LotId)
+                ] == true
+
+            primitive.Stale =
+                stale
+
+            primitive.StaleReason =
+                staleReason
+
+            primitive.PriceAllowed =
+                priceAllowed
+
+            primitive.AlreadyAttempted =
+                attempted
+
+            primitive.Eligible =
+                row.Active == true
+                and stale ~= true
+                and priceAllowed == true
+                and (
+                    state.AuctionBuyUntilSoldOut
+                        == true
+                    or attempted ~= true
+                )
+
+            if primitive.Eligible == true then
+
+                eligible[#eligible + 1] =
+                    primitive
+            end
+        end
+
+        live[#live + 1] =
+            primitive
+    end
+
+    local now =
+        os.clock()
+
+    local cooldown =
+        nil
+
+    local debounce =
+        nil
+
+    if type(HolyAuctionReadCooldown)
+    == "function" then
+
+        pcall(function()
+
+            cooldown =
+                HolyAuctionReadCooldown()
+        end)
+    end
+
+    if type(HolyAuctionReadDebounce)
+    == "function" then
+
+        pcall(function()
+
+            debounce =
+                HolyAuctionReadDebounce()
+        end)
+    end
+
+    return {
+        CapturedClock = now,
+        AutoBuy = state.AutoBuyAuctions == true,
+        DryRun = state.AuctionDryRun == true,
+        BuyUntilSoldOut = state.AuctionBuyUntilSoldOut == true,
+        NetworkReady = state.AuctionNetworkReady == true,
+        WorkerRunning = state.AuctionWorkerRunning == true,
+
+        Pending = {
+            LotId = state.AuctionPendingLotId,
+            Name = state.AuctionPendingName,
+            Price = state.AuctionPendingPrice,
+            SentAt = state.AuctionPendingSentAt,
+        },
+
+        LastSent = {
+            LotId = state.AuctionLastSentLotId,
+            Name = state.AuctionLastSentName,
+            SentAt = state.AuctionLastSentAt,
+        },
+
+        RoundRobinIndex =
+            state.AuctionRoundRobinIndex,
+
+        NextBuyAt =
+            state.AuctionNextBuyAt,
+
+        NextBuyIn =
+            math.max(
+                0,
+                (
+                    tonumber(
+                        state.AuctionNextBuyAt
+                    )
+                    or 0
+                ) - now
+            ),
+
+        NextRetryAt =
+            state.AuctionNextRetryAt,
+
+        NextRetryIn =
+            math.max(
+                0,
+                (
+                    tonumber(
+                        state.AuctionNextRetryAt
+                    )
+                    or 0
+                ) - now
+            ),
+
+        LastDecision =
+            state.AuctionLastDecision,
+
+        LastBlockReason =
+            state.AuctionLastBlockReason,
+
+        CooldownSeconds =
+            cooldown,
+
+        DebounceSeconds =
+            debounce,
+
+        Watchlist =
+            HolyDevSafeValue(
+                state.AuctionWatchlist
+                or {}
+            ),
+
+        LiveLots =
+            live,
+
+        EligibleItems =
+            eligible,
+
+        EligibleCount =
+            #eligible,
+    }
+end
+
+function HolyDevRecorderSnapshot(area)
+
+    area =
+        HolyDevRecorderArea(area)
+
+    local snapshot = {
+        Area = area,
+        Time = os.time(),
+        Clock = os.clock(),
+        Values = {},
+    }
+
+    if area == "Auction"
+    or area == "Everything" then
+
+        snapshot.Values.Auction =
+            HolyDevRecorderAuctionSnapshot()
+    end
+
+    if area == "Player Tools"
+    or area == "Own Garden"
+    or area == "Wild Pets"
+    or area == "Everything" then
+
+        local captured =
+            HolyDevCaptureActionScope(
+                area
+            )
+
+        snapshot.Values.Replicated =
+            captured.Values
+    end
+
+    if area == "Sniper"
+    or area == "Everything" then
+
+        snapshot.Values.Sniper = {
+            State =
+                HolyDevSafeValue(
+                    type(HOLY_SNIPER_STATE)
+                        == "table"
+                    and HOLY_SNIPER_STATE
+                    or {}
+                ),
+
+            Runtime =
+                HolyDevSafeValue({
+                    Running =
+                        type(HOLY_SNIPER_RUNTIME)
+                            == "table"
+                        and HOLY_SNIPER_RUNTIME.Running,
+
+                    Buying =
+                        type(HOLY_SNIPER_RUNTIME)
+                            == "table"
+                        and HOLY_SNIPER_RUNTIME.Buying,
+
+                    LastStatus =
+                        type(HOLY_SNIPER_RUNTIME)
+                            == "table"
+                        and HOLY_SNIPER_RUNTIME.LastStatus,
+
+                    LastReason =
+                        type(HOLY_SNIPER_RUNTIME)
+                            == "table"
+                        and HOLY_SNIPER_RUNTIME.LastReason,
+                }),
+        }
+    end
+
+    return snapshot
+end
+
+function HolyDevRecorderEvents(
+    windowStart,
+    windowEnd
+)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local output =
+        {}
+
+    for index =
+        runtime.RecorderTimelineHead
+        or 1,
+        runtime.RecorderTimelineTail
+        or 0
+    do
+
+        local row =
+            runtime.RecorderTimeline[index]
+
+        if row
+        and (
+            windowStart == nil
+            or row.Clock >= windowStart
+        )
+        and (
+            windowEnd == nil
+            or row.Clock <= windowEnd
+        ) then
+
+            output[#output + 1] =
+                row
+        end
+    end
+
+    return output
+end
+
+function HolyDevRecorderAnalyzeAuction(
+    events,
+    before,
+    after
+)
+
+    local analysis = {
+        PurchaseSends = 0,
+        PurchaseResults = 0,
+        SuccessfulResults = 0,
+        FailedResults = 0,
+        CooldownNotifications = 0,
+        OverlappingRequests = 0,
+        SendToSendIntervals = {},
+        SendToResultLatency = {},
+        MaxEligibleItems = 0,
+    }
+
+    local pending =
+        {}
+
+    local lastSend =
+        nil
+
+    for _, row in ipairs(
+        events
+        or {}
+    ) do
+
+        local data =
+            type(row.Data) == "table"
+            and row.Data
+            or {}
+
+        local packet =
+            tostring(
+                data.Packet
+                or row.Area
+                or ""
+            ):lower()
+
+        if row.Source == "Packet"
+        and row.Event == "Sent"
+        and packet:find(
+            "purchaselot",
+            1,
+            true
+        ) then
+
+            analysis.PurchaseSends +=
+                1
+
+            if #pending > 0 then
+
+                analysis.OverlappingRequests +=
+                    1
+            end
+
+            if lastSend then
+
+                analysis.SendToSendIntervals[
+                    #analysis.SendToSendIntervals
+                    + 1
+                ] =
+                    row.Clock - lastSend
+            end
+
+            lastSend =
+                row.Clock
+
+            pending[#pending + 1] =
+                row.Clock
+
+        elseif row.Source == "Internal"
+        and row.Event == "PurchaseResult" then
+
+            analysis.PurchaseResults +=
+                1
+
+            if data.Success == true then
+
+                analysis.SuccessfulResults +=
+                    1
+
+            else
+
+                analysis.FailedResults +=
+                    1
+            end
+
+            if #pending > 0 then
+
+                analysis.SendToResultLatency[
+                    #analysis.SendToResultLatency
+                    + 1
+                ] =
+                    math.max(
+                        0,
+                        row.Clock - pending[1]
+                    )
+
+                table.remove(
+                    pending,
+                    1
+                )
+            end
+
+        elseif row.Source == "UI"
+        or row.Event == "HolyNotify" then
+
+            local text =
+                (
+                    tostring(
+                        data.Text
+                        or ""
+                    )
+                    .. " "
+                    .. tostring(
+                        data.Title
+                        or ""
+                    )
+                ):lower()
+
+            if text:find(
+                "please wait",
+                1,
+                true
+            )
+            or text:find(
+                "wait a moment",
+                1,
+                true
+            )
+            or text:find(
+                "cooldown",
+                1,
+                true
+            ) then
+
+                analysis.CooldownNotifications +=
+                    1
+            end
+        end
+
+        local eligible =
+            tonumber(
+                data.EligibleCount
+            )
+            or tonumber(
+                type(data.Decision) == "table"
+                and data.Decision.EligibleCount
+            )
+
+        if eligible then
+
+            analysis.MaxEligibleItems =
+                math.max(
+                    analysis.MaxEligibleItems,
+                    eligible
+                )
+        end
+    end
+
+    local beforeAuction =
+        before
+        and before.Values
+        and before.Values.Auction
+
+    local afterAuction =
+        after
+        and after.Values
+        and after.Values.Auction
+
+    analysis.MaxEligibleItems =
+        math.max(
+            analysis.MaxEligibleItems,
+            tonumber(
+                beforeAuction
+                and beforeAuction.EligibleCount
+            )
+            or 0,
+            tonumber(
+                afterAuction
+                and afterAuction.EligibleCount
+            )
+            or 0
+        )
+
+    analysis.UnansweredRequests =
+        #pending
+
+    analysis.HasFailure =
+        analysis.FailedResults > 0
+        or analysis.CooldownNotifications > 0
+        or analysis.OverlappingRequests > 0
+
+    if analysis.OverlappingRequests > 0 then
+
+        analysis.Finding =
+            "More than one PurchaseLot was sent before the previous result."
+
+    elseif analysis.FailedResults > 0
+    and analysis.MaxEligibleItems > 1 then
+
+        analysis.Finding =
+            "Multiple items were eligible, but no overlapping send was proven. Check the packet order and result reason."
+
+    elseif analysis.FailedResults > 0 then
+
+        analysis.Finding =
+            "A purchase failed without a proven overlapping request."
+
+    elseif analysis.PurchaseSends > 0 then
+
+        analysis.Finding =
+            "No overlapping purchase request was observed."
+
+    else
+
+        analysis.Finding =
+            "No purchase request was captured."
+    end
+
+    return analysis
+end
+
+function HolyDevRecorderVisible(object)
+
+    local current =
+        object
+
+    local playerGui =
+        LocalPlayer:FindFirstChildOfClass(
+            "PlayerGui"
+        )
+
+    while typeof(current) == "Instance"
+    and current ~= playerGui do
+
+        if current:IsA("GuiObject")
+        and current.Visible ~= true then
+
+            return false
+        end
+
+        if current:IsA("LayerCollector")
+        and current.Enabled ~= true then
+
+            return false
+        end
+
+        current =
+            current.Parent
+    end
+
+    return true
+end
+
+function HolyDevRecorderIsTextObject(object)
+
+    return typeof(object) == "Instance"
+    and (
+        object:IsA("TextLabel")
+        or object:IsA("TextButton")
+        or object:IsA("TextBox")
+    )
+end
+
+function HolyDevRecorderIsOwnedUi(object)
+
+    local library =
+        type(HOLY_DEV_LIBRARY) == "table"
+        and HOLY_DEV_LIBRARY
+        or nil
+
+    local screenGui =
+        library
+        and library.ScreenGui
+        or nil
+
+    if typeof(screenGui) == "Instance"
+    and typeof(object) == "Instance" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return object:IsDescendantOf(
+                    screenGui
+                )
+            end)
+
+        if ok == true
+        and result == true then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDevRecorderObserveUiObject(
+    object,
+    baseline
+)
+
+    if HolyDevRecorderIsTextObject(
+        object
+    ) ~= true
+    or HolyDevRecorderIsOwnedUi(
+        object
+    ) == true then
+
+        return
+    end
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local text =
+        tostring(
+            object.Text
+            or ""
+        )
+
+    local visible =
+        HolyDevRecorderVisible(
+            object
+        )
+
+    local previous =
+        runtime.RecorderUiState[object]
+
+    runtime.RecorderUiState[object] = {
+        Text = text,
+        Visible = visible,
+    }
+
+    if baseline == true
+    or text == "" then
+        return
+    end
+
+    if previous == nil
+    or (
+        visible == true
+        and (
+            previous.Visible ~= true
+            or previous.Text ~= text
+        )
+    ) then
+
+        local payload = {
+            Text = text,
+            Path = HolyDevGetFullName(object),
+            ClassName = object.ClassName,
+        }
+
+        HolyDevRecorderPush(
+            "UI",
+            "UI & Notifications",
+            "TextShown",
+            payload,
+            "Info"
+        )
+
+        local lower =
+            text:lower()
+
+        if lower:find(
+            "please wait",
+            1,
+            true
+        )
+        or lower:find(
+            "wait a moment",
+            1,
+            true
+        )
+        or lower:find(
+            "cooldown",
+            1,
+            true
+        ) then
+
+            HolyDevRecorderAutoTrigger(
+                "Cooldown notification",
+                payload
+            )
+        end
+    end
+end
+
+function HolyDevRecorderStartUiCapture()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.RecorderGeneration =
+        (
+            runtime.RecorderGeneration
+            or 0
+        )
+        + 1
+
+    local generation =
+        runtime.RecorderGeneration
+
+    runtime.RecorderUiState =
+        setmetatable(
+            {},
+            {
+                __mode = "k",
+            }
+        )
+
+    runtime.RecorderUiTracked =
+        0
+
+    local playerGui =
+        LocalPlayer:FindFirstChildOfClass(
+            "PlayerGui"
+        )
+
+    if not playerGui then
+        return false
+    end
+
+    for _, object in ipairs(
+        playerGui:GetDescendants()
+    ) do
+
+        if runtime.RecorderUiTracked < 1500
+        and HolyDevRecorderIsTextObject(
+            object
+        )
+        and HolyDevRecorderIsOwnedUi(
+            object
+        ) ~= true then
+
+            runtime.RecorderUiTracked +=
+                1
+
+            HolyDevRecorderObserveUiObject(
+                object,
+                true
+            )
+        end
+    end
+
+    local connection =
+        playerGui.DescendantAdded:Connect(function(object)
+
+            if HolyDevRecorderIsTextObject(
+                object
+            )
+            and HolyDevRecorderIsOwnedUi(
+                object
+            ) ~= true
+            and runtime.RecorderUiTracked < 1500 then
+
+                runtime.RecorderUiTracked +=
+                    1
+
+                runtime.RecorderUiState[object] = {
+                    Text = "",
+                    Visible = false,
+                }
+            end
+        end)
+
+    runtime.RecorderConnections[
+        #runtime.RecorderConnections + 1
+    ] =
+        connection
+
+    task.spawn(function()
+
+        while runtime.RecorderActive == true
+        and runtime.RecorderGeneration
+            == generation do
+
+            for object in pairs(
+                runtime.RecorderUiState
+            ) do
+
+                if object.Parent then
+
+                    pcall(
+                        HolyDevRecorderObserveUiObject,
+                        object,
+                        false
+                    )
+                end
+            end
+
+            task.wait(0.5)
+        end
+    end)
+
+    return true
+end
+
+function HolyDevRecorderCleanupSources()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.RecorderGeneration =
+        (
+            runtime.RecorderGeneration
+            or 0
+        )
+        + 1
+
+    for _, connection in ipairs(
+        runtime.RecorderConnections
+        or {}
+    ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    runtime.RecorderConnections =
+        {}
+
+    runtime.RecorderUiState =
+        {}
+
+    runtime.RecorderUiTracked =
+        0
+
+    if runtime.RecorderOwnsPacketCapture
+    == true then
+
+        runtime.PacketActive =
+            false
+
+        HolyDevPacketCleanup()
+
+        local config =
+            runtime.RecorderSavedPacketConfig
+            or {}
+
+        HOLY_DEV_SUITE_STATE.PacketDirection =
+            config.Direction
+            or HOLY_DEV_SUITE_STATE.PacketDirection
+
+        HOLY_DEV_SUITE_STATE.PacketFilter =
+            config.Filter
+            or HOLY_DEV_SUITE_STATE.PacketFilter
+
+        HOLY_DEV_SUITE_STATE.PacketMaxEvents =
+            config.MaxEvents
+            or HOLY_DEV_SUITE_STATE.PacketMaxEvents
+
+        runtime.RecorderOwnsPacketCapture =
+            false
+
+        runtime.RecorderSavedPacketConfig =
+            nil
+
+        HolyDevPacketRefreshStatus(
+            true
+        )
+    end
+end
+
+function HolyDevRecorderStartPackets()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.RecorderSavedPacketConfig = {
+        Direction =
+            HOLY_DEV_SUITE_STATE.PacketDirection,
+
+        Filter =
+            HOLY_DEV_SUITE_STATE.PacketFilter,
+
+        MaxEvents =
+            HOLY_DEV_SUITE_STATE.PacketMaxEvents,
+    }
+
+    HOLY_DEV_SUITE_STATE.PacketDirection =
+        "Both"
+
+    HOLY_DEV_SUITE_STATE.PacketFilter =
+        ""
+
+    HOLY_DEV_SUITE_STATE.PacketMaxEvents =
+        10000
+
+    local ok =
+        HolyDevPacketStart() == true
+
+    runtime.RecorderOwnsPacketCapture =
+        ok
+
+    runtime.RecorderCapabilities.Packets =
+        ok
+
+    if ok ~= true then
+
+        local config =
+            runtime.RecorderSavedPacketConfig
+
+        HOLY_DEV_SUITE_STATE.PacketDirection =
+            config.Direction
+
+        HOLY_DEV_SUITE_STATE.PacketFilter =
+            config.Filter
+
+        HOLY_DEV_SUITE_STATE.PacketMaxEvents =
+            config.MaxEvents
+
+        runtime.RecorderSavedPacketConfig =
+            nil
+    end
+
+    return ok
+end
+
+function HolyDevRecorderAutoTrigger(name, data)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.RecorderActive ~= true
+    or runtime.RecorderTrigger ~= nil then
+
+        return false
+    end
+
+    local area =
+        HolyDevRecorderArea(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    if area ~= "Auction"
+    and area ~= "Everything" then
+
+        return false
+    end
+
+    runtime.RecorderTriggerGeneration =
+        (
+            runtime.RecorderTriggerGeneration
+            or 0
+        )
+        + 1
+
+    local generation =
+        runtime.RecorderTriggerGeneration
+
+    runtime.RecorderTrigger = {
+        Name = tostring(name),
+        Clock = os.clock(),
+        Time = os.time(),
+        Data = HolyDevSafeValue(data),
+    }
+
+    HolyDevRecorderPush(
+        "Recorder",
+        "Auction",
+        "AutoTrigger",
+        runtime.RecorderTrigger,
+        "Warning"
+    )
+
+    HolyDevRecorderRefreshStatus()
+
+    if HolyDevRecorderMode(
+        HOLY_DEV_SUITE_STATE.RecorderMode
+    ) ~= "Rolling 30 Seconds" then
+
+        return true
+    end
+
+    task.delay(5, function()
+
+        if runtime.RecorderActive == true
+        and runtime.RecorderTriggerGeneration
+            == generation
+        and runtime.RecorderTrigger then
+
+            HolyDevRecorderSaveReport(
+                "automatic issue capture",
+                false,
+                {
+                    WindowStart =
+                        runtime.RecorderTrigger.Clock
+                        - 20,
+
+                    WindowEnd =
+                        runtime.RecorderTrigger.Clock
+                        + 5,
+                }
+            )
+
+            runtime.RecorderTrigger =
+                nil
+
+            HolyDevRecorderRefreshStatus(
+                "Issue captured · use Copy Last"
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyDevRecorderBuildReport(
+    reason,
+    options
+)
+
+    options =
+        type(options) == "table"
+        and options
+        or {}
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local events =
+        HolyDevRecorderEvents(
+            options.WindowStart,
+            options.WindowEnd
+        )
+
+    local area =
+        HolyDevRecorderArea(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    local after =
+        runtime.RecorderAfter
+        or HolyDevRecorderSnapshot(
+            area
+        )
+
+    local before =
+        runtime.RecorderBefore
+
+    local beforeFlat =
+        before
+        and HolyDevFlatten(
+            before.Values,
+            "Snapshot",
+            {}
+        )
+        or {}
+
+    local afterFlat =
+        after
+        and HolyDevFlatten(
+            after.Values,
+            "Snapshot",
+            {}
+        )
+        or {}
+
+    local placeVersion =
+        nil
+
+    pcall(function()
+
+        placeVersion =
+            game.PlaceVersion
+    end)
+
+    local report = {
+        Version = "HOLY_DEV_TEST_RECORDER_V1",
+        PlaceId = game.PlaceId,
+        PlaceVersion = placeVersion,
+        JobId = game.JobId,
+
+        Player = {
+            Name = LocalPlayer.Name,
+            UserId = LocalPlayer.UserId,
+        },
+
+        Area = area,
+
+        Mode =
+            HolyDevRecorderMode(
+                HOLY_DEV_SUITE_STATE.RecorderMode
+            ),
+
+        Note =
+            tostring(
+                HOLY_DEV_SUITE_STATE.RecorderNote
+                or ""
+            ),
+
+        StartedAt =
+            runtime.RecorderStartedAt,
+
+        FinishedAt =
+            os.time(),
+
+        Runtime =
+            os.clock()
+            - (
+                runtime.RecorderStartedClock
+                or os.clock()
+            ),
+
+        FinishReason =
+            tostring(
+                reason
+                or "manual"
+            ),
+
+        Trigger =
+            runtime.RecorderTrigger,
+
+        Capabilities =
+            runtime.RecorderCapabilities,
+
+        StoredEvents =
+            #events,
+
+        DroppedEvents =
+            runtime.RecorderDropped
+            or 0,
+
+        Before =
+            before,
+
+        After =
+            after,
+
+        Diff =
+            HolyDevDiffMaps(
+                beforeFlat,
+                afterFlat
+            ),
+
+        Timeline =
+            events,
+    }
+
+    if area == "Auction"
+    or area == "Everything" then
+
+        report.Analysis =
+            HolyDevRecorderAnalyzeAuction(
+                events,
+                before,
+                after
+            )
+    end
+
+    return report
+end
+
+function HolyDevRecorderSaveReport(
+    reason,
+    copyResult,
+    options
+)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.RecorderAfter =
+        HolyDevRecorderSnapshot(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    local report =
+        HolyDevRecorderBuildReport(
+            reason,
+            options
+        )
+
+    runtime.LastRecorderReport =
+        report
+
+    local saved =
+        HolyDevWriteJson(
+            DEV_TEST_RECORDER_FILE,
+            report
+        )
+
+    local copied =
+        copyResult == true
+        and HolyDevCopyReport(report)
+        or false
+
+    local status =
+        tostring(
+            report.StoredEvents
+        )
+        .. " events"
+
+    if report.Analysis
+    and report.Analysis.HasFailure then
+
+        status =
+            status
+            .. " · issue found"
+    end
+
+    if copied == true then
+
+        status =
+            status
+            .. " · copied"
+    end
+
+    if saved == true then
+
+        status =
+            status
+            .. " · saved"
+    end
+
+    HolyDevRecorderRefreshStatus(
+        status
+    )
+
+    return report
+end
+
+function HolyDevRecorderDeleteCheckpoint()
+
+    if HolyCanUseFiles() == true
+    and type(delfile) == "function" then
+
+        pcall(function()
+
+            if isfile(
+                DEV_TEST_CHECKPOINT_FILE
+            ) then
+
+                delfile(
+                    DEV_TEST_CHECKPOINT_FILE
+                )
+            end
+        end)
+    end
+end
+
+function HolyDevRecorderStartCheckpointWorker()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local generation =
+        runtime.RecorderGeneration
+
+    task.spawn(function()
+
+        while runtime.RecorderActive == true
+        and runtime.RecorderGeneration
+            == generation do
+
+            task.wait(30)
+
+            if runtime.RecorderActive == true
+            and runtime.RecorderGeneration
+                == generation then
+
+                HolyDevWriteJson(
+                    DEV_TEST_CHECKPOINT_FILE,
+                    {
+                        Version =
+                            "HOLY_DEV_TEST_CHECKPOINT_V1",
+
+                        Active =
+                            true,
+
+                        Area =
+                            HOLY_DEV_SUITE_STATE.RecorderArea,
+
+                        Mode =
+                            HOLY_DEV_SUITE_STATE.RecorderMode,
+
+                        Note =
+                            HOLY_DEV_SUITE_STATE.RecorderNote,
+
+                        StartedAt =
+                            runtime.RecorderStartedAt,
+
+                        SavedAt =
+                            os.time(),
+
+                        DroppedEvents =
+                            runtime.RecorderDropped,
+
+                        Timeline =
+                            HolyDevRecorderEvents(),
+                    }
+                )
+            end
+        end
+    end)
+end
+
+function HolyDevRecorderStart()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.RecorderActive == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Test Recorder is already running.",
+            4
+        )
+
+        return false
+    end
+
+    if runtime.PacketActive == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Stop Packet Watcher before starting Test Recorder so both sent and received hooks are complete.",
+            6
+        )
+
+        HolyDevRecorderRefreshStatus(
+            "Stop Packet Watcher first"
+        )
+
+        return false
+    end
+
+    HOLY_DEV_SUITE_STATE.RecorderArea =
+        HolyDevRecorderArea(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    HOLY_DEV_SUITE_STATE.RecorderMode =
+        HolyDevRecorderMode(
+            HOLY_DEV_SUITE_STATE.RecorderMode
+        )
+
+    runtime.RecorderActive =
+        true
+
+    runtime.RecorderStartedAt =
+        os.time()
+
+    runtime.RecorderStartedClock =
+        os.clock()
+
+    runtime.RecorderSequence =
+        0
+
+    runtime.RecorderTimeline =
+        {}
+
+    runtime.RecorderTimelineHead =
+        1
+
+    runtime.RecorderTimelineTail =
+        0
+
+    runtime.RecorderDropped =
+        0
+
+    runtime.RecorderTrigger =
+        nil
+
+    runtime.RecorderAfter =
+        nil
+
+    runtime.RecorderConnections =
+        {}
+
+    runtime.RecorderCapabilities = {
+        State = true,
+        UI = false,
+        Errors = runtime.ErrorConnection ~= nil,
+        Packets = false,
+        CheckpointFile = HolyCanUseFiles() == true,
+    }
+
+    runtime.RecorderBefore =
+        HolyDevRecorderSnapshot(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    runtime.RecorderCapabilities.UI =
+        HolyDevRecorderStartUiCapture()
+
+    HolyDevRecorderStartPackets()
+
+    HolyDevRecorderPush(
+        "Recorder",
+        HOLY_DEV_SUITE_STATE.RecorderArea,
+        "Started",
+        {
+            Mode =
+                HOLY_DEV_SUITE_STATE.RecorderMode,
+
+            Note =
+                HOLY_DEV_SUITE_STATE.RecorderNote,
+
+            Capabilities =
+                runtime.RecorderCapabilities,
+        },
+        "Info"
+    )
+
+    HolyDevSetStatus(
+        "RecorderSourcesLabel",
+        "Sources: Packets "
+            .. (
+                runtime.RecorderCapabilities.Packets
+                and "yes"
+                or "no"
+            )
+            .. " · State yes · UI "
+            .. (
+                runtime.RecorderCapabilities.UI
+                and "yes"
+                or "no"
+            )
+            .. " · Errors "
+            .. (
+                runtime.RecorderCapabilities.Errors
+                and "yes"
+                or "no"
+            )
+    )
+
+    HolyDevRecorderRefreshStatus()
+
+    HolyDevRecorderStartCheckpointWorker()
+
+    return true
+end
+
+function HolyDevRecorderFinish(
+    copyResult,
+    reason
+)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.RecorderActive ~= true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Start Test Recorder first.",
+            4
+        )
+
+        return false
+    end
+
+    HolyDevRecorderPush(
+        "Recorder",
+        HOLY_DEV_SUITE_STATE.RecorderArea,
+        "Finished",
+        {
+            Reason =
+                reason
+                or "manual finish",
+        },
+        "Info"
+    )
+
+    runtime.RecorderAfter =
+        HolyDevRecorderSnapshot(
+            HOLY_DEV_SUITE_STATE.RecorderArea
+        )
+
+    local report =
+        HolyDevRecorderBuildReport(
+            reason
+            or "manual finish"
+        )
+
+    runtime.RecorderActive =
+        false
+
+    runtime.RecorderTriggerGeneration =
+        (
+            runtime.RecorderTriggerGeneration
+            or 0
+        )
+        + 1
+
+    HolyDevRecorderCleanupSources()
+
+    runtime.LastRecorderReport =
+        report
+
+    local saved =
+        HolyDevWriteJson(
+            DEV_TEST_RECORDER_FILE,
+            report
+        )
+
+    local copied =
+        copyResult == true
+        and HolyDevCopyReport(report)
+        or false
+
+    HolyDevRecorderDeleteCheckpoint()
+
+    local status =
+        tostring(
+            report.StoredEvents
+        )
+        .. " events"
+
+    if report.Analysis
+    and report.Analysis.HasFailure then
+
+        status =
+            status
+            .. " · issue found"
+    end
+
+    if copied == true then
+
+        status =
+            status
+            .. " · copied"
+    end
+
+    if saved == true then
+
+        status =
+            status
+            .. " · saved"
+    end
+
+    HolyDevRecorderRefreshStatus(
+        status
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        status,
+        5
+    )
+
+    return true
+end
+
+function HolyDevRecorderSaveRecent(copyResult)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.RecorderActive ~= true
+    or HolyDevRecorderMode(
+        HOLY_DEV_SUITE_STATE.RecorderMode
+    ) ~= "Rolling 30 Seconds" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Start Rolling 30 Seconds mode first.",
+            4
+        )
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    HolyDevRecorderSaveReport(
+        "save recent",
+        copyResult == true,
+        {
+            WindowStart = now - 30,
+            WindowEnd = now,
+        }
+    )
+
+    return true
+end
+
+function HolyDevRecorderMarkMoment()
+
+    if HOLY_DEV_SUITE_RUNTIME.RecorderActive
+    ~= true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Start Test Recorder first.",
+            4
+        )
+
+        return false
+    end
+
+    local note =
+        HolyCleanText(
+            HOLY_DEV_SUITE_STATE.RecorderNote
+        )
+
+    if note == "" then
+
+        note =
+            "Manual marker"
+    end
+
+    HolyDevRecorderPush(
+        "Marker",
+        HOLY_DEV_SUITE_STATE.RecorderArea,
+        "Mark Moment",
+        {
+            Note = note,
+        },
+        "Info"
+    )
+
+    HolyDevRecorderRefreshStatus(
+        "Moment marked · "
+            .. note
+    )
+
+    return true
+end
+
+function HolyDevRecorderCopyLast()
+
+    local report =
+        HOLY_DEV_SUITE_RUNTIME.LastRecorderReport
+        or HolyDevReadJson(
+            DEV_TEST_RECORDER_FILE
+        )
+
+    if type(report) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "No Test Recorder report is available yet.",
+            4
+        )
+
+        return false
+    end
+
+    local copied =
+        HolyDevCopyReport(report)
+
+    if copied == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Test Recorder report copied.",
+            4
+        )
+    end
+
+    return copied
+end
+
+function HolyDevRecorderClear()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.RecorderActive == true then
+
+        runtime.RecorderActive =
+            false
+
+        runtime.RecorderTriggerGeneration =
+            (
+                runtime.RecorderTriggerGeneration
+                or 0
+            )
+            + 1
+
+        HolyDevRecorderCleanupSources()
+    end
+
+    runtime.LastRecorderReport =
+        nil
+
+    runtime.RecorderTimeline =
+        {}
+
+    runtime.RecorderTimelineHead =
+        1
+
+    runtime.RecorderTimelineTail =
+        0
+
+    runtime.RecorderBefore =
+        nil
+
+    runtime.RecorderAfter =
+        nil
+
+    runtime.RecorderTrigger =
+        nil
+
+    if HolyCanUseFiles() == true
+    and type(delfile) == "function" then
+
+        pcall(function()
+
+            if isfile(
+                DEV_TEST_RECORDER_FILE
+            ) then
+
+                delfile(
+                    DEV_TEST_RECORDER_FILE
+                )
+            end
+        end)
+    end
+
+    HolyDevRecorderDeleteCheckpoint()
+
+    HolyDevRecorderRefreshStatus(
+        "Ready · cleared"
+    )
+
+    return true
+end
+
+function HolyDevQuickSnapshotScope(value)
+
+    value =
+        tostring(
+            value
+            or "Auction"
+        )
+
+    local allowed = {
+        ["Auction"] = true,
+        ["HOLY Runtime"] = true,
+        ["Player Tools"] = true,
+        ["Own Garden"] = true,
+        ["Wild Pets"] = true,
+        ["Time & Weather"] = true,
+        ["Everything"] = true,
+    }
+
+    return allowed[value] == true
+        and value
+        or "Auction"
+end
+
+function HolyDevQuickSnapshotWants(
+    scope,
+    section
+)
+
+    return scope == "Everything"
+        or scope == section
+end
+
+function HolyDevQuickSnapshotPick(
+    source,
+    keys
+)
+
+    local output =
+        {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for _, key in ipairs(keys) do
+
+        if source[key] ~= nil then
+
+            output[key] =
+                source[key]
+        end
+    end
+
+    return output
+end
+
+function HolyDevQuickSnapshotRuntime()
+
+    return {
+        Dev =
+            HolyDevQuickSnapshotPick(
+                HOLY_DEV_SUITE_STATE,
+                {
+                    "RecorderArea",
+                    "RecorderMode",
+                    "SnapshotScope",
+                    "PacketDirection",
+                    "PacketFilter",
+                    "PacketMaxEvents",
+                }
+            ),
+
+        DevRuntime = {
+            RecorderActive =
+                HOLY_DEV_SUITE_RUNTIME.RecorderActive,
+
+            RecorderEvents =
+                HolyDevRecorderCount(),
+
+            PacketActive =
+                HOLY_DEV_SUITE_RUNTIME.PacketActive,
+
+            PacketEvents =
+                #(
+                    HOLY_DEV_SUITE_RUNTIME.PacketEvents
+                    or {}
+                ),
+
+            ErrorGroups =
+                #(
+                    HOLY_DEV_SUITE_RUNTIME.ErrorOrder
+                    or {}
+                ),
+        },
+
+        Server =
+            HolyDevQuickSnapshotPick(
+                HOLY_SERVER_STATE,
+                {
+                    "Hopping",
+                    "HopAttempt",
+                    "LastStatus",
+                    "LastTarget",
+                    "LastCandidates",
+                    "LastPagesRead",
+                    "LastFailed",
+                }
+            ),
+
+        Sniper =
+            HolyDevQuickSnapshotPick(
+                HOLY_SNIPER_STATE,
+                {
+                    "ActivateSniper",
+                    "AutoHop",
+                    "HopDelay",
+                    "AutoHopTiming",
+                    "Status",
+                    "MovementMode",
+                    "BuyMode",
+                    "ReturnEnabled",
+                    "Watchlist",
+                }
+            ),
+
+        SniperRuntime =
+            HolyDevQuickSnapshotPick(
+                HOLY_SNIPER_RUNTIME,
+                {
+                    "Running",
+                    "LoadingReady",
+                    "Buying",
+                    "BuyProtectionActive",
+                    "LastStatus",
+                    "LastReason",
+                    "LastDistance",
+                }
+            ),
+
+        Auction =
+            HolyDevQuickSnapshotPick(
+                HOLY_SHOP_STATE,
+                {
+                    "AutoBuyAuctions",
+                    "AuctionDryRun",
+                    "AuctionWorkerRunning",
+                    "AuctionWatcherStarted",
+                    "AuctionNetworkReady",
+                    "AuctionStatus",
+                    "AuctionLastDecision",
+                    "AuctionLastBlockReason",
+                    "AuctionPendingLotId",
+                    "AuctionPendingName",
+                    "AuctionPendingPrice",
+                    "AuctionPendingSentAt",
+                    "AuctionNextBuyAt",
+                    "AuctionNextRetryAt",
+                }
+            ),
+
+        Farm =
+            HolyDevQuickSnapshotPick(
+                HOLY_FARM_STATE,
+                {
+                    "AutoCollectFruits",
+                    "ProFruitCollector",
+                    "LowGardenDetail",
+                    "ProCollectionDelay",
+                    "CollectMode",
+                    "MutationMode",
+                    "WeightMode",
+                    "WeightThresholdKg",
+                }
+            ),
+
+        FarmRuntime =
+            HolyDevQuickSnapshotPick(
+                HOLY_FARM_RUNTIME,
+                {
+                    "Running",
+                    "RebuildPending",
+                    "IndexerInstalled",
+                    "LastPacketWarnAt",
+                    "LastPlotWarnAt",
+                }
+            ),
+
+        AutoTrowel =
+            HolyDevQuickSnapshotPick(
+                HOLY_AUTO_TROWEL_STATE,
+                {
+                    "PositionMethod",
+                    "TargetLocal",
+                    "SelectedPlants",
+                    "MoveAmount",
+                    "Layout",
+                    "Spacing",
+                }
+            ),
+
+        FruitAutomation =
+            HolyDevQuickSnapshotPick(
+                HOLY_FRUIT_AUTOMATION_STATE,
+                {
+                    "AutoDropFruits",
+                    "AutoCollectDroppedFruits",
+                    "PickupMovement",
+                    "WeightKg",
+                    "WeightMode",
+                    "ValueMode",
+                    "ValueThreshold",
+                    "DropLimit",
+                }
+            ),
+
+        Performance =
+            HolyDevQuickSnapshotPick(
+                HOLY_PERFORMANCE_STATE,
+                {
+                    "Active",
+                    "Applying",
+                    "DeletedCount",
+                    "RemovedCount",
+                    "HiddenCount",
+                    "LastStatus",
+                }
+            ),
+
+        MoonPredictor =
+            HolyDevQuickSnapshotPick(
+                HOLY_MOON_PREDICTOR_STATE,
+                {
+                    "Amount",
+                    "HudEnabled",
+                    "SelectedMoons",
+                    "Scanning",
+                    "ScanChecked",
+                    "ScanLimit",
+                    "LastBuildCycle",
+                }
+            ),
+    }
+end
+
+function HolyDevQuickSnapshotTimeWeather()
+
+    local serverNow =
+        nil
+
+    pcall(function()
+
+        serverNow =
+            workspace:GetServerTimeNow()
+    end)
+
+    local function readModule(path)
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyShopRequireModule(
+                    path
+                )
+            end)
+
+        if ok == true
+        and type(result) == "table" then
+
+            return result,
+                nil
+        end
+
+        return nil,
+            tostring(
+                result
+                or "module unavailable"
+            )
+    end
+
+    local timeCycleData,
+        timeCycleError =
+        readModule(
+            "SharedModules.TimeCycleData"
+        )
+
+    local weatherData,
+        weatherError =
+        readModule(
+            "SharedModules.WeatherData"
+        )
+
+    local predictor =
+        type(HOLY_MOON_PREDICTOR_STATE)
+            == "table"
+        and HOLY_MOON_PREDICTOR_STATE
+        or {}
+
+    return {
+        ClientClock = os.clock(),
+        ClientUnix = os.time(),
+        ServerNow = serverNow,
+
+        WorkspaceAttributes =
+            workspace:GetAttributes(),
+
+        Current = {
+            ActiveWeather =
+                workspace:GetAttribute(
+                    "ActiveWeather"
+                ),
+
+            Phase =
+                workspace:GetAttribute(
+                    "Phase"
+                ),
+
+            PhaseDuration =
+                workspace:GetAttribute(
+                    "PhaseDuration"
+                ),
+        },
+
+        Predictor = {
+            CycleInfo =
+                predictor.CycleInfo,
+
+            MoonTypes =
+                predictor.MoonTypes,
+
+            WeatherRecords =
+                predictor.WeatherRecords,
+
+            LastBuildCycle =
+                predictor.LastBuildCycle,
+
+            Predictions =
+                predictor.Predictions,
+        },
+
+        Modules = {
+            TimeCycleData =
+                timeCycleData,
+
+            WeatherData =
+                weatherData,
+        },
+
+        ModuleErrors = {
+            TimeCycleData =
+                timeCycleError,
+
+            WeatherData =
+                weatherError,
+        },
+    }
+end
+
+function HolyDevQuickSnapshotCapture(copyReport)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local scope =
+        HolyDevQuickSnapshotScope(
+            HOLY_DEV_SUITE_STATE.SnapshotScope
+        )
+
+    HOLY_DEV_SUITE_STATE.SnapshotScope =
+        scope
+
+    HolyDevSetStatus(
+        "SnapshotStatusLabel",
+        "Capturing "
+            .. scope
+            .. "..."
+    )
+
+    local placeVersion =
+        nil
+
+    pcall(function()
+
+        placeVersion =
+            game.PlaceVersion
+    end)
+
+    local report = {
+        Version = "HOLY_DEV_QUICK_SNAPSHOT_V1",
+        Scope = scope,
+        PlaceId = game.PlaceId,
+        PlaceVersion = placeVersion,
+        JobId = game.JobId,
+        CapturedAt = os.time(),
+
+        Player = {
+            Name = LocalPlayer.Name,
+            UserId = LocalPlayer.UserId,
+        },
+
+        Capabilities = {},
+        Errors = {},
+        Data = {},
+    }
+
+    local function capture(
+        section,
+        callback
+    )
+
+        if HolyDevQuickSnapshotWants(
+            scope,
+            section
+        ) ~= true then
+
+            return
+        end
+
+        local ok,
+            value =
+            pcall(callback)
+
+        report.Capabilities[section] =
+            ok == true
+
+        if ok == true then
+
+            report.Data[section] =
+                value
+
+        else
+
+            report.Errors[section] =
+                tostring(value)
+        end
+    end
+
+    capture(
+        "Auction",
+        HolyDevRecorderAuctionSnapshot
+    )
+
+    capture(
+        "HOLY Runtime",
+        HolyDevQuickSnapshotRuntime
+    )
+
+    capture(
+        "Player Tools",
+        function()
+
+            return {
+                PlayerAttributes =
+                    LocalPlayer:GetAttributes(),
+
+                Tools =
+                    HolyDevSnapshotToolRows(),
+            }
+        end
+    )
+
+    capture(
+        "Own Garden",
+        function()
+
+            local plot =
+                HolyDevFindOwnPlot()
+
+            if typeof(plot) ~= "Instance" then
+
+                return {
+                    Found = false,
+                }
+            end
+
+            return {
+                Found = true,
+                Name = plot.Name,
+                FullName = HolyDevGetFullName(plot),
+                Attributes = plot:GetAttributes(),
+
+                AttributedObjects =
+                    HolyDevSnapshotAttributedRoot(
+                        plot,
+                        {}
+                    ),
+            }
+        end
+    )
+
+    capture(
+        "Wild Pets",
+        function()
+
+            local map =
+                workspace:FindFirstChild(
+                    "Map"
+                )
+
+            local root =
+                map
+                and map:FindFirstChild(
+                    "WildPetRef"
+                )
+
+            if typeof(root) ~= "Instance" then
+
+                return {
+                    Found = false,
+                }
+            end
+
+            return {
+                Found = true,
+                Count = #root:GetChildren(),
+                Attributes = root:GetAttributes(),
+
+                AttributedObjects =
+                    HolyDevSnapshotAttributedRoot(
+                        root,
+                        {}
+                    ),
+            }
+        end
+    )
+
+    capture(
+        "Time & Weather",
+        HolyDevQuickSnapshotTimeWeather
+    )
+
+    runtime.LastQuickSnapshot =
+        report
+
+    local saved =
+        HolyDevWriteJson(
+            DEV_QUICK_SNAPSHOT_FILE,
+            report
+        )
+
+    local copied =
+        copyReport == true
+        and HolyDevCopyReport(report)
+        or false
+
+    local sectionCount =
+        0
+
+    for _ in pairs(
+        report.Data
+    ) do
+
+        sectionCount +=
+            1
+    end
+
+    local status =
+        scope
+        .. " · "
+        .. tostring(sectionCount)
+        .. (
+            sectionCount == 1
+            and " section"
+            or " sections"
+        )
+
+    if copied == true then
+
+        status =
+            status
+            .. " · copied"
+    end
+
+    if saved == true then
+
+        status =
+            status
+            .. " · saved"
+    end
+
+    HolyDevSetStatus(
+        "SnapshotStatusLabel",
+        status
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        status,
+        4
+    )
+
+    return report
+end
+
+function HolyDevQuickSnapshotCopyLast()
+
+    local report =
+        HOLY_DEV_SUITE_RUNTIME.LastQuickSnapshot
+        or HolyDevReadJson(
+            DEV_QUICK_SNAPSHOT_FILE
+        )
+
+    if type(report) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "No Quick Snapshot is available yet.",
+            4
+        )
+
+        return false
+    end
+
+    local copied =
+        HolyDevCopyReport(report)
+
+    if copied == true then
+
+        HolyDevSetStatus(
+            "SnapshotStatusLabel",
+            tostring(
+                report.Scope
+                or "Snapshot"
+            )
+            .. " · copied"
+        )
+
+        HolyNotify(
+            "HOLY Dev",
+            "Quick Snapshot copied.",
+            4
+        )
+    end
+
+    return copied
 end
 
 function HolyDevFlatten(
@@ -67889,6 +71611,29 @@ function HolyDevStartErrorMonitor()
                 row.LastAt =
                     os.time()
 
+                if type(HolyDevTrace)
+                == "function" then
+
+                    pcall(
+                        HolyDevTrace,
+                        "Errors",
+                        "ScriptError",
+                        {
+                            Message =
+                                tostring(message),
+
+                            StackTrace =
+                                tostring(stackTrace),
+
+                            Source =
+                                HolyDevSafeValue(
+                                    source
+                                ),
+                        },
+                        "Error"
+                    )
+                end
+
                 HolyDevRefreshErrorStatus()
             end)
         end)
@@ -68015,235 +71760,18 @@ function HolyDevPacketId(packet)
     return nil
 end
 
-function HolyDevPacketSafeValue(value, depth, seen)
-
-    depth =
-        tonumber(depth)
-        or 0
-
-    seen =
-        type(seen) == "table"
-        and seen
-        or {}
-
-    local valueType =
-        typeof(value)
-
-    if valueType == "string" then
-
-        local valid,
-            length =
-            pcall(
-                utf8.len,
-                value
-            )
-
-        if valid == true
-        and length ~= nil then
-
-            if #value > 2000 then
-
-                return value:sub(1, 2000)
-                    .. "...<truncated>"
-            end
-
-            return value
-        end
-
-        local preview =
-            {}
-
-        local previewLength =
-            math.min(
-                #value,
-                96
-            )
-
-        for index = 1, previewLength do
-
-            preview[index] =
-                string.format(
-                    "%02X",
-                    string.byte(
-                        value,
-                        index
-                    )
-                )
-        end
-
-        return {
-            Type = "binary-string",
-            Length = #value,
-
-            HexPreview =
-                table.concat(
-                    preview,
-                    " "
-                ),
-
-            Truncated =
-                #value > previewLength,
-        }
-    end
-
-    if valueType == "buffer" then
-
-        local length =
-            buffer.len(value)
-
-        local preview =
-            {}
-
-        local previewLength =
-            math.min(
-                length,
-                96
-            )
-
-        for index = 0, previewLength - 1 do
-
-            preview[#preview + 1] =
-                string.format(
-                    "%02X",
-                    buffer.readu8(
-                        value,
-                        index
-                    )
-                )
-        end
-
-        return {
-            Type = "buffer",
-            Length = length,
-
-            HexPreview =
-                table.concat(
-                    preview,
-                    " "
-                ),
-
-            Truncated =
-                length > previewLength,
-        }
-    end
-
-    if valueType == "Instance" then
-
-        local output = {
-            Type = "Instance",
-        }
-
-        pcall(function()
-
-            output.Name =
-                value.Name
-
-            output.ClassName =
-                value.ClassName
-
-            output.FullName =
-                value:GetFullName()
-        end)
-
-        return output
-    end
-
-    if valueType == "table" then
-
-        if seen[value] == true then
-            return "<cycle>"
-        end
-
-        if depth >= 5 then
-            return "<maximum depth>"
-        end
-
-        seen[value] =
-            true
-
-        local output =
-            {}
-
-        local count =
-            0
-
-        for key, child in pairs(value) do
-
-            count +=
-                1
-
-            if count > 150 then
-
-                output.__Truncated =
-                    true
-
-                break
-            end
-
-            local outputKey =
-                tostring(key)
-
-            local compactKey =
-                outputKey
-                    :lower()
-                    :gsub(
-                        "[^%w]",
-                        ""
-                    )
-
-            if compactKey:find(
-                "password",
-                1,
-                true
-            )
-            or compactKey:find(
-                "secret",
-                1,
-                true
-            )
-            or compactKey:find(
-                "token",
-                1,
-                true
-            )
-            or compactKey:find(
-                "cookie",
-                1,
-                true
-            )
-            or compactKey:find(
-                "authorization",
-                1,
-                true
-            )
-            or compactKey:find(
-                "apikey",
-                1,
-                true
-            ) then
-
-                output[outputKey] =
-                    "<redacted>"
-
-            else
-
-                output[outputKey] =
-                    HolyDevPacketSafeValue(
-                        child,
-                        depth + 1,
-                        seen
-                    )
-            end
-        end
-
-        seen[value] =
-            nil
-
-        return output
-    end
+function HolyDevPacketSafeValue(value)
 
     return HolyDevSafeValue(
-        value
+        value,
+        0,
+        {},
+        {
+            MaxDepth = 8,
+            MaxMapEntries = 500,
+            MaxArrayEntries = 2000,
+            MaxStringLength = 2000,
+        }
     )
 end
 
@@ -68400,6 +71928,17 @@ function HolyDevPacketRecord(direction, entry, ...)
             or 0
         )
         + 1
+
+    if type(HolyDevRecorderRecordPacket)
+        == "function" then
+
+        pcall(
+            HolyDevRecorderRecordPacket,
+            direction,
+            entry,
+            ...
+        )
+    end
 
     if HolyDevPacketMatches(
         direction,
@@ -69327,6 +72866,24 @@ HOLY_DEV_SUITE_RUNTIME.Stop =
 
         local runtime =
             HOLY_DEV_SUITE_RUNTIME
+
+        runtime.RecorderActive =
+            false
+
+        runtime.RecorderTriggerGeneration =
+            (
+                runtime.RecorderTriggerGeneration
+                or 0
+            )
+            + 1
+
+        if type(HolyDevRecorderCleanupSources)
+        == "function" then
+
+            pcall(
+                HolyDevRecorderCleanupSources
+            )
+        end
 
         runtime.Active =
             false
@@ -73985,6 +77542,9 @@ HolyStartupLoadingStep(
     "Applying saved features and preferences."
 )
 
+local SHOW_DEV_PERSISTENCE_TESTER =
+    false
+
 local DevToolsBox =
     nil
 
@@ -73995,6 +77555,9 @@ local DevPersistenceBox =
     nil
 
 local DevActionBox =
+    nil
+
+local DevSnapshotBox =
     nil
 
 local DevErrorBox =
@@ -74038,9 +77601,17 @@ if Tabs.Dev then
     DevActionBox =
         HolyAddLeftGroupbox(
             Tabs.Dev,
-            "Dev.ActionRecorder",
-            "Action Recorder",
+            "Dev.TestRecorder",
+            "Test Recorder",
             "scan-search"
+        )
+
+    DevSnapshotBox =
+        HolyAddRightGroupbox(
+            Tabs.Dev,
+            "Dev.QuickSnapshot",
+            "Quick Snapshot",
+            "camera"
         )
 
     DevErrorBox =
@@ -92784,75 +96355,387 @@ if DevPersistenceBox then
     })
 end
 
-if DevActionBox then
+HolySetGroupboxVisible(
+    DevPersistenceBox,
+    SHOW_DEV_PERSISTENCE_TESTER
+)
 
-    DevActionBox:AddDropdown(
-        "HolyDevActionScope",
-        {
-            Text =
-                "Capture Scope",
+if DevSnapshotBox then
 
-            Values = {
-                "Player Tools",
-                "Own Garden",
-                "Wild Pets",
-                "Everything",
-            },
+    HOLY_DEV_SUITE_RUNTIME.UI.SnapshotScopeDropdown =
+        DevSnapshotBox:AddDropdown(
+            "HolyDevSnapshotScope",
+            {
+                Text =
+                    "Snapshot Scope",
 
-            Default =
-                HOLY_DEV_SUITE_STATE.ActionScope,
+                Values = {
+                    "Auction",
+                    "HOLY Runtime",
+                    "Player Tools",
+                    "Own Garden",
+                    "Wild Pets",
+                    "Time & Weather",
+                    "Everything",
+                },
 
-            Multi =
-                false,
+                Default =
+                    HOLY_DEV_SUITE_STATE.SnapshotScope
+                    or "Auction",
 
-            Searchable =
-                false,
+                Multi =
+                    false,
 
-            MaxVisibleDropdownItems =
-                4,
+                Searchable =
+                    false,
 
-            Tooltip =
-                "Chooses which replicated attributes are compared before and after one action.",
-        }
-    ):OnChanged(function(value)
+                AllowNull =
+                    false,
 
-        HOLY_DEV_SUITE_STATE.ActionScope =
-            tostring(value)
-    end)
+                MaxVisibleDropdownItems =
+                    7,
 
-    HOLY_DEV_SUITE_RUNTIME.UI.ActionStatusLabel =
-        HolySniperAddLabel(
-            DevActionBox,
-            "Ready — begin before one action."
+                Tooltip =
+                    "Chooses which live system to capture immediately. Everything combines every scope into one privacy-redacted report.",
+            }
         )
 
-    DevActionBox:AddButton({
-        Text =
-            "Begin Capture",
+    HOLY_DEV_SUITE_RUNTIME.UI.SnapshotScopeDropdown:OnChanged(function(value)
 
-        Tooltip =
-            "Takes the before snapshot.",
+        HOLY_DEV_SUITE_STATE.SnapshotScope =
+            HolyDevQuickSnapshotScope(
+                value
+            )
+    end)
 
-        Func =
-            function()
+    HOLY_DEV_SUITE_RUNTIME.UI.SnapshotStatusLabel =
+        HolySniperAddLabel(
+            DevSnapshotBox,
+            "Ready · choose a scope."
+        )
 
-                HolyDevBeginActionCapture()
-            end,
-    })
+    DevSnapshotBox:AddActionRow(
+        "HolyDevQuickSnapshotActions",
+        {
+            Height =
+                21,
 
-    DevActionBox:AddButton({
-        Text =
-            "End Capture + Copy",
+            Buttons = {
+                {
+                    Id =
+                        "Capture",
 
-        Tooltip =
-            "Takes the after snapshot, builds a change diff, and copies the report.",
+                    Text =
+                        "Capture + Copy",
 
-        Func =
-            function()
+                    Tooltip =
+                        "Captures the selected system's current live state, saves it, and copies a privacy-redacted report. It does not fire any game packet.",
 
-                HolyDevEndActionCapture()
-            end,
-    })
+                    Callback =
+                        function()
+
+                            HolyDevQuickSnapshotCapture(
+                                true
+                            )
+                        end,
+                },
+
+                {
+                    Id =
+                        "Copy",
+
+                    Text =
+                        "Copy Last",
+
+                    Tooltip =
+                        "Copies the most recent Quick Snapshot again without performing another scan.",
+
+                    Callback =
+                        function()
+
+                            HolyDevQuickSnapshotCopyLast()
+                        end,
+                },
+            },
+        }
+    )
+end
+
+if DevActionBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderAreaDropdown =
+        DevActionBox:AddDropdown(
+            "HolyDevRecorderArea",
+            {
+                Text =
+                    "Test Area",
+
+                Values = {
+                    "Auction",
+                    "Player Tools",
+                    "Own Garden",
+                    "Wild Pets",
+                    "Sniper",
+                    "UI & Notifications",
+                    "Everything",
+                },
+
+                Default =
+                    HOLY_DEV_SUITE_STATE.RecorderArea
+                    or "Auction",
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                AllowNull =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    7,
+
+                Tooltip =
+                    "Chooses the system to monitor. Each area keeps its relevant packets, internal decisions, game UI messages, errors, and before/after state together.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderAreaDropdown:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.RecorderArea =
+            HolyDevRecorderArea(
+                value
+            )
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderModeDropdown =
+        DevActionBox:AddDropdown(
+            "HolyDevRecorderMode",
+            {
+                Text =
+                    "Recorder Mode",
+
+                Values = {
+                    "Manual Test",
+                    "Rolling 30 Seconds",
+                },
+
+                Default =
+                    HOLY_DEV_SUITE_STATE.RecorderMode
+                    or "Manual Test",
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                AllowNull =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "Manual Test records from Start until Finish. Rolling mode keeps the latest 30 seconds and automatically saves auction failures after five seconds of follow-up evidence.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderModeDropdown:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.RecorderMode =
+            HolyDevRecorderMode(
+                value
+            )
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderNoteInput =
+        DevActionBox:AddInput(
+            "HolyDevRecorderNote",
+            {
+                Text =
+                    "Test Note",
+
+                Default =
+                    tostring(
+                        HOLY_DEV_SUITE_STATE.RecorderNote
+                        or ""
+                    ),
+
+                Placeholder =
+                    "Optional note for this test",
+
+                Numeric =
+                    false,
+
+                Finished =
+                    false,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Adds your explanation to the report. The same text labels Mark Moment.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderNoteInput:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.RecorderNote =
+            tostring(
+                value
+                or ""
+            )
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderStatusLabel =
+        HolySniperAddLabel(
+            DevActionBox,
+            "Ready · choose an area and start."
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.RecorderSourcesLabel =
+        HolySniperAddLabel(
+            DevActionBox,
+            "Sources: checked when recording starts."
+        )
+
+    DevActionBox:AddActionRow(
+        "HolyDevRecorderMainActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Start",
+
+                    Text =
+                        "Start Test",
+
+                    Tooltip =
+                        "Starts the timeline, packet hooks, UI capture, error capture, and before snapshot. Stop the separate Packet Watcher first.",
+
+                    Callback =
+                        function()
+
+                            HolyDevRecorderStart()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Finish",
+
+                    Text =
+                        "Finish + Copy",
+
+                    Tooltip =
+                        "Takes the after snapshot, analyzes the timeline, saves the report, and copies it.",
+
+                    Callback =
+                        function()
+
+                            HolyDevRecorderFinish(
+                                true
+                            )
+                        end,
+                },
+            },
+        }
+    )
+
+    DevActionBox:AddActionRow(
+        "HolyDevRecorderMomentActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Mark",
+
+                    Text =
+                        "Mark Moment",
+
+                    Tooltip =
+                        "Adds an exact timestamp using Test Note as its label.",
+
+                    Callback =
+                        function()
+
+                            HolyDevRecorderMarkMoment()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Recent",
+
+                    Text =
+                        "Save Recent",
+
+                    Tooltip =
+                        "In Rolling mode, saves and copies the current 30-second window without stopping.",
+
+                    Callback =
+                        function()
+
+                            HolyDevRecorderSaveRecent(
+                                true
+                            )
+                        end,
+                },
+            },
+        }
+    )
+
+    DevActionBox:AddActionRow(
+        "HolyDevRecorderReportActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Copy",
+
+                    Text =
+                        "Copy Last",
+
+                    Tooltip =
+                        "Copies the latest completed or automatically saved report.",
+
+                    Callback =
+                        function()
+
+                            HolyDevRecorderCopyLast()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Clear",
+
+                    Text =
+                        "Clear",
+
+                    Tooltip =
+                        "Stops recording without saving, restores packet settings, and clears the latest report.",
+
+                    Callback =
+                        function()
+
+                            HolyDevRecorderClear()
+                        end,
+                },
+            },
+        }
+    )
 end
 
 if DevErrorBox then
