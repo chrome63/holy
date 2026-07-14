@@ -31133,402 +31133,246 @@ function HolyPetInventoryEscapeRichText(value)
         :gsub("'", "&apos;")
 end
 
-function HolyPetInventoryFindTopItem(instance)
+function HolyPetInventoryScanRows()
 
-    if typeof(instance) ~= "Instance" then
-        return nil
-    end
-
-    local backpack =
-        LocalPlayer
-        and LocalPlayer:FindFirstChildOfClass(
-            "Backpack"
-        )
-        or nil
-
-    local character =
-        LocalPlayer
-        and LocalPlayer.Character
-        or nil
-
-    local current =
-        instance
-
-    while current.Parent ~= nil
-    and current.Parent ~= backpack
-    and current.Parent ~= character do
-
-        current =
-            current.Parent
-    end
-
-    return current
-end
-
-function HolyPetInventoryFindEntryRoot(instance)
-
-    local topItem =
-        HolyPetInventoryFindTopItem(
-            instance
+    local petModules =
+        HolyDataGetModule(
+            "PetModules"
         )
 
-    if typeof(topItem) ~= "Instance" then
-
-        return instance,
-            instance
+    if type(petModules) ~= "table" then
+        return {}
     end
 
-    local entryRoot =
-        instance
+    local petCatalog =
+        {}
 
-    local current =
-        instance
+    local function prettyPetName(value)
 
-    while typeof(current) == "Instance" do
+        local text =
+            HolyCleanText(
+                value
+            )
+            :gsub("_", " ")
+            :gsub("(%l)(%u)", "%1 %2")
+            :gsub("(%u)(%u%l)", "%1 %2")
 
-        local hasPetId =
-            HolyDefenseReadPetId(
-                current
-            ) ~= ""
-
-        local hasPetName =
-            HolyDefenseReadPetName(
-                current
-            ) ~= ""
-
-        if hasPetId
-        or hasPetName then
-
-            entryRoot =
-                current
-        end
-
-        if current == topItem then
-            break
-        end
-
-        current =
-            current.Parent
+        return HolyCleanText(
+            text
+        )
     end
 
-    return topItem,
-        entryRoot
-end
+    local function addCatalogAlias(
+        alias,
+        catalogEntry
+    )
 
-function HolyPetInventoryReadAmount(...)
-
-    local attributeNames = {
-        "Quantity",
-        "Count",
-        "StackCount",
-        "Amount",
-        "PetCount",
-    }
-
-    for sourceIndex = 1, select("#", ...) do
-
-        local source =
-            select(
-                sourceIndex,
-                ...
+        alias =
+            HolySniperPetAliasKey(
+                alias
             )
 
-        if typeof(source) == "Instance" then
-
-            for _, attributeName in ipairs(
-                attributeNames
-            ) do
-
-                local ok,
-                    value =
-                    pcall(function()
-
-                        return source:GetAttribute(
-                            attributeName
-                        )
-                    end)
-
-                if ok == true
-                and value ~= nil then
-
-                    local number =
-                        tonumber(value)
-
-                    if number == nil then
-
-                        number =
-                            tonumber(
-                                tostring(value)
-                                    :match("%d+")
-                            )
-                    end
-
-                    if number ~= nil
-                    and number > 0 then
-
-                        return math.max(
-                            1,
-                            math.floor(
-                                number
-                            )
-                        )
-                    end
-                end
-
-                local valueObject =
-                    source:FindFirstChild(
-                        attributeName
-                    )
-
-                if typeof(valueObject) == "Instance" then
-
-                    local valueOk,
-                        objectValue =
-                        pcall(function()
-
-                            return valueObject.Value
-                        end)
-
-                    local number =
-                        valueOk == true
-                        and tonumber(objectValue)
-                        or nil
-
-                    if number ~= nil
-                    and number > 0 then
-
-                        return math.max(
-                            1,
-                            math.floor(
-                                number
-                            )
-                        )
-                    end
-                end
-            end
+        if alias == "" then
+            return
         end
+
+        petCatalog[alias] =
+            catalogEntry
     end
 
-    return 1
-end
-
-function HolyPetInventoryIsKnownPet(value)
-
-    local wanted =
-        HolySniperPetAliasKey(
-            value
-        )
-
-    if wanted == "" then
-        return false
-    end
-
-    HolySniperGetPetValues()
-
-    local keyToDisplay =
-        type(HOLY_SNIPER_STATE.PetKeyToDisplay) == "table"
-        and HOLY_SNIPER_STATE.PetKeyToDisplay
-        or {}
-
-    for internalKey, displayName in pairs(
-        keyToDisplay
+    for moduleKey, moduleData in pairs(
+        petModules
     ) do
 
-        if HolySniperPetAliasKey(internalKey) == wanted
-        or HolySniperPetAliasKey(displayName) == wanted then
+        if type(moduleKey) == "string"
+        and type(moduleData) == "table" then
 
-            return true
+            local displayName =
+                HolyCleanText(
+                    moduleData.DisplayName
+                    or moduleData.Name
+                    or ""
+                )
+
+            if displayName == "" then
+
+                displayName =
+                    prettyPetName(
+                        moduleKey
+                    )
+            end
+
+            local catalogEntry = {
+                Key =
+                    moduleKey,
+
+                Name =
+                    displayName,
+            }
+
+            addCatalogAlias(
+                moduleKey,
+                catalogEntry
+            )
+
+            addCatalogAlias(
+                moduleData.AssetName,
+                catalogEntry
+            )
+
+            addCatalogAlias(
+                displayName,
+                catalogEntry
+            )
         end
     end
-
-    return false
-end
-
-function HolyPetInventoryScanRows()
 
     local grouped =
         {}
 
-    local seenEntries =
+    local seenTools =
         {}
 
-    for _, defenseRow in ipairs(
-        HolyDefenseGetInventoryPetRows()
-    ) do
+    local roots = {
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil,
 
-        local instance =
-            defenseRow.Instance
+        LocalPlayer
+        and LocalPlayer.Character
+        or nil,
+    }
 
-        if typeof(instance) == "Instance" then
+    for _, root in ipairs(roots) do
 
-            local topItem,
-                entryRoot =
-                HolyPetInventoryFindEntryRoot(
-                    instance
-                )
+        if typeof(root) == "Instance" then
 
-            local identity =
-                defenseRow.PetIdKey ~= ""
-                and (
-                    "id:"
-                    .. defenseRow.PetIdKey
-                )
-                or entryRoot
+            for _, tool in ipairs(
+                root:GetChildren()
+            ) do
 
-            if seenEntries[identity] ~= true then
+                if tool:IsA("Tool")
+                and seenTools[tool] ~= true then
 
-                seenEntries[identity] =
-                    true
+                    seenTools[tool] =
+                        true
 
-                local explicitPetName =
-                    HolyCleanText(
-                        HolyDefenseReadAnyAttr(
-                            instance,
-                            {
-                                "PetName",
-                                "Pet",
-                                "WildPetName",
-                            }
-                        )
-                        or HolyDefenseReadAnyAttr(
-                            entryRoot,
-                            {
-                                "PetName",
-                                "Pet",
-                                "WildPetName",
-                            }
-                        )
-                        or HolyDefenseReadAnyAttr(
-                            topItem,
-                            {
-                                "PetName",
-                                "Pet",
-                                "WildPetName",
-                            }
-                        )
-                        or ""
-                    )
-
-                local rawPetName =
-                    explicitPetName
-
-                if rawPetName == "" then
-
-                    rawPetName =
-                        HolyDefenseReadPetName(
-                            instance
-                        )
-                end
-
-                if rawPetName == "" then
-
-                    rawPetName =
-                        HolyDefenseReadPetName(
-                            entryRoot
-                        )
-                end
-
-                if rawPetName == "" then
-
-                    rawPetName =
-                        HolySniperReadLivePetName(
-                            entryRoot,
-                            instance
-                        )
-                end
-
-                if rawPetName == ""
-                and typeof(topItem) == "Instance"
-                and topItem:IsA("Tool") then
-
-                    rawPetName =
+                    local rawPetName =
                         HolyCleanText(
-                            topItem.Name
-                        )
-                end
-
-                local confirmedPet =
-                    defenseRow.PetIdKey ~= ""
-                    or explicitPetName ~= ""
-                    or HolyPetInventoryIsKnownPet(
-                        rawPetName
-                    )
-
-                if confirmedPet == true
-                and rawPetName ~= "" then
-
-                    local petName =
-                        HolySniperResolvePetDisplay(
-                            rawPetName
+                            tool:GetAttribute(
+                                "Pet"
+                            )
+                            or ""
                         )
 
-                    if petName ~= ""
-                    and petName ~= "Any Pet" then
+                    local petId =
+                        HolyCleanText(
+                            tool:GetAttribute(
+                                "PetId"
+                            )
+                            or ""
+                        )
 
-                        local sizeName =
-                            HolySniperNormalizeSizeName(
-                                HolySniperReadLiveSize(
-                                    entryRoot,
-                                    instance
+                    if rawPetName ~= ""
+                    and petId ~= "" then
+
+                        local catalogEntry =
+                            petCatalog[
+                                HolySniperPetAliasKey(
+                                    rawPetName
                                 )
-                            )
+                            ]
 
-                        local variantName =
-                            HolySniperNormalizeVariantName(
-                                HolySniperReadLiveVariant(
-                                    entryRoot,
-                                    instance
+                        if type(catalogEntry) == "table" then
+
+                            local petName =
+                                catalogEntry.Name
+
+                            local sizeName =
+                                HolySniperNormalizeSizeName(
+                                    HolySniperReadLiveSize(
+                                        tool,
+                                        nil
+                                    )
                                 )
-                            )
 
-                        local amount =
-                            HolyPetInventoryReadAmount(
-                                instance,
-                                entryRoot,
-                                topItem
-                            )
+                            if sizeName == "Normal" then
 
-                        local groupKey =
-                            HolySniperPetAliasKey(
-                                petName
-                            )
-                            .. "|"
-                            .. HolySniperPetAliasKey(
-                                sizeName
-                            )
-                            .. "|"
-                            .. HolySniperPetAliasKey(
-                                variantName
-                            )
+                                local lowerToolName =
+                                    tostring(tool.Name or "")
+                                        :lower()
 
-                        local group =
-                            grouped[groupKey]
+                                if lowerToolName:match(
+                                    "^huge%s+"
+                                )
+                                or lowerToolName:match(
+                                    "^mega%s+"
+                                ) then
 
-                        if type(group) ~= "table" then
+                                    sizeName =
+                                        "Huge"
 
-                            group = {
-                                Key =
-                                    groupKey,
+                                elseif lowerToolName:match(
+                                    "^big%s+"
+                                ) then
 
-                                Name =
-                                    petName,
+                                    sizeName =
+                                        "Big"
+                                end
+                            end
 
-                                Size =
-                                    sizeName,
+                            local variantName =
+                                HolySniperNormalizeVariantName(
+                                    HolySniperReadLiveVariant(
+                                        tool,
+                                        nil
+                                    )
+                                )
 
-                                Variant =
-                                    variantName,
+                            local groupKey =
+                                HolySniperPetAliasKey(
+                                    petName
+                                )
+                                .. "|"
+                                .. HolySniperPetAliasKey(
+                                    sizeName
+                                )
+                                .. "|"
+                                .. HolySniperPetAliasKey(
+                                    variantName
+                                )
 
-                                Amount =
-                                    0,
-                            }
+                            local group =
+                                grouped[groupKey]
 
-                            grouped[groupKey] =
-                                group
+                            if type(group) ~= "table" then
+
+                                group = {
+                                    Key =
+                                        groupKey,
+
+                                    Name =
+                                        petName,
+
+                                    Size =
+                                        sizeName,
+
+                                    Variant =
+                                        variantName,
+
+                                    Amount =
+                                        0,
+                                }
+
+                                grouped[groupKey] =
+                                    group
+                            end
+
+                            group.Amount +=
+                                1
                         end
-
-                        group.Amount +=
-                            amount
                     end
                 end
             end
@@ -31890,16 +31734,22 @@ function HolyPetInventoryStart()
             true
 
         addConnection(
-            root.DescendantAdded:Connect(function()
+            root.ChildAdded:Connect(function(child)
 
-                HolyPetInventoryScheduleRefresh()
+                if child:IsA("Tool") then
+
+                    HolyPetInventoryScheduleRefresh()
+                end
             end)
         )
 
         addConnection(
-            root.DescendantRemoving:Connect(function()
+            root.ChildRemoved:Connect(function(child)
 
-                HolyPetInventoryScheduleRefresh()
+                if child:IsA("Tool") then
+
+                    HolyPetInventoryScheduleRefresh()
+                end
             end)
         )
     end
