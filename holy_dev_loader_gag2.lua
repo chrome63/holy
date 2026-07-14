@@ -34,13 +34,33 @@ local ALLOWED_DEV_USER_IDS = {
     
 }
 
-if ALLOWED_DEV_USER_IDS[LocalPlayer.UserId] ~= true then
+local currentUserId =
+    tonumber(LocalPlayer.UserId)
+
+if ALLOWED_DEV_USER_IDS[currentUserId] ~= true then
 
     error(
-        "[HOLY DEV] You are not allowed to use this dev loader.",
+        "[HOLY DEV] Account is not allowlisted."
+        .. "\nUsername: "
+        .. tostring(LocalPlayer.Name)
+        .. "\nUserId: "
+        .. tostring(currentUserId)
+        .. "\nAdd this to ALLOWED_DEV_USER_IDS:"
+        .. "\n["
+        .. tostring(currentUserId)
+        .. "] = true,",
         0
     )
 end
+
+print(
+    "[HOLY DEV]",
+    "Allowlist passed.",
+    "Username:",
+    tostring(LocalPlayer.Name),
+    "UserId:",
+    tostring(currentUserId)
+)
 
 -- Change this to "pro" when testing Pro.
 -- Keep "sniper" when testing Server Sniper.
