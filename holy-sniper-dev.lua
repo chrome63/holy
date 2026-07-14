@@ -458,6 +458,7 @@ HOLY_DEV_UI_STATE = {
     UnloadOtherGardens = false,
     UnloadOwnGarden = false,
     HideMiddle = false,
+    DeleteBackpack = false,
 }
 
 HOLY_SERVER_PICK_STYLES = {
@@ -565,6 +566,17 @@ if type(HOLY_PERFORMANCE_STATE) == "table" then
             end)
         end
     end
+
+    local backpackConnection =
+        HOLY_PERFORMANCE_STATE.BackpackConnection
+
+    if backpackConnection then
+
+        pcall(function()
+
+            backpackConnection:Disconnect()
+        end)
+    end
 end
 
 HOLY_PERFORMANCE_STATE = {
@@ -580,6 +592,8 @@ HOLY_PERFORMANCE_STATE = {
     Connections = {},
     PlotConnections = {},
     MapConnections = {},
+
+    BackpackConnection = nil,
 
     OwnPlot = nil,
     OwnMarker = "",
@@ -2286,6 +2300,9 @@ function HolySaveUISettings()
 
         HideMiddle =
             HOLY_DEV_UI_STATE.HideMiddle == true,
+
+        DeleteBackpack =
+            HOLY_DEV_UI_STATE.DeleteBackpack == true,
     }
 
     local encodeOk,
@@ -2503,6 +2520,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.HideMiddle =
             data.UnloadMiddle
+    end
+
+    if type(data.DeleteBackpack) == "boolean" then
+
+        HOLY_DEV_UI_STATE.DeleteBackpack =
+            data.DeleteBackpack
     end
 
     return true
@@ -60737,6 +60760,145 @@ function HolyPerformanceSetStatus(status)
     return true
 end
 
+function HolyPerformanceDisconnectBackpackWatcher()
+
+    local connection =
+        HOLY_PERFORMANCE_STATE.BackpackConnection
+
+    if connection then
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    HOLY_PERFORMANCE_STATE.BackpackConnection =
+        nil
+end
+
+function HolyPerformanceDeleteBackpackOnce(reason)
+
+    if HOLY_DEV_UI_STATE.DeleteBackpack ~= true
+    or not LocalPlayer then
+
+        return false
+    end
+
+    local backpack =
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+
+    if typeof(backpack) ~= "Instance" then
+        return false
+    end
+
+    local toolCount =
+        0
+
+    for _, child in ipairs(
+        backpack:GetChildren()
+    ) do
+
+        if child:IsA("Tool") then
+
+            toolCount +=
+                1
+        end
+    end
+
+    local ok =
+        pcall(function()
+
+            backpack:Destroy()
+        end)
+
+    if ok == true then
+
+        HOLY_PERFORMANCE_STATE.DeletedCount =
+            (
+                tonumber(
+                    HOLY_PERFORMANCE_STATE.DeletedCount
+                )
+                or 0
+            )
+            + toolCount
+            + 1
+
+        HolyPerformanceSetStatus(
+            "Backpack deleted."
+        )
+    end
+
+    return ok == true
+end
+
+function HolyPerformanceConnectBackpackWatcher()
+
+    HolyPerformanceDisconnectBackpackWatcher()
+
+    if HOLY_DEV_UI_STATE.DeleteBackpack ~= true
+    or not LocalPlayer then
+
+        return false
+    end
+
+    HOLY_PERFORMANCE_STATE.BackpackConnection =
+        LocalPlayer.ChildAdded:Connect(function(child)
+
+            if child:IsA("Backpack") then
+
+                task.defer(function()
+
+                    if HOLY_DEV_UI_STATE.DeleteBackpack == true
+                    and child.Parent == LocalPlayer then
+
+                        pcall(function()
+
+                            child:Destroy()
+                        end)
+                    end
+                end)
+            end
+        end)
+
+    return true
+end
+
+function HolyPerformanceStartDeleteBackpack(reason)
+
+    HOLY_DEV_UI_STATE.DeleteBackpack =
+        true
+
+    HolySaveUISettings()
+
+    HolyPerformanceConnectBackpackWatcher()
+
+    HolyPerformanceDeleteBackpackOnce(
+        reason
+        or "performance"
+    )
+
+    return true
+end
+
+function HolyPerformanceStopDeleteBackpack(reason)
+
+    HOLY_DEV_UI_STATE.DeleteBackpack =
+        false
+
+    HolySaveUISettings()
+
+    HolyPerformanceDisconnectBackpackWatcher()
+
+    HolyPerformanceSetStatus(
+        "Backpack deletion stopped. Rejoin to restore."
+    )
+
+    return true
+end
+
 function HolyPerformanceGetGardensRoot()
 
     local gardens =
@@ -96534,6 +96696,34 @@ SettingsPerformanceBox:AddToggle(
     end
 end)
 
+SettingsPerformanceBox:AddToggle(
+    "HolyDeleteBackpack",
+    {
+        Text =
+            "Auto Delete Backpack",
+
+        Default =
+            HOLY_DEV_UI_STATE.DeleteBackpack == true,
+
+        Tooltip =
+            "Destroys the local Backpack and automatically removes it again if recreated. Reduces memory, but disables seeds, tools, pets, sprinklers, Pet Inventory, and inventory-based automation. Turning this off does not restore the Backpack; disable it, then rejoin.",
+    }
+):OnChanged(function(value)
+
+    if value == true then
+
+        HolyPerformanceStartDeleteBackpack(
+            "toggle on"
+        )
+
+    else
+
+        HolyPerformanceStopDeleteBackpack(
+            "toggle off"
+        )
+    end
+end)
+
 if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
 
     task.defer(function()
@@ -96559,6 +96749,16 @@ if HOLY_DEV_UI_STATE.HideMiddle == true then
     task.defer(function()
 
         HolyPerformanceStartHideMiddle(
+            "startup"
+        )
+    end)
+end
+
+if HOLY_DEV_UI_STATE.DeleteBackpack == true then
+
+    task.defer(function()
+
+        HolyPerformanceStartDeleteBackpack(
             "startup"
         )
     end)
