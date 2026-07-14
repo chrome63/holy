@@ -44473,8 +44473,11 @@ function HolyAuctionHudCreateUI()
                     and 1
                     or 0.12,
 
-                BorderSizePixel = 0,
-                ClipsDescendants = true,
+                BorderSizePixel =
+                    0,
+
+                ClipsDescendants =
+                    not minimized,
 
                 Position =
                     UDim2.fromOffset(
@@ -45432,6 +45435,60 @@ function HolyAuctionHudCreateUI()
         }
     end
 
+        local miniShadow =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                Name =
+                    "HolyAuctionMiniShadow",
+
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        0,
+                        0,
+                        0
+                    ),
+
+                BackgroundTransparency =
+                    0.64,
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        1,
+                        2
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        150,
+                        38
+                    ),
+
+                Visible =
+                    minimized,
+
+                ZIndex =
+                    19,
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        miniShadow,
+        UDim.new(
+            0,
+            8
+        )
+    )
+
+    HOLY_AUCTION_HUD.MiniShadow =
+        miniShadow
+
     local miniButton =
         HolyAuctionHudCreate(
             "TextButton",
@@ -45512,6 +45569,59 @@ function HolyAuctionHudCreateUI()
 
     HOLY_AUCTION_HUD.MiniStroke =
         miniStroke
+
+    local miniHeaderShade =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                Name =
+                    "MiniHeaderShade",
+
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        19,
+                        21,
+                        28
+                    ),
+
+                BackgroundTransparency =
+                    0.55,
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        1,
+                        1
+                    ),
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -2,
+                        0,
+                        16
+                    ),
+
+                ZIndex =
+                    20,
+
+                Parent =
+                    miniButton,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        miniHeaderShade,
+        UDim.new(
+            0,
+            7
+        )
+    )
+
+    HOLY_AUCTION_HUD.MiniHeaderShade =
+        miniHeaderShade
 
     local miniIcon =
         HolyAuctionHudLabel(
@@ -45822,6 +45932,12 @@ function HolyAuctionHudCreateUI()
 
         miniButton.Visible =
             currentMinimized
+
+        miniShadow.Visible =
+            currentMinimized
+
+        holder.ClipsDescendants =
+            not currentMinimized
 
         holder.BackgroundTransparency =
             currentMinimized
