@@ -15,7 +15,7 @@ local LocalPlayer =
 local ALLOWED_DEV_USER_IDS = {
     [78428093] =
         true,
-    
+
     [8668060320] =
         true,
 
@@ -30,8 +30,9 @@ local ALLOWED_DEV_USER_IDS = {
 
     [10968844233] =
         true,
-    
-    
+
+    [8141959457] =
+        true,
 }
 
 local currentUserId =
