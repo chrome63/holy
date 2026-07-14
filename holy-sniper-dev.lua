@@ -45482,7 +45482,7 @@ function HolyAuctionHudCreateUI()
         miniShadow,
         UDim.new(
             0,
-            8
+            11
         )
     )
 
@@ -45548,7 +45548,7 @@ function HolyAuctionHudCreateUI()
         miniButton,
         UDim.new(
             0,
-            8
+            11
         )
     )
 
@@ -45563,6 +45563,12 @@ function HolyAuctionHudCreateUI()
             0.05,
             1
         )
+
+    pcall(function()
+
+        miniStroke.LineJoinMode =
+            Enum.LineJoinMode.Round
+    end)
 
     HOLY_AUCTION_HUD.MiniButton =
         miniButton
@@ -45616,7 +45622,7 @@ function HolyAuctionHudCreateUI()
         miniHeaderShade,
         UDim.new(
             0,
-            7
+            10
         )
     )
 
