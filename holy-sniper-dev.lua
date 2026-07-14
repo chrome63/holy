@@ -33618,22 +33618,31 @@ function HolyFarmDetailsCreateLabel(
     label.Size =
         size
 
-    label.FontFace =
-        Library.Scheme.Font
+    label.Font =
+        Enum.Font.GothamMedium
 
     label.Text =
         ""
 
     label.TextColor3 =
         Color3.fromRGB(
-            242,
             244,
+            245,
             248
         )
 
     label.TextSize =
         textSize
         or 11
+
+    label.TextTransparency =
+        0
+
+    label.TextStrokeTransparency =
+        1
+
+    label.TextWrapped =
+        false
 
     label.TextXAlignment =
         alignment
@@ -33726,9 +33735,12 @@ function HolyFarmDetailsCreateButton(
     button.BackgroundColor3 =
         Color3.fromRGB(
             12,
-            11,
-            19
+            13,
+            18
         )
+
+    button.BackgroundTransparency =
+        1
 
     button.BorderSizePixel =
         0
@@ -33739,41 +33751,627 @@ function HolyFarmDetailsCreateButton(
     button.Size =
         size
 
-    button.FontFace =
-        Library.Scheme.Font
+    button.Font =
+        Enum.Font.GothamBold
 
     button.Text =
         text or ""
 
     button.TextColor3 =
         Color3.fromRGB(
-            242,
             244,
+            245,
             248
         )
 
     button.TextSize =
         10
 
+    button.TextTransparency =
+        0
+
+    button.TextStrokeTransparency =
+        1
+
     button.Parent =
         parent
 
-    HolyFarmDetailsAddCorner(
-        button,
-        5
-    )
-
-    HolyFarmDetailsAddStroke(
-        button,
-        Color3.fromRGB(
-            42,
-            42,
-            56
-        ),
-        0.20
-    )
-
     return button
+end
+
+function HolyFarmDetailsApplyCleanStyle(
+    surface
+)
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    if typeof(surface) ~= "Instance" then
+        return false
+    end
+
+    surface.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            9,
+            13
+        )
+
+    surface.BackgroundTransparency =
+        0
+
+    surface.BorderSizePixel =
+        0
+
+    surface.ClipsDescendants =
+        true
+
+    local metricCards = {
+        ui.PlantsMetric
+        and ui.PlantsMetric.Parent,
+
+        ui.FruitsMetric
+        and ui.FruitsMetric.Parent,
+
+        ui.ReadyMetric
+        and ui.ReadyMetric.Parent,
+    }
+
+    local flatObjects = {
+        ui.FilterDescription
+        and ui.FilterDescription.Parent,
+
+        ui.Header1
+        and ui.Header1.Parent,
+
+        ui.BestLabel
+        and ui.BestLabel.Parent,
+
+        ui.FilterPanel,
+
+        ui.FilterList,
+    }
+
+    for _,
+        card in ipairs(metricCards) do
+
+        if typeof(card) == "Instance" then
+
+            card.BackgroundColor3 =
+                Color3.fromRGB(
+                    8,
+                    9,
+                    13
+                )
+
+            card.BackgroundTransparency =
+                0
+
+            card.BorderSizePixel =
+                0
+
+            card.Position =
+                UDim2.new(
+                    (
+                        _ - 1
+                    )
+                    / 3,
+                    0,
+                    0,
+                    0
+                )
+
+            card.Size =
+                UDim2.new(
+                    1 / 3,
+                    0,
+                    0,
+                    52
+                )
+
+            table.insert(
+                flatObjects,
+                card
+            )
+        end
+    end
+
+    for _,
+        row in ipairs(
+            ui.Rows
+            or {}
+        ) do
+
+        if type(row) == "table"
+        and typeof(row.Frame) == "Instance" then
+
+            table.insert(
+                flatObjects,
+                row.Frame
+            )
+        end
+    end
+
+    for _,
+        object in ipairs(flatObjects) do
+
+        if typeof(object) == "Instance" then
+
+            for _,
+                child in ipairs(
+                    object:GetChildren()
+                ) do
+
+                if child:IsA("UIStroke")
+                or child:IsA("UICorner") then
+
+                    child:Destroy()
+                end
+            end
+        end
+    end
+
+    for _,
+        child in ipairs(
+            surface:GetChildren()
+        ) do
+
+        if child.Name
+            == "HolyFarmDetailsFlatDivider" then
+
+            child:Destroy()
+        end
+    end
+
+    local function createDivider(
+        parent,
+        position,
+        size,
+        color,
+        zIndex
+    )
+
+        local divider =
+            Instance.new(
+                "Frame"
+            )
+
+        divider.Name =
+            "HolyFarmDetailsFlatDivider"
+
+        divider.BackgroundColor3 =
+            color
+            or Color3.fromRGB(
+                36,
+                39,
+                48
+            )
+
+        divider.BackgroundTransparency =
+            0
+
+        divider.BorderSizePixel =
+            0
+
+        divider.Position =
+            position
+
+        divider.Size =
+            size
+
+        divider.ZIndex =
+            zIndex
+            or 1
+
+        divider.Parent =
+            parent
+
+        return divider
+    end
+
+    createDivider(
+        surface,
+        UDim2.new(
+            1 / 3,
+            0,
+            0,
+            8
+        ),
+        UDim2.fromOffset(
+            1,
+            36
+        )
+    )
+
+    createDivider(
+        surface,
+        UDim2.new(
+            2 / 3,
+            0,
+            0,
+            8
+        ),
+        UDim2.fromOffset(
+            1,
+            36
+        )
+    )
+
+    createDivider(
+        surface,
+        UDim2.fromOffset(
+            0,
+            89
+        ),
+        UDim2.new(
+            1,
+            0,
+            0,
+            1
+        )
+    )
+
+    createDivider(
+        surface,
+        UDim2.fromOffset(
+            0,
+            114
+        ),
+        UDim2.new(
+            1,
+            0,
+            0,
+            1
+        )
+    )
+
+    createDivider(
+        surface,
+        UDim2.fromOffset(
+            0,
+            325
+        ),
+        UDim2.new(
+            1,
+            0,
+            0,
+            1
+        )
+    )
+
+    for index,
+        row in ipairs(
+            ui.Rows
+            or {}
+        ) do
+
+        if type(row) == "table"
+        and typeof(row.Frame) == "Instance" then
+
+            row.Frame.BackgroundColor3 =
+                index % 2 == 0
+                and Color3.fromRGB(
+                    10,
+                    11,
+                    16
+                )
+                or Color3.fromRGB(
+                    8,
+                    9,
+                    13
+                )
+
+            row.Frame.BackgroundTransparency =
+                0
+
+            row.Frame.BorderSizePixel =
+                0
+
+            createDivider(
+                row.Frame,
+                UDim2.new(
+                    0,
+                    5,
+                    1,
+                    -1
+                ),
+                UDim2.new(
+                    1,
+                    -10,
+                    0,
+                    1
+                ),
+                Color3.fromRGB(
+                    26,
+                    28,
+                    35
+                )
+            )
+
+            row.Name.Font =
+                Enum.Font.GothamMedium
+
+            row.Name.TextSize =
+                11
+
+            row.Sub.Font =
+                Enum.Font.GothamMedium
+
+            row.Sub.TextSize =
+                9
+
+            row.Value2.Font =
+                Enum.Font.GothamBold
+
+            row.Value2.TextSize =
+                10
+
+            row.Value3.Font =
+                Enum.Font.GothamBold
+
+            row.Value3.TextSize =
+                10
+
+            row.Value4.Font =
+                Enum.Font.GothamBold
+
+            row.Value4.TextSize =
+                10
+        end
+    end
+
+    for _,
+        metric in ipairs({
+            ui.PlantsMetric,
+            ui.FruitsMetric,
+            ui.ReadyMetric,
+        }) do
+
+        if typeof(metric) == "Instance" then
+
+            metric.Font =
+                Enum.Font.GothamBold
+
+            metric.TextSize =
+                16
+        end
+    end
+
+    for _,
+        card in ipairs(metricCards) do
+
+        if typeof(card) == "Instance" then
+
+            for _,
+                child in ipairs(
+                    card:GetChildren()
+                ) do
+
+                if child:IsA("TextLabel")
+                and child ~= ui.PlantsMetric
+                and child ~= ui.FruitsMetric
+                and child ~= ui.ReadyMetric then
+
+                    child.Font =
+                        Enum.Font.GothamBold
+
+                    child.TextSize =
+                        9
+
+                    child.TextColor3 =
+                        Color3.fromRGB(
+                            145,
+                            151,
+                            164
+                        )
+                end
+            end
+        end
+    end
+
+    local filterBar =
+        ui.FilterDescription
+        and ui.FilterDescription.Parent
+
+    if typeof(filterBar) == "Instance" then
+
+        filterBar.BackgroundColor3 =
+            Color3.fromRGB(
+                11,
+                12,
+                17
+            )
+
+        filterBar.BackgroundTransparency =
+            0
+
+        filterBar.BorderSizePixel =
+            0
+    end
+
+    if typeof(ui.FilterDescription) == "Instance" then
+
+        ui.FilterDescription.Font =
+            Enum.Font.GothamMedium
+
+        ui.FilterDescription.TextSize =
+            10
+
+        ui.FilterDescription.TextColor3 =
+            Color3.fromRGB(
+                158,
+                164,
+                177
+            )
+    end
+
+    if typeof(ui.FilterButton) == "Instance" then
+
+        ui.FilterButton.BackgroundTransparency =
+            1
+
+        ui.FilterButton.Font =
+            Enum.Font.GothamBold
+
+        ui.FilterButton.TextSize =
+            10
+
+        ui.FilterButton.TextColor3 =
+            Color3.fromRGB(
+                255,
+                47,
+                104
+            )
+    end
+
+    for _,
+        header in ipairs({
+            ui.Header1,
+            ui.Header2,
+            ui.Header3,
+            ui.Header4,
+        }) do
+
+        if typeof(header) == "Instance" then
+
+            header.Font =
+                Enum.Font.GothamBold
+
+            header.TextSize =
+                9
+
+            header.TextColor3 =
+                Color3.fromRGB(
+                    150,
+                    156,
+                    169
+                )
+        end
+    end
+
+    local footer =
+        ui.BestLabel
+        and ui.BestLabel.Parent
+
+    if typeof(footer) == "Instance" then
+
+        footer.BackgroundColor3 =
+            Color3.fromRGB(
+                9,
+                10,
+                14
+            )
+
+        footer.BackgroundTransparency =
+            0
+
+        footer.BorderSizePixel =
+            0
+    end
+
+    if typeof(ui.BestLabel) == "Instance" then
+
+        ui.BestLabel.Font =
+            Enum.Font.GothamMedium
+
+        ui.BestLabel.TextSize =
+            10
+    end
+
+    if typeof(ui.PageLabel) == "Instance" then
+
+        ui.PageLabel.Font =
+            Enum.Font.GothamMedium
+
+        ui.PageLabel.TextSize =
+            10
+    end
+
+    if typeof(ui.PreviousButton) == "Instance" then
+
+        ui.PreviousButton.BackgroundTransparency =
+            1
+
+        ui.PreviousButton.TextSize =
+            12
+    end
+
+    if typeof(ui.NextButton) == "Instance" then
+
+        ui.NextButton.BackgroundTransparency =
+            1
+
+        ui.NextButton.TextSize =
+            12
+    end
+
+    if typeof(ui.FilterPanel) == "Instance" then
+
+        ui.FilterPanel.BackgroundColor3 =
+            Color3.fromRGB(
+                8,
+                9,
+                13
+            )
+
+        ui.FilterPanel.BackgroundTransparency =
+            0
+
+        ui.FilterPanel.BorderSizePixel =
+            0
+    end
+
+    if typeof(ui.FilterList) == "Instance" then
+
+        ui.FilterList.BackgroundColor3 =
+            Color3.fromRGB(
+                9,
+                10,
+                14
+            )
+
+        ui.FilterList.BackgroundTransparency =
+            0
+
+        ui.FilterList.BorderSizePixel =
+            0
+
+        ui.FilterList.ScrollBarThickness =
+            2
+    end
+
+    if typeof(ui.ResetButton) == "Instance" then
+
+        ui.ResetButton.BackgroundTransparency =
+            1
+
+        ui.ResetButton.TextColor3 =
+            Color3.fromRGB(
+                255,
+                47,
+                104
+            )
+    end
+
+    if typeof(ui.DoneButton) == "Instance" then
+
+        ui.DoneButton.BackgroundColor3 =
+            Color3.fromRGB(
+                255,
+                47,
+                104
+            )
+
+        ui.DoneButton.BackgroundTransparency =
+            0
+
+        HolyFarmDetailsAddCorner(
+            ui.DoneButton,
+            4
+        )
+    end
+
+    return true
 end
 
 function HolyFarmDetailsConfigureOverview()
@@ -34716,17 +35314,16 @@ function HolyFarmDetailsBuildFilterList()
         or plants
 
     ui.PlantsTab.BackgroundColor3 =
+        Color3.fromRGB(
+            21,
+            15,
+            24
+        )
+
+    ui.PlantsTab.BackgroundTransparency =
         mode == "Plants"
-        and Color3.fromRGB(
-            36,
-            13,
-            28
-        )
-        or Color3.fromRGB(
-            12,
-            11,
-            19
-        )
+        and 0
+        or 1
 
     ui.PlantsTab.TextColor3 =
         mode == "Plants"
@@ -34736,23 +35333,22 @@ function HolyFarmDetailsBuildFilterList()
             104
         )
         or Color3.fromRGB(
-            142,
-            149,
-            165
+            145,
+            151,
+            164
         )
 
     ui.MutationsTab.BackgroundColor3 =
+        Color3.fromRGB(
+            21,
+            15,
+            24
+        )
+
+    ui.MutationsTab.BackgroundTransparency =
         mode == "Mutations"
-        and Color3.fromRGB(
-            36,
-            13,
-            28
-        )
-        or Color3.fromRGB(
-            12,
-            11,
-            19
-        )
+        and 0
+        or 1
 
     ui.MutationsTab.TextColor3 =
         mode == "Mutations"
@@ -34762,9 +35358,9 @@ function HolyFarmDetailsBuildFilterList()
             104
         )
         or Color3.fromRGB(
-            142,
-            149,
-            165
+            145,
+            151,
+            164
         )
 
     ui.FilterEmpty.Visible =
@@ -34817,17 +35413,16 @@ function HolyFarmDetailsBuildFilterList()
             10
 
         button.BackgroundColor3 =
+            Color3.fromRGB(
+                28,
+                15,
+                25
+            )
+
+        button.BackgroundTransparency =
             selected
-            and Color3.fromRGB(
-                36,
-                13,
-                28
-            )
-            or Color3.fromRGB(
-                12,
-                11,
-                19
-            )
+            and 0
+            or 1
 
         if mode == "Mutations" then
 
@@ -35897,6 +36492,10 @@ function HolyFarmDetailsCreateSurface()
 
     ui.FilterPanel =
         filterPanel
+
+    HolyFarmDetailsApplyCleanStyle(
+        surface
+    )
 
     ui.FilterButton.MouseButton1Click:Connect(
         function()
