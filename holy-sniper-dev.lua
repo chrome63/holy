@@ -39981,20 +39981,24 @@ function HolyAuctionHudApplyScale()
         return false
     end
 
-    local scale =
+    local selectedScale =
         HolyAuctionReadHudScale(
             HOLY_SHOP_STATE.AuctionHudScale
             or "80%"
         )
 
+    -- Minimized mode always stays at its exact fixed size.
+    -- HUD Scale only affects the expanded Auction HUD.
     hud.ScaleObject.Scale =
-        scale / 100
+        HOLY_SHOP_STATE.AuctionHudMinimized == true
+        and 1
+        or selectedScale / 100
 
     if typeof(hud.ScaleButton) == "Instance" then
 
         hud.ScaleButton.Text =
             HolyAuctionFormatHudScale(
-                scale
+                selectedScale
             )
     end
 
@@ -40016,6 +40020,84 @@ function HolyAuctionHudSavePosition(frame)
         Y =
             frame.Position.Y.Offset,
     }
+
+    return true
+end
+
+function HolyAuctionHudClampToViewport(frame)
+
+    if typeof(frame) ~= "Instance"
+    or frame:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    local viewportSize =
+        Vector2.new(
+            1920,
+            1080
+        )
+
+    pcall(function()
+
+        local camera =
+            workspace.CurrentCamera
+
+        if camera then
+
+            viewportSize =
+                camera.ViewportSize
+        end
+    end)
+
+    local frameSize =
+        frame.AbsoluteSize
+
+    local width =
+        tonumber(frameSize.X)
+        or frame.Size.X.Offset
+
+    local height =
+        tonumber(frameSize.Y)
+        or frame.Size.Y.Offset
+
+    if width <= 0 then
+
+        width =
+            frame.Size.X.Offset
+    end
+
+    if height <= 0 then
+
+        height =
+            frame.Size.Y.Offset
+    end
+
+    local x =
+        math.clamp(
+            frame.Position.X.Offset,
+            0,
+            math.max(
+                0,
+                viewportSize.X - width
+            )
+        )
+
+    local y =
+        math.clamp(
+            frame.Position.Y.Offset,
+            0,
+            math.max(
+                0,
+                viewportSize.Y - height
+            )
+        )
+
+    frame.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
 
     return true
 end
@@ -44405,8 +44487,8 @@ function HolyAuctionHudCreateUI()
                 Size =
                     minimized
                     and UDim2.fromOffset(
-                        34,
-                        34
+                        150,
+                        38
                     )
                     or UDim2.fromOffset(
                         480,
@@ -44454,7 +44536,9 @@ function HolyAuctionHudCreateUI()
             "UIScale",
             {
                 Scale =
-                    HolyAuctionReadHudScale(
+                    minimized
+                    and 1
+                    or HolyAuctionReadHudScale(
                         HOLY_SHOP_STATE.AuctionHudScale
                     ) / 100,
 
@@ -45349,48 +45433,147 @@ function HolyAuctionHudCreateUI()
     end
 
     local miniButton =
-        HolyAuctionHudButton(
-            holder,
-            "H",
+        HolyAuctionHudCreate(
+            "TextButton",
+            {
+                Name =
+                    "HolyAuctionMiniHud",
+
+                Active =
+                    true,
+
+                AutoButtonColor =
+                    false,
+
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        8,
+                        10,
+                        14
+                    ),
+
+                BackgroundTransparency =
+                    0.04,
+
+                BorderSizePixel =
+                    0,
+
+                ClipsDescendants =
+                    true,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        150,
+                        38
+                    ),
+
+                Text =
+                    "",
+
+                Visible =
+                    minimized,
+
+                ZIndex =
+                    20,
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        miniButton,
+        UDim.new(
             0,
-            0,
-            34,
-            34
+            8
         )
+    )
 
-    miniButton.BackgroundColor3 =
-        Color3.fromRGB(
-            8,
-            10,
-            14
+    local miniStroke =
+        HolyAuctionHudStroke(
+            miniButton,
+            Color3.fromRGB(
+                48,
+                52,
+                63
+            ),
+            0.05,
+            1
         )
-
-    miniButton.BackgroundTransparency =
-        0.25
-
-    miniButton.TextColor3 =
-        Color3.fromRGB(
-            255,
-            91,
-            167
-        )
-
-    miniButton.TextSize =
-        11
-
-    miniButton.Visible =
-        minimized
-
-    miniButton.ZIndex =
-        20
 
     HOLY_AUCTION_HUD.MiniButton =
         miniButton
+
+    HOLY_AUCTION_HUD.MiniStroke =
+        miniStroke
+
+    local miniIcon =
+        HolyAuctionHudLabel(
+            miniButton,
+            utf8.char(
+                0x1F528
+            ),
+            7,
+            0,
+            26,
+            38,
+            16,
+            Color3.fromRGB(
+                244,
+                246,
+                250
+            ),
+            true
+        )
+
+    miniIcon.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    miniIcon.ZIndex =
+        21
+
+    HOLY_AUCTION_HUD.MiniIcon =
+        miniIcon
+
+    local miniTitle =
+        HolyAuctionHudLabel(
+            miniButton,
+            "Auction Live",
+            37,
+            0,
+            76,
+            38,
+            11,
+            Color3.fromRGB(
+                239,
+                241,
+                246
+            ),
+            true
+        )
+
+    miniTitle.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    miniTitle.ZIndex =
+        21
+
+    HOLY_AUCTION_HUD.MiniTitle =
+        miniTitle
 
     local miniDot =
         HolyAuctionHudCreate(
             "Frame",
             {
+                Name =
+                    "AuctionStateDot",
+
                 BackgroundColor3 =
                     Color3.fromRGB(
                         105,
@@ -45398,12 +45581,13 @@ function HolyAuctionHudCreateUI()
                         160
                     ),
 
-                BorderSizePixel = 0,
+                BorderSizePixel =
+                    0,
 
                 Position =
                     UDim2.fromOffset(
-                        25,
-                        2
+                        116,
+                        16
                     ),
 
                 Size =
@@ -45412,9 +45596,14 @@ function HolyAuctionHudCreateUI()
                         6
                     ),
 
-                Visible = false,
-                ZIndex = 21,
-                Parent = miniButton,
+                Visible =
+                    true,
+
+                ZIndex =
+                    21,
+
+                Parent =
+                    miniButton,
             }
         )
 
@@ -45426,10 +45615,193 @@ function HolyAuctionHudCreateUI()
         )
     )
 
+    HolyAuctionHudStroke(
+        miniDot,
+        Color3.fromRGB(
+            5,
+            7,
+            10
+        ),
+        0.18,
+        1
+    )
+
     HOLY_AUCTION_HUD.MiniDot =
         miniDot
 
-        local dragController =
+    local miniChevron =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                Name =
+                    "ExpandChevron",
+
+                BackgroundTransparency =
+                    1,
+
+                Position =
+                    UDim2.fromOffset(
+                        133,
+                        13
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        11,
+                        11
+                    ),
+
+                ZIndex =
+                    21,
+
+                Parent =
+                    miniButton,
+            }
+        )
+
+    HOLY_AUCTION_HUD.MiniChevron =
+        miniChevron
+
+    local miniChevronLeft =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                AnchorPoint =
+                    Vector2.new(
+                        0.5,
+                        0.5
+                    ),
+
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        173,
+                        179,
+                        191
+                    ),
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        3.4,
+                        5.8
+                    ),
+
+                Rotation =
+                    -42,
+
+                Size =
+                    UDim2.fromOffset(
+                        7,
+                        2
+                    ),
+
+                ZIndex =
+                    22,
+
+                Parent =
+                    miniChevron,
+            }
+        )
+
+    local miniChevronRight =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                AnchorPoint =
+                    Vector2.new(
+                        0.5,
+                        0.5
+                    ),
+
+                BackgroundColor3 =
+                    Color3.fromRGB(
+                        173,
+                        179,
+                        191
+                    ),
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        7.6,
+                        5.8
+                    ),
+
+                Rotation =
+                    42,
+
+                Size =
+                    UDim2.fromOffset(
+                        7,
+                        2
+                    ),
+
+                ZIndex =
+                    22,
+
+                Parent =
+                    miniChevron,
+            }
+        )
+
+    for _,
+        chevronPart in ipairs({
+            miniChevronLeft,
+            miniChevronRight,
+        }) do
+
+        HolyAuctionHudCorner(
+            chevronPart,
+            UDim.new(
+                1,
+                0
+            )
+        )
+    end
+
+    HolyAuctionHudAddConnection(
+        miniButton.MouseEnter:Connect(function()
+
+            miniButton.BackgroundColor3 =
+                Color3.fromRGB(
+                    11,
+                    13,
+                    18
+                )
+
+            miniStroke.Color =
+                Color3.fromRGB(
+                    65,
+                    69,
+                    81
+                )
+        end)
+    )
+
+    HolyAuctionHudAddConnection(
+        miniButton.MouseLeave:Connect(function()
+
+            miniButton.BackgroundColor3 =
+                Color3.fromRGB(
+                    8,
+                    10,
+                    14
+                )
+
+            miniStroke.Color =
+                Color3.fromRGB(
+                    48,
+                    52,
+                    63
+                )
+        end)
+    )
+
+    local dragController =
         nil
 
 
@@ -45439,7 +45811,8 @@ function HolyAuctionHudCreateUI()
             isMinimized == true
 
         local currentMinimized =
-            HOLY_SHOP_STATE.AuctionHudMinimized == true
+            HOLY_SHOP_STATE.AuctionHudMinimized
+            == true
 
         top.Visible =
             not currentMinimized
@@ -45461,8 +45834,8 @@ function HolyAuctionHudCreateUI()
         holder.Size =
             currentMinimized
             and UDim2.fromOffset(
-                34,
-                34
+                150,
+                38
             )
             or UDim2.fromOffset(
                 480,
@@ -45472,9 +45845,28 @@ function HolyAuctionHudCreateUI()
                 or expandedHeight
             )
 
+        -- Fixed 100% size while minimized.
+        -- Restore the saved user scale while expanded.
+        HolyAuctionHudApplyScale()
+
         HolySaveShopSettings()
 
         HolyAuctionHudRefresh()
+
+        task.defer(function()
+
+            if typeof(holder) == "Instance"
+            and holder.Parent ~= nil then
+
+                HolyAuctionHudClampToViewport(
+                    holder
+                )
+
+                HolyAuctionHudSavePosition(
+                    holder
+                )
+            end
+        end)
     end
 
     HolyAuctionHudAddConnection(
@@ -45523,6 +45915,21 @@ function HolyAuctionHudCreateUI()
         )
 
     HolyAuctionHudApplyScale()
+
+    task.defer(function()
+
+        if typeof(holder) == "Instance"
+        and holder.Parent ~= nil then
+
+            HolyAuctionHudClampToViewport(
+                holder
+            )
+
+            HolyAuctionHudSavePosition(
+                holder
+            )
+        end
+    end)
 
     return true
 end
@@ -46083,35 +46490,161 @@ function HolyAuctionHudRefresh(rows)
 
     if typeof(hud.MiniDot) == "Instance" then
 
-        if readyCount > 0 then
+        local schedulerState =
+            tostring(
+                HOLY_SHOP_STATE.AuctionSchedulerState
+                or "Idle"
+            )
 
-            hud.MiniDot.Visible =
+        local pendingLotId =
+            HolyCleanText(
+                HOLY_SHOP_STATE.AuctionPendingLotId
+            )
+
+        local cooldownRemaining =
+            math.max(
+                0,
+                (
+                    tonumber(
+                        HOLY_SHOP_STATE.AuctionNextBuyAt
+                    )
+                    or 0
+                ) - os.clock()
+            )
+
+        local statusText =
+            tostring(
+                HOLY_SHOP_STATE.AuctionStatus
+                or ""
+            ):lower()
+
+        local hasError =
+            statusText:find(
+                "error",
+                1,
                 true
+            ) ~= nil
+            or statusText:find(
+                "failed",
+                1,
+                true
+            ) ~= nil
+            or statusText:find(
+                "missing",
+                1,
+                true
+            ) ~= nil
+            or statusText:find(
+                "could not",
+                1,
+                true
+            ) ~= nil
 
-            hud.MiniDot.BackgroundColor3 =
+        local dotColor =
+            Color3.fromRGB(
+                105,
+                229,
+                160
+            )
+
+        if hasError == true then
+
+            -- Auctioneer error.
+            dotColor =
+                Color3.fromRGB(
+                    241,
+                    79,
+                    90
+                )
+
+        elseif pendingLotId ~= ""
+        or schedulerState == "Pending" then
+
+            -- Purchase currently processing.
+            dotColor =
+                Color3.fromRGB(
+                    244,
+                    91,
+                    151
+                )
+
+        elseif HOLY_SHOP_STATE.AuctionUnknownOutcome == true then
+
+            -- A request was sent but its result was not received.
+            dotColor =
+                Color3.fromRGB(
+                    239,
+                    194,
+                    102
+                )
+
+        elseif networkHealthy ~= true then
+
+            -- Waiting for synchronized manifest and stock data.
+            dotColor =
+                Color3.fromRGB(
+                    239,
+                    194,
+                    102
+                )
+
+        elseif HOLY_SHOP_STATE.AutoBuyAuctions ~= true then
+
+            -- HUD is live, but automatic purchasing is disabled.
+            dotColor =
+                Color3.fromRGB(
+                    112,
+                    119,
+                    133
+                )
+
+        elseif HOLY_SHOP_STATE.AuctionDryRun == true then
+
+            -- Test Mode is enabled.
+            dotColor =
+                Color3.fromRGB(
+                    173,
+                    124,
+                    244
+                )
+
+        elseif schedulerState == "Cooldown"
+        and cooldownRemaining > 0 then
+
+            -- Waiting for the account-wide Auctioneer cooldown.
+            dotColor =
+                Color3.fromRGB(
+                    239,
+                    194,
+                    102
+                )
+
+        elseif readyCount > 0 then
+
+            -- At least one selected auction is ready.
+            dotColor =
                 Color3.fromRGB(
                     105,
                     229,
                     160
                 )
 
-        elseif networkHealthy ~= true then
-
-            hud.MiniDot.Visible =
-                true
-
-            hud.MiniDot.BackgroundColor3 =
-                Color3.fromRGB(
-                    245,
-                    199,
-                    100
-                )
-
         else
 
-            hud.MiniDot.Visible =
-                false
+            -- Auction monitoring is healthy and active.
+            dotColor =
+                Color3.fromRGB(
+                    105,
+                    229,
+                    160
+                )
         end
+
+        hud.MiniDot.Visible =
+            true
+
+        hud.MiniDot.BackgroundColor3 =
+            dotColor
     end
 
     return true
