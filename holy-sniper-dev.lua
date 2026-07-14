@@ -455,6 +455,8 @@ HOLY_DEV_UI_STATE = {
     AntiAfk = true,
     AutoFarmMiddle = true,
 
+    PerformanceMode = false,
+
     UnloadOtherGardens = false,
     UnloadOwnGarden = false,
     HideMiddle = false,
@@ -553,12 +555,36 @@ HOLY_RARE_ALERT_STATE = {
 
 if type(HOLY_PERFORMANCE_STATE) == "table" then
 
-    local connections =
-        HOLY_PERFORMANCE_STATE.Connections
+    HOLY_PERFORMANCE_STATE.PerformanceModeToken =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.PerformanceModeToken
+            )
+            or 0
+        )
+        + 1
 
-    if type(connections) == "table" then
+    local function DisconnectConnectionMap(connections)
 
-        for _, connection in ipairs(connections) do
+        if type(connections) ~= "table" then
+            return
+        end
+
+        for _, connection in pairs(connections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+    end
+
+    local function DisconnectSingleConnection(connection)
+
+        if connection then
 
             pcall(function()
 
@@ -567,16 +593,33 @@ if type(HOLY_PERFORMANCE_STATE) == "table" then
         end
     end
 
-    local backpackConnection =
+    DisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.Connections
+    )
+
+    DisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.PlotConnections
+    )
+
+    DisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.MapConnections
+    )
+
+    DisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.PerformanceModeConnections
+    )
+
+    DisconnectSingleConnection(
         HOLY_PERFORMANCE_STATE.BackpackConnection
+    )
 
-    if backpackConnection then
+    DisconnectSingleConnection(
+        HOLY_PERFORMANCE_STATE.PerformanceModePlotConnection
+    )
 
-        pcall(function()
-
-            backpackConnection:Disconnect()
-        end)
-    end
+    DisconnectSingleConnection(
+        HOLY_PERFORMANCE_STATE.PerformanceModePlantsConnection
+    )
 end
 
 HOLY_PERFORMANCE_STATE = {
@@ -594,6 +637,11 @@ HOLY_PERFORMANCE_STATE = {
     MapConnections = {},
 
     BackpackConnection = nil,
+
+    PerformanceModeConnections = {},
+    PerformanceModePlotConnection = nil,
+    PerformanceModePlantsConnection = nil,
+    PerformanceModeToken = 0,
 
     OwnPlot = nil,
     OwnMarker = "",
@@ -2292,6 +2340,9 @@ function HolySaveUISettings()
         AutoFarmMiddle =
             HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
 
+        PerformanceMode =
+            HOLY_DEV_UI_STATE.PerformanceMode == true,
+
         UnloadOtherGardens =
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
 
@@ -2482,6 +2533,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.AutoFarmMiddle =
             data.AutoFarmMiddle
+    end
+
+    if type(data.PerformanceMode) == "boolean" then
+
+        HOLY_DEV_UI_STATE.PerformanceMode =
+            data.PerformanceMode
     end
 
     if type(data.UnloadOtherGardens) == "boolean" then
@@ -61156,6 +61213,533 @@ function HolyPerformanceResolveOwnPlot(gardens)
         lastReason
 end
 
+function HolyPerformanceModeDisconnectSingle(connection)
+
+    if connection then
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+end
+
+function HolyPerformanceModeDisconnect()
+
+    HOLY_PERFORMANCE_STATE =
+        type(HOLY_PERFORMANCE_STATE) == "table"
+        and HOLY_PERFORMANCE_STATE
+        or {}
+
+    local connections =
+        HOLY_PERFORMANCE_STATE.PerformanceModeConnections
+
+    if type(connections) == "table" then
+
+        for _, connection in pairs(connections) do
+
+            HolyPerformanceModeDisconnectSingle(
+                connection
+            )
+        end
+    end
+
+    HolyPerformanceModeDisconnectSingle(
+        HOLY_PERFORMANCE_STATE.PerformanceModePlotConnection
+    )
+
+    HolyPerformanceModeDisconnectSingle(
+        HOLY_PERFORMANCE_STATE.PerformanceModePlantsConnection
+    )
+
+    HOLY_PERFORMANCE_STATE.PerformanceModeConnections =
+        {}
+
+    HOLY_PERFORMANCE_STATE.PerformanceModePlotConnection =
+        nil
+
+    HOLY_PERFORMANCE_STATE.PerformanceModePlantsConnection =
+        nil
+end
+
+function HolyPerformanceModeDestroy(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance.Parent == nil then
+
+        return 0
+    end
+
+    local removedCount =
+        1
+
+    pcall(function()
+
+        removedCount =
+            removedCount
+            + #instance:GetDescendants()
+    end)
+
+    local destroyed =
+        pcall(function()
+
+            instance:Destroy()
+        end)
+
+    if destroyed ~= true then
+        return 0
+    end
+
+    HOLY_PERFORMANCE_STATE.DeletedCount =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.DeletedCount
+            )
+            or 0
+        )
+        + removedCount
+
+    HOLY_PERFORMANCE_STATE.RemovedCount =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.RemovedCount
+            )
+            or 0
+        )
+        + removedCount
+
+    return removedCount
+end
+
+function HolyPerformanceModeShouldDestroyVisual(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    return instance:IsA("Decal")
+        or instance:IsA("Texture")
+        or instance:IsA("ParticleEmitter")
+        or instance:IsA("Trail")
+        or instance:IsA("Beam")
+        or instance:IsA("Smoke")
+        or instance:IsA("Fire")
+        or instance:IsA("Sparkles")
+        or instance:IsA("Highlight")
+        or instance:IsA("PostEffect")
+        or instance:IsA("Atmosphere")
+        or instance:IsA("Sky")
+end
+
+function HolyPerformanceModeSimplifyInstance(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance.Parent == nil then
+
+        return false
+    end
+
+    if HolyPerformanceModeShouldDestroyVisual(
+        instance
+    ) == true then
+
+        return HolyPerformanceModeDestroy(
+            instance
+        ) > 0
+    end
+
+    if instance:IsA("BasePart") then
+
+        pcall(function()
+
+            instance.Material =
+                Enum.Material.SmoothPlastic
+
+            instance.CastShadow =
+                false
+
+            instance.Reflectance =
+                0
+        end)
+
+        return true
+    end
+
+    return false
+end
+
+function HolyPerformanceModeApplyEnvironment()
+
+    pcall(function()
+
+        Lighting.Brightness =
+            0
+
+        Lighting.GlobalShadows =
+            false
+
+        Lighting.EnvironmentDiffuseScale =
+            0
+
+        Lighting.EnvironmentSpecularScale =
+            0
+
+        Lighting.FogEnd =
+            9000000000
+    end)
+
+    local terrain =
+        workspace:FindFirstChildOfClass(
+            "Terrain"
+        )
+
+    if typeof(terrain) == "Instance" then
+
+        pcall(function()
+
+            terrain.WaterWaveSize =
+                0
+
+            terrain.WaterWaveSpeed =
+                0
+
+            terrain.WaterReflectance =
+                0
+
+            terrain.WaterTransparency =
+                0
+        end)
+    end
+end
+
+function HolyPerformanceModeApplyWorld(token)
+
+    HolyPerformanceModeApplyEnvironment()
+
+    local workspaceObjects =
+        {}
+
+    pcall(function()
+
+        workspaceObjects =
+            workspace:GetDescendants()
+    end)
+
+    for index, instance in ipairs(workspaceObjects) do
+
+        if HOLY_DEV_UI_STATE.PerformanceMode ~= true
+        or HOLY_PERFORMANCE_STATE.PerformanceModeToken ~= token then
+
+            return false
+        end
+
+        HolyPerformanceModeSimplifyInstance(
+            instance
+        )
+
+        if index % 400 == 0 then
+
+            task.wait()
+        end
+    end
+
+    local lightingObjects =
+        {}
+
+    pcall(function()
+
+        lightingObjects =
+            Lighting:GetDescendants()
+    end)
+
+    for index, instance in ipairs(lightingObjects) do
+
+        if HOLY_DEV_UI_STATE.PerformanceMode ~= true
+        or HOLY_PERFORMANCE_STATE.PerformanceModeToken ~= token then
+
+            return false
+        end
+
+        HolyPerformanceModeSimplifyInstance(
+            instance
+        )
+
+        if index % 200 == 0 then
+
+            task.wait()
+        end
+    end
+
+    return true
+end
+
+function HolyPerformanceModeClearPlants(plants)
+
+    if HOLY_DEV_UI_STATE.PerformanceMode ~= true
+    or typeof(plants) ~= "Instance" then
+
+        return 0
+    end
+
+    local children =
+        {}
+
+    pcall(function()
+
+        children =
+            plants:GetChildren()
+    end)
+
+    local removed =
+        0
+
+    for _, child in ipairs(children) do
+
+        if HOLY_DEV_UI_STATE.PerformanceMode ~= true then
+            break
+        end
+
+        if typeof(child) == "Instance"
+        and child.Parent == plants then
+
+            removed =
+                removed
+                + HolyPerformanceModeDestroy(
+                    child
+                )
+        end
+    end
+
+    if removed > 0 then
+
+        HolyPerformanceSetStatus(
+            "Performance mode removed "
+            .. tostring(removed)
+            .. " plant instances."
+        )
+    end
+
+    return removed
+end
+
+function HolyPerformanceModeBindOwnPlants()
+
+    if HOLY_DEV_UI_STATE.PerformanceMode ~= true then
+        return false
+    end
+
+    local gardens =
+        HolyPerformanceGetGardensRoot()
+
+    if typeof(gardens) ~= "Instance" then
+        return false
+    end
+
+    local ownPlot =
+        select(
+            1,
+            HolyPerformanceResolveOwnPlot(
+                gardens
+            )
+        )
+
+    if typeof(ownPlot) ~= "Instance" then
+        return false
+    end
+
+    HolyPerformanceModeDisconnectSingle(
+        HOLY_PERFORMANCE_STATE.PerformanceModePlotConnection
+    )
+
+    HolyPerformanceModeDisconnectSingle(
+        HOLY_PERFORMANCE_STATE.PerformanceModePlantsConnection
+    )
+
+    HOLY_PERFORMANCE_STATE.PerformanceModePlotConnection =
+        ownPlot.ChildAdded:Connect(function(child)
+
+            if child.Name == "Plants" then
+
+                task.defer(function()
+
+                    if HOLY_DEV_UI_STATE.PerformanceMode == true
+                    and child.Parent == ownPlot then
+
+                        HolyPerformanceModeBindOwnPlants()
+                    end
+                end)
+            end
+        end)
+
+    local plants =
+        ownPlot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plants) ~= "Instance" then
+
+        HolyPerformanceSetStatus(
+            "Performance mode waiting for Plants."
+        )
+
+        return true
+    end
+
+    HOLY_PERFORMANCE_STATE.PerformanceModePlantsConnection =
+        plants.ChildAdded:Connect(function(child)
+
+            task.defer(function()
+
+                if HOLY_DEV_UI_STATE.PerformanceMode == true
+                and child.Parent == plants then
+
+                    HolyPerformanceModeDestroy(
+                        child
+                    )
+                end
+            end)
+        end)
+
+    HolyPerformanceModeClearPlants(
+        plants
+    )
+
+    return true
+end
+
+function HolyPerformanceModeStart(reason)
+
+    HOLY_DEV_UI_STATE.PerformanceMode =
+        true
+
+    HolySaveUISettings()
+
+    HolyPerformanceModeDisconnect()
+
+    HOLY_PERFORMANCE_STATE.PerformanceModeToken =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.PerformanceModeToken
+            )
+            or 0
+        )
+        + 1
+
+    local token =
+        HOLY_PERFORMANCE_STATE.PerformanceModeToken
+
+    HOLY_PERFORMANCE_STATE.PerformanceModeConnections =
+        {}
+
+    table.insert(
+        HOLY_PERFORMANCE_STATE.PerformanceModeConnections,
+        workspace.DescendantAdded:Connect(function(instance)
+
+            task.defer(function()
+
+                if HOLY_DEV_UI_STATE.PerformanceMode ~= true
+                or HOLY_PERFORMANCE_STATE.PerformanceModeToken
+                    ~= token then
+
+                    return
+                end
+
+                HolyPerformanceModeSimplifyInstance(
+                    instance
+                )
+
+                if instance.Name == "Plants" then
+
+                    HolyPerformanceModeBindOwnPlants()
+                end
+            end)
+        end)
+    )
+
+    table.insert(
+        HOLY_PERFORMANCE_STATE.PerformanceModeConnections,
+        Lighting.DescendantAdded:Connect(function(instance)
+
+            task.defer(function()
+
+                if HOLY_DEV_UI_STATE.PerformanceMode == true
+                and HOLY_PERFORMANCE_STATE.PerformanceModeToken
+                    == token then
+
+                    HolyPerformanceModeSimplifyInstance(
+                        instance
+                    )
+                end
+            end)
+        end)
+    )
+
+    task.spawn(function()
+
+        local deadline =
+            os.clock() + 6
+
+        while HOLY_DEV_UI_STATE.PerformanceMode == true
+        and HOLY_PERFORMANCE_STATE.PerformanceModeToken == token
+        and os.clock() <= deadline do
+
+            if HolyPerformanceModeBindOwnPlants() == true then
+                break
+            end
+
+            task.wait(
+                0.25
+            )
+        end
+
+        if HOLY_DEV_UI_STATE.PerformanceMode ~= true
+        or HOLY_PERFORMANCE_STATE.PerformanceModeToken ~= token then
+
+            return
+        end
+
+        HolyPerformanceModeApplyWorld(
+            token
+        )
+
+        if HOLY_DEV_UI_STATE.PerformanceMode == true
+        and HOLY_PERFORMANCE_STATE.PerformanceModeToken == token then
+
+            HolyPerformanceSetStatus(
+                "Performance mode applied."
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyPerformanceModeStop(reason)
+
+    HOLY_DEV_UI_STATE.PerformanceMode =
+        false
+
+    HolySaveUISettings()
+
+    HOLY_PERFORMANCE_STATE.PerformanceModeToken =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.PerformanceModeToken
+            )
+            or 0
+        )
+        + 1
+
+    HolyPerformanceModeDisconnect()
+
+    HolyPerformanceSetStatus(
+        "Performance mode stopped. Rejoin to restore visuals."
+    )
+
+    return true
+end
+
+
 function HolyPerformanceIsOwnGarden(garden, ownGarden)
 
     if typeof(garden) ~= "Instance"
@@ -96613,6 +97197,35 @@ SettingsUIBox:AddToggle(
 end)
 
 SettingsPerformanceBox:AddToggle(
+    "HolyFullPerformanceMode",
+    {
+        Text =
+            "Performance Mode",
+
+        Default =
+            HOLY_DEV_UI_STATE.PerformanceMode == true,
+
+        Tooltip =
+            "Aggressive client performance mode. Deletes your local plant and fruit models, removes textures and visual effects, disables shadows, simplifies materials and keeps future plants unloaded. Sprinklers and the plot structure remain. Some plant-based visuals and interactions will stop working. Turning this off does not restore deleted visuals; disable it, then rejoin.",
+    }
+):OnChanged(function(value)
+
+    if value == true then
+
+        HolyPerformanceModeStart(
+            "toggle on"
+        )
+
+    else
+
+        HolyPerformanceModeStop(
+            "toggle off"
+        )
+    end
+end)
+
+
+SettingsPerformanceBox:AddToggle(
     "HolyPerformanceMode",
     {
         Text =
@@ -96724,7 +97337,16 @@ SettingsPerformanceBox:AddToggle(
     end
 end)
 
-if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
+if HOLY_DEV_UI_STATE.PerformanceMode == true then
+
+    task.defer(function()
+
+        HolyPerformanceModeStart(
+            "startup"
+        )
+    end)
+end
+
 
     task.defer(function()
 
