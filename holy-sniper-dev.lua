@@ -97347,6 +97347,7 @@ if HOLY_DEV_UI_STATE.PerformanceMode == true then
     end)
 end
 
+if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
 
     task.defer(function()
 
