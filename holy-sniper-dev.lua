@@ -1352,7 +1352,36 @@ HOLY_SHOP_STATE = {
     AuctionStatus = "Ready",
     AuctionWorkerRunning = false,
     AuctionWatcherStarted = false,
+
+    AuctionSchedulerState = "Idle",
+
     AuctionNextBuyAt = 0,
+    AuctionNextRetryAt = 0,
+
+    AuctionCooldownAnchorAt = 0,
+    AuctionCooldownAnchorReason = "",
+    AuctionCooldownBase = 10,
+    AuctionCooldownGuard = 0.35,
+    AuctionCooldownAppliedGuard = 0.35,
+    AuctionCooldownSynchronized = false,
+    AuctionUnknownOutcome = false,
+
+    AuctionPendingLotId = nil,
+    AuctionPendingName = nil,
+    AuctionPendingPrice = nil,
+    AuctionPendingSentAt = 0,
+
+    AuctionLastSentLotId = "",
+    AuctionLastSentName = "",
+    AuctionLastSentAt = 0,
+
+    AuctionLastResultAt = 0,
+    AuctionLastResultSuccess = false,
+    AuctionLastResultReason = "",
+    AuctionLastResultLotId = "",
+    AuctionLastResultName = "",
+    AuctionLastResultLatency = 0,
+
     AuctionLastLots = {},
     AuctionAttemptedLots = {},
     AuctionConnections = {},
@@ -38278,26 +38307,190 @@ function HolyAuctionReadDebounce()
     )
 end
 
+function HolyAuctionReadServerCooldown()
+
+    return math.clamp(
+        HolyAuctionReadFlagNumber(
+            "PurchaseCooldownSeconds",
+            10
+        ),
+        0.2,
+        120
+    )
+end
+
+function HolyAuctionReadCooldownGuard()
+
+    local storedGuard =
+        type(HOLY_SHOP_STATE) == "table"
+        and tonumber(
+            HOLY_SHOP_STATE.AuctionCooldownGuard
+        )
+        or nil
+
+    return math.clamp(
+        math.max(
+            0.35,
+            HolyAuctionReadDebounce(),
+            storedGuard
+                or 0.35
+        ),
+        0.35,
+        1.85
+    )
+end
+
 function HolyAuctionReadCooldown()
 
-    local serverCooldown =
+    return HolyAuctionReadServerCooldown()
+        + HolyAuctionReadCooldownGuard()
+end
+
+function HolyAuctionIncreaseCooldownGuard()
+
+    HolyAuctionEnsureState()
+
+    local previousGuard =
+        HolyAuctionReadCooldownGuard()
+
+    local nextGuard =
         math.clamp(
-            HolyAuctionReadFlagNumber(
-                "PurchaseCooldownSeconds",
-                10
-            ),
-            0.2,
-            120
+            previousGuard + 0.25,
+            0.35,
+            1.85
         )
 
-    local safetyMargin =
-        math.max(
-            0.25,
-            HolyAuctionReadDebounce()
+    HOLY_SHOP_STATE.AuctionCooldownGuard =
+        nextGuard
+
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "CooldownGuardIncreased",
+            {
+                PreviousGuard =
+                    previousGuard,
+
+                NextGuard =
+                    nextGuard,
+            },
+            "Warning"
+        )
+    end
+
+    return nextGuard
+end
+
+function HolyAuctionScheduleCooldown(
+    anchorAt,
+    source,
+    synchronized,
+    unknownOutcome
+)
+
+    HolyAuctionEnsureState()
+
+    anchorAt =
+        tonumber(anchorAt)
+        or os.clock()
+
+    source =
+        tostring(
+            source
+            or "unknown"
         )
 
-    return serverCooldown
-        + safetyMargin
+    local serverCooldown =
+        HolyAuctionReadServerCooldown()
+
+    local normalGuard =
+        HolyAuctionReadCooldownGuard()
+
+    local appliedGuard =
+        unknownOutcome == true
+        and math.max(
+            1,
+            normalGuard
+        )
+        or normalGuard
+
+    local cooldownUntil =
+        anchorAt
+        + serverCooldown
+        + appliedGuard
+
+    HOLY_SHOP_STATE.AuctionCooldownAnchorAt =
+        anchorAt
+
+    HOLY_SHOP_STATE.AuctionCooldownAnchorReason =
+        source
+
+    HOLY_SHOP_STATE.AuctionCooldownBase =
+        serverCooldown
+
+    HOLY_SHOP_STATE.AuctionCooldownGuard =
+        normalGuard
+
+    HOLY_SHOP_STATE.AuctionCooldownAppliedGuard =
+        appliedGuard
+
+    HOLY_SHOP_STATE.AuctionCooldownSynchronized =
+        synchronized == true
+
+    HOLY_SHOP_STATE.AuctionUnknownOutcome =
+        unknownOutcome == true
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        cooldownUntil
+
+    HOLY_SHOP_STATE.AuctionNextRetryAt =
+        0
+
+    HOLY_SHOP_STATE.AuctionSchedulerState =
+        "Cooldown"
+
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "CooldownScheduled",
+            {
+                Source =
+                    source,
+
+                AnchorAt =
+                    anchorAt,
+
+                ServerCooldown =
+                    serverCooldown,
+
+                Guard =
+                    appliedGuard,
+
+                CooldownUntil =
+                    cooldownUntil,
+
+                Remaining =
+                    math.max(
+                        0,
+                        cooldownUntil
+                            - os.clock()
+                    ),
+
+                Synchronized =
+                    synchronized == true,
+
+                UnknownOutcome =
+                    unknownOutcome == true,
+            },
+            unknownOutcome == true
+            and "Warning"
+            or "Info"
+        )
+    end
+
+    return cooldownUntil
 end
 
 function HolyAuctionAddCandidate(rows, name, source, data)
@@ -40547,6 +40740,98 @@ function HolyAuctionQueueWorker(reason)
 
     HolyAuctionEnsureState()
 
+    local now =
+        os.clock()
+
+    local pendingLotId =
+        HolyCleanText(
+            HOLY_SHOP_STATE.AuctionPendingLotId
+        )
+
+    local pendingSentAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionPendingSentAt
+        )
+        or 0
+
+    local pendingTimeout =
+        math.max(
+            2,
+            HolyAuctionReadDebounce()
+                + 0.5
+        )
+
+    local pendingExpired =
+        pendingLotId ~= ""
+        and pendingSentAt > 0
+        and now - pendingSentAt >= pendingTimeout
+
+    if pendingLotId ~= ""
+    and pendingSentAt > 0
+    and pendingExpired ~= true then
+
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Pending"
+
+        HolyAuctionSetStatus(
+            "Processing purchase..."
+        )
+
+        return false
+    end
+
+    if pendingExpired ~= true then
+
+        local nextBuyAt =
+            tonumber(
+                HOLY_SHOP_STATE.AuctionNextBuyAt
+            )
+            or 0
+
+        if now < nextBuyAt then
+
+            HOLY_SHOP_STATE.AuctionSchedulerState =
+                "Cooldown"
+
+            HolyAuctionSetStatus(
+                "Cooldown "
+                .. tostring(
+                    math.max(
+                        1,
+                        math.ceil(
+                            nextBuyAt - now
+                        )
+                    )
+                )
+                .. "s"
+            )
+
+            return false
+        end
+
+        local nextRetryAt =
+            tonumber(
+                HOLY_SHOP_STATE.AuctionNextRetryAt
+            )
+            or 0
+
+        if now < nextRetryAt then
+
+            HOLY_SHOP_STATE.AuctionSchedulerState =
+                "Waiting"
+
+            return false
+        end
+    end
+
+    if HOLY_SHOP_STATE.AuctionWorkerRunning == true then
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionWorkerRunning =
+        true
+
     if type(HolyDevTrace) == "function" then
 
         HolyDevTrace(
@@ -40559,9 +40844,8 @@ function HolyAuctionQueueWorker(reason)
                         or "queue"
                     ),
 
-                WorkerRunning =
-                    HOLY_SHOP_STATE.AuctionWorkerRunning
-                    == true,
+                SchedulerState =
+                    HOLY_SHOP_STATE.AuctionSchedulerState,
 
                 PendingLotId =
                     HOLY_SHOP_STATE.AuctionPendingLotId,
@@ -40574,32 +40858,11 @@ function HolyAuctionQueueWorker(reason)
                                 HOLY_SHOP_STATE.AuctionNextBuyAt
                             )
                             or 0
-                        ) - os.clock()
+                        ) - now
                     ),
             }
         )
     end
-
-    if HOLY_SHOP_STATE.AuctionWorkerRunning == true then
-
-        if type(HolyDevTrace) == "function" then
-
-            HolyDevTrace(
-                "Auction",
-                "WorkerQueueSkipped",
-                {
-                    Reason =
-                        "already running",
-                },
-                "Warning"
-            )
-        end
-
-        return false
-    end
-
-    HOLY_SHOP_STATE.AuctionWorkerRunning =
-        true
 
     task.spawn(function()
 
@@ -40608,11 +40871,15 @@ function HolyAuctionQueueWorker(reason)
             pcall(function()
 
                 HolyAuctionRunWorker(
-                    reason or "queue"
+                    reason
+                    or "queue"
                 )
             end)
 
         if ok ~= true then
+
+            HOLY_SHOP_STATE.AuctionSchedulerState =
+                "Waiting"
 
             HolyAuctionSetStatus(
                 "Error: "
@@ -40758,6 +41025,105 @@ function HolyAuctionEnsureState()
         tostring(
             HOLY_SHOP_STATE.AuctionLastBlockReason
             or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionSchedulerState =
+        tostring(
+            HOLY_SHOP_STATE.AuctionSchedulerState
+            or "Idle"
+        )
+
+    if HOLY_SHOP_STATE.AuctionSchedulerState == "" then
+
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Idle"
+    end
+
+    HOLY_SHOP_STATE.AuctionCooldownAnchorAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionCooldownAnchorAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionCooldownAnchorReason =
+        tostring(
+            HOLY_SHOP_STATE.AuctionCooldownAnchorReason
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldownBase =
+        math.clamp(
+            tonumber(
+                HOLY_SHOP_STATE.AuctionCooldownBase
+            )
+            or 10,
+            0.2,
+            120
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldownGuard =
+        math.clamp(
+            tonumber(
+                HOLY_SHOP_STATE.AuctionCooldownGuard
+            )
+            or 0.35,
+            0.35,
+            1.85
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldownAppliedGuard =
+        math.clamp(
+            tonumber(
+                HOLY_SHOP_STATE.AuctionCooldownAppliedGuard
+            )
+            or HOLY_SHOP_STATE.AuctionCooldownGuard,
+            0.35,
+            1.85
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldownSynchronized =
+        HOLY_SHOP_STATE.AuctionCooldownSynchronized
+        == true
+
+    HOLY_SHOP_STATE.AuctionUnknownOutcome =
+        HOLY_SHOP_STATE.AuctionUnknownOutcome
+        == true
+
+    HOLY_SHOP_STATE.AuctionLastResultAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionLastResultAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionLastResultSuccess =
+        HOLY_SHOP_STATE.AuctionLastResultSuccess
+        == true
+
+    HOLY_SHOP_STATE.AuctionLastResultReason =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastResultReason
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionLastResultLotId =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastResultLotId
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionLastResultName =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastResultName
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionLastResultLatency =
+        math.max(
+            0,
+            tonumber(
+                HOLY_SHOP_STATE.AuctionLastResultLatency
+            )
+            or 0
         )
 
     return HOLY_SHOP_STATE
@@ -41690,35 +42056,16 @@ function HolyAuctionApplyManifestPayload(payload, source)
     and bestCycle ~= nil
     and previousCycle ~= bestCycle then
 
+        -- Per-lot completion history belongs to the old cycle.
         HOLY_SHOP_STATE.AuctionAttemptedLots =
             {}
-
-        HOLY_SHOP_STATE.AuctionNextBuyAt =
-            0
 
         HOLY_SHOP_STATE.AuctionNextRetryAt =
             0
 
-        HOLY_SHOP_STATE.AuctionPendingLotId =
-            nil
-
-        HOLY_SHOP_STATE.AuctionPendingPrice =
-            nil
-
-        HOLY_SHOP_STATE.AuctionPendingName =
-            nil
-
-        HOLY_SHOP_STATE.AuctionPendingSentAt =
-            0
-
-        HOLY_SHOP_STATE.AuctionLastSentLotId =
-            ""
-
-        HOLY_SHOP_STATE.AuctionLastSentName =
-            ""
-
-        HOLY_SHOP_STATE.AuctionLastSentAt =
-            0
+        -- Do not clear AuctionNextBuyAt or pending-result state here.
+        -- The server purchase cooldown is account-wide and can continue
+        -- across an auction rotation.
     end
 
     HOLY_SHOP_STATE.AuctionManifest =
@@ -42652,6 +42999,62 @@ function HolyAuctionFirePurchase(row)
     HOLY_SHOP_STATE.AuctionPendingSentAt =
         sentAt
 
+    local provisionalCooldown =
+        HolyAuctionReadServerCooldown()
+
+    local provisionalGuard =
+        math.max(
+            1,
+            HolyAuctionReadCooldownGuard()
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldownAnchorAt =
+        sentAt
+
+    HOLY_SHOP_STATE.AuctionCooldownAnchorReason =
+        "request sent (provisional)"
+
+    HOLY_SHOP_STATE.AuctionCooldownBase =
+        provisionalCooldown
+
+    HOLY_SHOP_STATE.AuctionCooldownAppliedGuard =
+        provisionalGuard
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        sentAt
+        + provisionalCooldown
+        + provisionalGuard
+
+    HOLY_SHOP_STATE.AuctionSchedulerState =
+        "Pending"
+
+    HOLY_SHOP_STATE.AuctionUnknownOutcome =
+        false
+
+    if type(HolyDevTrace) == "function" then
+
+        HolyDevTrace(
+            "Auction",
+            "CooldownProvisional",
+            {
+                LotId =
+                    lotId,
+
+                SentAt =
+                    sentAt,
+
+                ServerCooldown =
+                    provisionalCooldown,
+
+                Guard =
+                    provisionalGuard,
+
+                CooldownUntil =
+                    HOLY_SHOP_STATE.AuctionNextBuyAt,
+            }
+        )
+    end
+
     HOLY_SHOP_STATE.AuctionLastSentLotId =
         lotId
 
@@ -42693,11 +43096,32 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     if automatic == true
     and HOLY_SHOP_STATE.AutoBuyAuctions ~= true then
 
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Idle"
+
         return false
     end
 
     local now =
         os.clock()
+
+    local pendingLotId =
+        HolyCleanText(
+            HOLY_SHOP_STATE.AuctionPendingLotId
+        )
+
+    local pendingSentAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionPendingSentAt
+        )
+        or 0
+
+    local pendingTimeout =
+        math.max(
+            2,
+            HolyAuctionReadDebounce()
+                + 0.5
+        )
 
     if type(HolyDevTrace) == "function" then
 
@@ -42718,8 +43142,11 @@ function HolyAuctionAttemptPurchase(reason, automatic)
                     HOLY_SHOP_STATE.AuctionWorkerRunning
                     == true,
 
+                SchedulerState =
+                    HOLY_SHOP_STATE.AuctionSchedulerState,
+
                 PendingLotId =
-                    HOLY_SHOP_STATE.AuctionPendingLotId,
+                    pendingLotId,
 
                 NextBuyIn =
                     math.max(
@@ -42743,27 +43170,31 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         )
     end
 
-    local pendingLotId =
-        HolyCleanText(
-            HOLY_SHOP_STATE.AuctionPendingLotId
-        )
+    if pendingLotId ~= ""
+    and pendingSentAt <= 0 then
 
-    local pendingSentAt =
-        tonumber(
-            HOLY_SHOP_STATE.AuctionPendingSentAt
-        )
-        or 0
+        HOLY_SHOP_STATE.AuctionPendingLotId =
+            nil
 
-    local pendingTimeout =
-        math.max(
-            2,
-            HolyAuctionReadDebounce()
-                + 0.5
-        )
+        HOLY_SHOP_STATE.AuctionPendingPrice =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingName =
+            nil
+
+        HOLY_SHOP_STATE.AuctionPendingSentAt =
+            0
+
+        pendingLotId =
+            ""
+    end
 
     if pendingLotId ~= ""
     and pendingSentAt > 0
     and now - pendingSentAt < pendingTimeout then
+
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Pending"
 
         if type(HolyDevTrace) == "function" then
 
@@ -42771,8 +43202,11 @@ function HolyAuctionAttemptPurchase(reason, automatic)
                 "Auction",
                 "PurchaseBlocked",
                 {
-                    Reason = "pending result",
-                    LotId = pendingLotId,
+                    Reason =
+                        "pending result",
+
+                    LotId =
+                        pendingLotId,
 
                     Remaining =
                         math.max(
@@ -42799,15 +43233,73 @@ function HolyAuctionAttemptPurchase(reason, automatic)
     and pendingSentAt > 0
     and now - pendingSentAt >= pendingTimeout then
 
+        local pendingName =
+            HolyCleanText(
+                HOLY_SHOP_STATE.AuctionPendingName
+            )
+
+        if pendingName == "" then
+
+            pendingName =
+                HolyCleanText(
+                    HOLY_SHOP_STATE.AuctionLastSentName
+                )
+        end
+
+        if pendingName == "" then
+
+            pendingName =
+                "Auction item"
+        end
+
+        HolyAuctionScheduleCooldown(
+            pendingSentAt,
+            "result timeout",
+            false,
+            true
+        )
+
+        HOLY_SHOP_STATE.AuctionLastResultAt =
+            now
+
+        HOLY_SHOP_STATE.AuctionLastResultSuccess =
+            false
+
+        HOLY_SHOP_STATE.AuctionLastResultReason =
+            "result timeout"
+
+        HOLY_SHOP_STATE.AuctionLastResultLotId =
+            pendingLotId
+
+        HOLY_SHOP_STATE.AuctionLastResultName =
+            pendingName
+
+        HOLY_SHOP_STATE.AuctionLastResultLatency =
+            math.max(
+                0,
+                now - pendingSentAt
+            )
+
         if type(HolyDevTrace) == "function" then
 
             HolyDevTrace(
                 "Auction",
                 "PendingExpired",
                 {
-                    LotId = pendingLotId,
-                    Age = now - pendingSentAt,
-                    Timeout = pendingTimeout,
+                    LotId =
+                        pendingLotId,
+
+                    Name =
+                        pendingName,
+
+                    Age =
+                        now - pendingSentAt,
+
+                    Timeout =
+                        pendingTimeout,
+
+                    CooldownUntil =
+                        HOLY_SHOP_STATE.AuctionNextBuyAt,
                 },
                 "Warning"
             )
@@ -42824,6 +43316,12 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
         HOLY_SHOP_STATE.AuctionPendingSentAt =
             0
+
+        HolyAuctionSetStatus(
+            "Waiting after unknown purchase result"
+        )
+
+        return false
     end
 
     local nextBuyAt =
@@ -42834,14 +43332,24 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
     if now < nextBuyAt then
 
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Cooldown"
+
         if type(HolyDevTrace) == "function" then
 
             HolyDevTrace(
                 "Auction",
                 "PurchaseBlocked",
                 {
-                    Reason = "client cooldown",
-                    Remaining = nextBuyAt - now,
+                    Reason =
+                        "client cooldown",
+
+                    Remaining =
+                        nextBuyAt - now,
+
+                    CooldownSource =
+                        HOLY_SHOP_STATE
+                            .AuctionCooldownAnchorReason,
                 },
                 "Warning"
             )
@@ -42863,6 +43371,12 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         return false
     end
 
+    HOLY_SHOP_STATE.AuctionSchedulerState =
+        "Recheck"
+
+    HOLY_SHOP_STATE.AuctionUnknownOutcome =
+        false
+
     local nextRetryAt =
         tonumber(
             HOLY_SHOP_STATE.AuctionNextRetryAt
@@ -42871,14 +43385,20 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
     if now < nextRetryAt then
 
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Waiting"
+
         if type(HolyDevTrace) == "function" then
 
             HolyDevTrace(
                 "Auction",
                 "PurchaseBlocked",
                 {
-                    Reason = "retry delay",
-                    Remaining = nextRetryAt - now,
+                    Reason =
+                        "retry delay",
+
+                    Remaining =
+                        nextRetryAt - now,
                 }
             )
         end
@@ -42898,6 +43418,9 @@ function HolyAuctionAttemptPurchase(reason, automatic)
                 or "Waiting"
             )
 
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Waiting"
+
         HOLY_SHOP_STATE.AuctionLastDecision =
             targetReason
 
@@ -42910,7 +43433,8 @@ function HolyAuctionAttemptPurchase(reason, automatic)
                 "Auction",
                 "NoTarget",
                 {
-                    Reason = targetReason,
+                    Reason =
+                        targetReason,
 
                     Decision =
                         HOLY_DEV_SUITE_RUNTIME.RecorderActive
@@ -42969,11 +43493,20 @@ function HolyAuctionAttemptPurchase(reason, automatic)
             "Auction",
             "TargetSelected",
             {
-                LotId = target.LotId,
-                Name = target.Name,
-                Price = target.Price,
-                Stock = target.Stock,
-                WatchlistIndex = target.WatchlistIndex,
+                LotId =
+                    target.LotId,
+
+                Name =
+                    target.Name,
+
+                Price =
+                    target.Price,
+
+                Stock =
+                    target.Stock,
+
+                WatchlistIndex =
+                    target.WatchlistIndex,
 
                 Decision =
                     HOLY_DEV_SUITE_RUNTIME.RecorderActive
@@ -43001,6 +43534,9 @@ function HolyAuctionAttemptPurchase(reason, automatic)
                 or "Purchase unavailable"
             )
 
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Recheck"
+
         HOLY_SHOP_STATE.AuctionLastBlockReason =
             blockReason
 
@@ -43013,9 +43549,14 @@ function HolyAuctionAttemptPurchase(reason, automatic)
                 "Auction",
                 "PurchaseRejectedLocally",
                 {
-                    Reason = blockReason,
-                    LotId = target.LotId,
-                    Name = target.Name,
+                    Reason =
+                        blockReason,
+
+                    LotId =
+                        target.LotId,
+
+                    Name =
+                        target.Name,
                 },
                 "Error"
             )
@@ -43052,6 +43593,9 @@ function HolyAuctionAttemptPurchase(reason, automatic)
 
     if fireMode == "dry run" then
 
+        HOLY_SHOP_STATE.AuctionSchedulerState =
+            "Waiting"
+
         HOLY_SHOP_STATE.AuctionNextRetryAt =
             now + 1
 
@@ -43065,12 +43609,11 @@ function HolyAuctionAttemptPurchase(reason, automatic)
         return true
     end
 
+    HOLY_SHOP_STATE.AuctionSchedulerState =
+        "Pending"
+
     HOLY_SHOP_STATE.AuctionNextRetryAt =
         0
-
-    HOLY_SHOP_STATE.AuctionNextBuyAt =
-        now
-        + HolyAuctionReadCooldown()
 
     HolyAuctionSetStatus(
         "Buying "
@@ -43290,6 +43833,8 @@ function HolyAuctionConnectPacketSignals()
         "PurchaseResult",
         function(...)
 
+            HolyAuctionEnsureState()
+
             local arguments = {
                 ...,
             }
@@ -43383,11 +43928,61 @@ function HolyAuctionConnectPacketSignals()
                     or 0
             end
 
+            local resultAt =
+                os.clock()
+
             if pendingSentAt <= 0 then
 
                 pendingSentAt =
-                    os.clock()
+                    resultAt
             end
+
+            local resultLatency =
+                math.max(
+                    0,
+                    resultAt
+                        - pendingSentAt
+                )
+
+            local reasonText =
+                success == true
+                and tostring(
+                    resultReason
+                    or "success"
+                )
+                or tostring(
+                    resultReason
+                    or "unknown"
+                )
+
+            local lowerReason =
+                reasonText:lower()
+
+            local wasSynchronized =
+                HOLY_SHOP_STATE
+                    .AuctionCooldownSynchronized
+                == true
+
+            HOLY_SHOP_STATE.AuctionLastResultAt =
+                resultAt
+
+            HOLY_SHOP_STATE.AuctionLastResultSuccess =
+                success == true
+
+            HOLY_SHOP_STATE.AuctionLastResultReason =
+                reasonText
+
+            HOLY_SHOP_STATE.AuctionLastResultLotId =
+                lotId
+
+            HOLY_SHOP_STATE.AuctionLastResultName =
+                pendingName
+
+            HOLY_SHOP_STATE.AuctionLastResultLatency =
+                resultLatency
+
+            HOLY_SHOP_STATE.AuctionUnknownOutcome =
+                false
 
             if type(HolyDevTrace) == "function" then
 
@@ -43395,9 +43990,14 @@ function HolyAuctionConnectPacketSignals()
                     "Auction",
                     "PurchaseResult",
                     {
-                        LotId = lotId,
-                        Success = success == true,
-                        Reason = resultReason,
+                        LotId =
+                            lotId,
+
+                        Success =
+                            success == true,
+
+                        Reason =
+                            resultReason,
 
                         PendingLotId =
                             HOLY_SHOP_STATE.AuctionPendingLotId,
@@ -43408,12 +44008,14 @@ function HolyAuctionConnectPacketSignals()
                         PendingSentAt =
                             pendingSentAt,
 
+                        ResultReceivedAt =
+                            resultAt,
+
                         ResultLatency =
-                            math.max(
-                                0,
-                                os.clock()
-                                - pendingSentAt
-                            ),
+                            resultLatency,
+
+                        WasSynchronized =
+                            wasSynchronized,
                     },
                     success == true
                     and "Info"
@@ -43423,21 +44025,19 @@ function HolyAuctionConnectPacketSignals()
 
             if success == true then
 
-                local nextAllowedAt =
-                    pendingSentAt
-                    + HolyAuctionReadCooldown()
+                if lotId ~= "" then
 
-                HOLY_SHOP_STATE.AuctionNextBuyAt =
-                    math.max(
-                        tonumber(
-                            HOLY_SHOP_STATE.AuctionNextBuyAt
-                        )
-                        or 0,
-                        nextAllowedAt
-                    )
+                    HOLY_SHOP_STATE
+                        .AuctionAttemptedLots[lotId] =
+                        true
+                end
 
-                HOLY_SHOP_STATE.AuctionNextRetryAt =
-                    0
+                HolyAuctionScheduleCooldown(
+                    resultAt,
+                    "purchase success",
+                    true,
+                    false
+                )
 
                 if HOLY_SHOP_STATE
                     .AuctionBuyUntilSoldOut == true then
@@ -43456,17 +44056,12 @@ function HolyAuctionConnectPacketSignals()
 
             else
 
-                HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
-                    nil
+                if lotId ~= "" then
 
-                local reasonText =
-                    tostring(
-                        resultReason
-                        or "unknown"
-                    )
-
-                local lowerReason =
-                    reasonText:lower()
+                    HOLY_SHOP_STATE
+                        .AuctionAttemptedLots[lotId] =
+                        nil
+                end
 
                 warn(
                     "[HOLY Auction] Purchase rejected: "
@@ -43489,15 +44084,20 @@ function HolyAuctionConnectPacketSignals()
                     true
                 ) then
 
-                    HOLY_SHOP_STATE.AuctionNextBuyAt =
-                        os.clock()
-                        + HolyAuctionReadCooldown()
+                    if wasSynchronized == true then
 
-                    HOLY_SHOP_STATE.AuctionNextRetryAt =
-                        0
+                        HolyAuctionIncreaseCooldownGuard()
+                    end
+
+                    HolyAuctionScheduleCooldown(
+                        resultAt,
+                        "server cooldown rejection",
+                        true,
+                        false
+                    )
 
                     HolyAuctionSetStatus(
-                        "Waiting for cooldown"
+                        "Waiting for server cooldown"
                     )
 
                 elseif lowerReason:find(
@@ -43525,7 +44125,10 @@ function HolyAuctionConnectPacketSignals()
                         0
 
                     HOLY_SHOP_STATE.AuctionNextRetryAt =
-                        os.clock() + 30
+                        resultAt + 30
+
+                    HOLY_SHOP_STATE.AuctionSchedulerState =
+                        "Waiting"
 
                     HolyAuctionSetStatus(
                         "Not enough money"
@@ -43561,7 +44164,10 @@ function HolyAuctionConnectPacketSignals()
                         0
 
                     HOLY_SHOP_STATE.AuctionNextRetryAt =
-                        os.clock() + 5
+                        resultAt + 5
+
+                    HOLY_SHOP_STATE.AuctionSchedulerState =
+                        "Waiting"
 
                     HolyAuctionSetStatus(
                         "Waiting for stock"
@@ -43587,7 +44193,10 @@ function HolyAuctionConnectPacketSignals()
                         0
 
                     HOLY_SHOP_STATE.AuctionNextRetryAt =
-                        os.clock() + 1
+                        resultAt + 1
+
+                    HOLY_SHOP_STATE.AuctionSchedulerState =
+                        "Recheck"
 
                     HolyAuctionSetStatus(
                         "Price changed"
@@ -43599,7 +44208,10 @@ function HolyAuctionConnectPacketSignals()
                         0
 
                     HOLY_SHOP_STATE.AuctionNextRetryAt =
-                        os.clock() + 5
+                        resultAt + 5
+
+                    HOLY_SHOP_STATE.AuctionSchedulerState =
+                        "Waiting"
 
                     HolyAuctionSetStatus(
                         "Purchase failed"
@@ -43607,36 +44219,40 @@ function HolyAuctionConnectPacketSignals()
                 end
             end
 
-            HOLY_SHOP_STATE.AuctionPendingLotId =
-                nil
+            local activePendingLotId =
+                tostring(
+                    HOLY_SHOP_STATE.AuctionPendingLotId
+                    or ""
+                )
 
-            HOLY_SHOP_STATE.AuctionPendingPrice =
-                nil
+            if activePendingLotId == ""
+            or lotId == ""
+            or activePendingLotId == lotId then
 
-            HOLY_SHOP_STATE.AuctionPendingName =
-                nil
+                HOLY_SHOP_STATE.AuctionPendingLotId =
+                    nil
 
-            HOLY_SHOP_STATE.AuctionPendingSentAt =
-                0
+                HOLY_SHOP_STATE.AuctionPendingPrice =
+                    nil
 
-            if lotId == ""
-            or tostring(
-                HOLY_SHOP_STATE.AuctionLastSentLotId
-            ) == lotId then
+                HOLY_SHOP_STATE.AuctionPendingName =
+                    nil
 
-                HOLY_SHOP_STATE.AuctionLastSentLotId =
-                    ""
-
-                HOLY_SHOP_STATE.AuctionLastSentName =
-                    ""
-
-                HOLY_SHOP_STATE.AuctionLastSentAt =
+                HOLY_SHOP_STATE.AuctionPendingSentAt =
                     0
             end
 
             task.defer(function()
 
                 HolyAuctionRefreshUI()
+
+                if HOLY_SHOP_STATE.AutoBuyAuctions == true
+                and HOLY_SHOP_STATE.AuctionNetworkReady == true then
+
+                    HolyAuctionQueueWorker(
+                        "purchase result"
+                    )
+                end
             end)
         end
     )
@@ -67994,6 +68610,31 @@ function HolyDevRecorderAuctionDecisionState()
 
         RoundRobinIndex =
             state.AuctionRoundRobinIndex,
+
+        SchedulerState =
+            state.AuctionSchedulerState,
+
+        CooldownRemaining =
+            math.max(
+                0,
+                (
+                    tonumber(
+                        state.AuctionNextBuyAt
+                    )
+                    or 0
+                ) - os.clock()
+            ),
+
+        CooldownSynchronized =
+            state.AuctionCooldownSynchronized
+            == true,
+
+        CooldownSource =
+            state.AuctionCooldownAnchorReason,
+
+        UnknownOutcome =
+            state.AuctionUnknownOutcome
+            == true,
     }
 end
 
@@ -68283,6 +68924,67 @@ function HolyDevRecorderAuctionSnapshot()
 
         DebounceSeconds =
             debounce,
+
+        Scheduler = {
+            State =
+                state.AuctionSchedulerState,
+
+            CooldownAnchorAt =
+                state.AuctionCooldownAnchorAt,
+
+            CooldownSource =
+                state.AuctionCooldownAnchorReason,
+
+            CooldownBase =
+                state.AuctionCooldownBase,
+
+            CooldownGuard =
+                state.AuctionCooldownGuard,
+
+            AppliedGuard =
+                state.AuctionCooldownAppliedGuard,
+
+            CooldownUntil =
+                state.AuctionNextBuyAt,
+
+            CooldownRemaining =
+                math.max(
+                    0,
+                    (
+                        tonumber(
+                            state.AuctionNextBuyAt
+                        )
+                        or 0
+                    ) - now
+                ),
+
+            Synchronized =
+                state.AuctionCooldownSynchronized
+                == true,
+
+            UnknownOutcome =
+                state.AuctionUnknownOutcome
+                == true,
+
+            LastResultAt =
+                state.AuctionLastResultAt,
+
+            LastResultSuccess =
+                state.AuctionLastResultSuccess
+                == true,
+
+            LastResultReason =
+                state.AuctionLastResultReason,
+
+            LastResultLotId =
+                state.AuctionLastResultLotId,
+
+            LastResultName =
+                state.AuctionLastResultName,
+
+            LastResultLatency =
+                state.AuctionLastResultLatency,
+        },
 
         Watchlist =
             HolyDevSafeValue(
@@ -90128,18 +90830,6 @@ ShopAuctionBox:AddToggle(
         value == true
 
     HOLY_SHOP_STATE.AuctionNextRetryAt =
-        0
-
-    HOLY_SHOP_STATE.AuctionPendingLotId =
-        nil
-
-    HOLY_SHOP_STATE.AuctionPendingPrice =
-        nil
-
-    HOLY_SHOP_STATE.AuctionPendingName =
-        nil
-
-    HOLY_SHOP_STATE.AuctionPendingSentAt =
         0
 
     HolySaveShopSettings()
