@@ -31927,6 +31927,4217 @@ function HolyPetInventoryStart()
     return true
 end
 
+
+--==================================================
+-- FARM DETAILS
+--==================================================
+
+if type(HOLY_FARM_DETAILS_RUNTIME) == "table" then
+
+    HOLY_FARM_DETAILS_RUNTIME.Token =
+        nil
+
+    for _,
+        connection in ipairs(
+            HOLY_FARM_DETAILS_RUNTIME.Connections
+            or {}
+        ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+end
+
+HOLY_FARM_DETAILS_STATE =
+    type(HOLY_FARM_DETAILS_STATE) == "table"
+    and HOLY_FARM_DETAILS_STATE
+    or {}
+
+HOLY_FARM_DETAILS_STATE.SelectedPlants =
+    type(HOLY_FARM_DETAILS_STATE.SelectedPlants) == "table"
+    and HOLY_FARM_DETAILS_STATE.SelectedPlants
+    or {}
+
+HOLY_FARM_DETAILS_STATE.SelectedMutations =
+    type(HOLY_FARM_DETAILS_STATE.SelectedMutations) == "table"
+    and HOLY_FARM_DETAILS_STATE.SelectedMutations
+    or {}
+
+HOLY_FARM_DETAILS_STATE.OverviewPage =
+    tonumber(
+        HOLY_FARM_DETAILS_STATE.OverviewPage
+    )
+    or 1
+
+HOLY_FARM_DETAILS_STATE.FruitPage =
+    tonumber(
+        HOLY_FARM_DETAILS_STATE.FruitPage
+    )
+    or 1
+
+HOLY_FARM_DETAILS_STATE.RowsPerPage =
+    6
+
+HOLY_FARM_DETAILS_RUNTIME = {
+    Running =
+        false,
+
+    Token =
+        nil,
+
+    Connections =
+        {},
+
+    Networking =
+        nil,
+
+    GardenNetworking =
+        nil,
+
+    Cache = {
+        Plants =
+            {},
+    },
+
+    SnapshotReady =
+        false,
+
+    EventsConnected =
+        false,
+
+    LastRequestAt =
+        0,
+
+    RefreshQueued =
+        false,
+
+    FilterMode =
+        "Plants",
+
+    CurrentMode =
+        "Overview",
+
+    CurrentPageCount =
+        1,
+
+    Status =
+        "Loading",
+}
+
+HOLY_FARM_DETAILS_UI = {}
+
+function HolyFarmDetailsEscape(value)
+
+    return tostring(value or "")
+        :gsub("&", "&amp;")
+        :gsub("<", "&lt;")
+        :gsub(">", "&gt;")
+        :gsub('"', "&quot;")
+        :gsub("'", "&apos;")
+end
+
+function HolyFarmDetailsCountSet(set)
+
+    local count =
+        0
+
+    for _ in pairs(
+        type(set) == "table"
+        and set
+        or {}
+    ) do
+
+        count +=
+            1
+    end
+
+    return count
+end
+
+function HolyFarmDetailsCleanName(value)
+
+    if type(value) == "table" then
+
+        value =
+            value.Name
+            or value.DisplayName
+            or value.PlantName
+            or value.Seed
+            or ""
+    end
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub("_", " ")
+            :gsub("(%l)(%u)", "%1 %2")
+            :gsub("(%u)(%u%l)", "%1 %2")
+
+    return HolyCleanText(
+        text
+    )
+end
+
+function HolyFarmDetailsPlantName(plantData)
+
+    if type(plantData) ~= "table" then
+        return "Unknown"
+    end
+
+    local name =
+        HolyFarmDetailsCleanName(
+            plantData.PlantName
+            or plantData.SeedName
+            or plantData.Seed
+            or plantData.Name
+            or ""
+        )
+
+    if name == "" then
+
+        name =
+            "Unknown"
+    end
+
+    return name
+end
+
+function HolyFarmDetailsMutationHex(value)
+
+    local key =
+        tostring(value or "")
+            :lower()
+            :gsub("[^%w]", "")
+
+    local colors = {
+        normal =
+            "#DCDDE6",
+
+        glow =
+            "#35D4FF",
+
+        gold =
+            "#FFD84A",
+
+        rainbow =
+            "#FF4DFF",
+
+        electric =
+            "#FFE23D",
+
+        frozen =
+            "#70C9FF",
+
+        bloodlit =
+            "#FF4545",
+
+        starstruck =
+            "#FFF06A",
+
+        aurora =
+            "#B56CFF",
+
+        solarflare =
+            "#FF8A25",
+
+        ignited =
+            "#FF5A2E",
+
+        chained =
+            "#B8B8C2",
+
+        pizza =
+            "#FFB347",
+    }
+
+    return colors[key]
+        or "#F2F4F8"
+end
+
+function HolyFarmDetailsCollectMutations(
+    fruitData,
+    plantData
+)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    local function addMutation(
+        value,
+        depth
+    )
+
+        depth =
+            tonumber(depth)
+            or 0
+
+        if depth > 3
+        or value == nil then
+
+            return
+        end
+
+        if type(value) == "string"
+        or type(value) == "number" then
+
+            local text =
+                HolyCleanText(
+                    value
+                )
+
+            text =
+                text:gsub("^%[", "")
+                    :gsub("%]$", "")
+                    :gsub("^%{", "")
+                    :gsub("%}$", "")
+
+            for part in text:gmatch(
+                "[^,%|/;]+"
+            ) do
+
+                part =
+                    HolyCleanText(
+                        part
+                    )
+
+                if part ~= ""
+                and part:lower() ~= "none"
+                and seen[part:lower()] ~= true then
+
+                    seen[part:lower()] =
+                        true
+
+                    table.insert(
+                        output,
+                        part
+                    )
+                end
+            end
+
+            return
+        end
+
+        if type(value) == "table" then
+
+            if value.Name ~= nil then
+
+                addMutation(
+                    value.Name,
+                    depth + 1
+                )
+            end
+
+            if value.Mutation ~= nil then
+
+                addMutation(
+                    value.Mutation,
+                    depth + 1
+                )
+            end
+
+            if value.Mutations ~= nil then
+
+                addMutation(
+                    value.Mutations,
+                    depth + 1
+                )
+            end
+
+            for key,
+                entry in pairs(value) do
+
+                if type(key) == "string"
+                and entry == true then
+
+                    addMutation(
+                        key,
+                        depth + 1
+                    )
+
+                elseif type(entry) == "string"
+                or type(entry) == "number" then
+
+                    addMutation(
+                        entry,
+                        depth + 1
+                    )
+                end
+            end
+        end
+    end
+
+    local fruitMutation =
+        type(fruitData) == "table"
+        and (
+            fruitData.Mutation
+            or fruitData.Mutations
+            or fruitData.Variant
+        )
+        or nil
+
+    if fruitMutation ~= nil then
+
+        addMutation(
+            fruitMutation,
+            0
+        )
+
+    elseif type(plantData) == "table" then
+
+        addMutation(
+            plantData.Mutation
+            or plantData.Mutations
+            or plantData.Variant,
+            0
+        )
+    end
+
+    if #output <= 0 then
+
+        output[1] =
+            "Normal"
+    end
+
+    table.sort(output, function(a, b)
+
+        if a == "Normal" then
+            return true
+        end
+
+        if b == "Normal" then
+            return false
+        end
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyFarmDetailsMutationText(mutations)
+
+    return table.concat(
+        mutations or {
+            "Normal",
+        },
+        " + "
+    )
+end
+
+function HolyFarmDetailsPrepareFruit(fruitData)
+
+    if type(fruitData) ~= "table" then
+        return
+    end
+
+    fruitData._HolyFarmDetailsClock =
+        os.clock()
+end
+
+function HolyFarmDetailsPreparePlant(plantData)
+
+    if type(plantData) ~= "table" then
+        return
+    end
+
+    plantData._HolyFarmDetailsClock =
+        os.clock()
+
+    plantData.Fruits =
+        type(plantData.Fruits) == "table"
+        and plantData.Fruits
+        or {}
+
+    for _,
+        fruitData in pairs(
+            plantData.Fruits
+        ) do
+
+        HolyFarmDetailsPrepareFruit(
+            fruitData
+        )
+    end
+end
+
+function HolyFarmDetailsCurrentAge(data)
+
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    local age =
+        tonumber(
+            data.Age
+            or data.CurrentAge
+        )
+        or 0
+
+    local growthRate =
+        tonumber(
+            data.GrowRate
+            or data.GrowthRate
+            or data.StableGrowthAmount
+        )
+        or 0
+
+    local lastClock =
+        tonumber(
+            data._HolyFarmDetailsClock
+        )
+
+    if lastClock ~= nil
+    and growthRate > 0 then
+
+        age +=
+            math.max(
+                0,
+                os.clock() - lastClock
+            )
+            * growthRate
+    end
+
+    local maxAge =
+        tonumber(
+            data.MaxAge
+        )
+
+    if maxAge ~= nil
+    and maxAge > 0 then
+
+        age =
+            math.min(
+                age,
+                maxAge
+            )
+    end
+
+    return age
+end
+
+function HolyFarmDetailsFruitReady(fruitData)
+
+    if type(fruitData) ~= "table" then
+        return false
+    end
+
+    local finishedAt =
+        tonumber(
+            fruitData.FinishedGrowingAt
+        )
+
+    if finishedAt ~= nil
+    and finishedAt > 100000000 then
+
+        local now =
+            os.time()
+
+        pcall(function()
+
+            now =
+                workspace:GetServerTimeNow()
+        end)
+
+        return now >= finishedAt
+    end
+
+    local maxAge =
+        tonumber(
+            fruitData.MaxAge
+        )
+        or 0
+
+    if maxAge <= 0 then
+        return false
+    end
+
+    return HolyFarmDetailsCurrentAge(
+        fruitData
+    ) >= maxAge - 0.01
+end
+
+function HolyFarmDetailsWeightKg(
+    plantName,
+    fruitData
+)
+
+    if type(fruitData) ~= "table" then
+        return nil
+    end
+
+    local directWeight =
+        tonumber(
+            fruitData.WeightKg
+            or fruitData.Weight
+            or fruitData.Kg
+            or fruitData.Mass
+        )
+
+    if directWeight ~= nil
+    and directWeight > 0 then
+
+        return directWeight
+    end
+
+    local baseWeight =
+        nil
+
+    if type(HolyFarmGetBaseKg) == "function" then
+
+        baseWeight =
+            tonumber(
+                HolyFarmGetBaseKg(
+                    plantName,
+                    "Fruit"
+                )
+            )
+    end
+
+    if baseWeight == nil
+    or baseWeight <= 0 then
+
+        return nil
+    end
+
+    local sizeMultiplier =
+        tonumber(
+            fruitData.SizeMultiplier
+            or fruitData.SizeMulti
+            or fruitData.ScaleMultiplier
+            or fruitData.ScaleMulti
+            or fruitData.Scale
+        )
+        or 1
+
+    if sizeMultiplier <= 0 then
+
+        sizeMultiplier =
+            1
+    end
+
+    local overtimeGrowth =
+        tonumber(
+            fruitData.OvertimeGrowth
+            or fruitData.OvertimeMultiplier
+        )
+        or 1
+
+    if overtimeGrowth <= 0 then
+
+        overtimeGrowth =
+            1
+    end
+
+    return baseWeight
+        * sizeMultiplier
+        * overtimeGrowth
+end
+
+function HolyFarmDetailsFormatKg(value)
+
+    value =
+        tonumber(value)
+
+    if value == nil then
+        return "?kg"
+    end
+
+    return string.format(
+        "%.2fkg",
+        value
+    )
+end
+
+function HolyFarmDetailsBuildGroups()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    local grouped =
+        {}
+
+    for plantId,
+        plantData in pairs(
+            runtime.Cache.Plants
+            or {}
+        ) do
+
+        if type(plantData) == "table" then
+
+            local plantName =
+                HolyFarmDetailsPlantName(
+                    plantData
+                )
+
+            local key =
+                plantName:lower()
+
+            local group =
+                grouped[key]
+
+            if type(group) ~= "table" then
+
+                group = {
+                    Key =
+                        key,
+
+                    Name =
+                        plantName,
+
+                    Plants =
+                        0,
+
+                    Fruits =
+                        {},
+                }
+
+                grouped[key] =
+                    group
+            end
+
+            group.Plants +=
+                1
+
+            for fruitId,
+                fruitData in pairs(
+                    type(plantData.Fruits) == "table"
+                    and plantData.Fruits
+                    or {}
+                ) do
+
+                if type(fruitData) == "table" then
+
+                    local mutations =
+                        HolyFarmDetailsCollectMutations(
+                            fruitData,
+                            plantData
+                        )
+
+                    table.insert(
+                        group.Fruits,
+                        {
+                            PlantId =
+                                tostring(plantId),
+
+                            FruitId =
+                                tostring(fruitId),
+
+                            PlantName =
+                                plantName,
+
+                            Mutations =
+                                mutations,
+
+                            MutationText =
+                                HolyFarmDetailsMutationText(
+                                    mutations
+                                ),
+
+                            Weight =
+                                HolyFarmDetailsWeightKg(
+                                    plantName,
+                                    fruitData
+                                ),
+
+                            Ready =
+                                HolyFarmDetailsFruitReady(
+                                    fruitData
+                                ),
+
+                            FruitData =
+                                fruitData,
+                        }
+                    )
+                end
+            end
+        end
+    end
+
+    local groups =
+        {}
+
+    for _,
+        group in pairs(grouped) do
+
+        table.sort(
+            group.Fruits,
+            function(a, b)
+
+                local weightA =
+                    tonumber(a.Weight)
+                    or -math.huge
+
+                local weightB =
+                    tonumber(b.Weight)
+                    or -math.huge
+
+                if weightA ~= weightB then
+
+                    return weightA > weightB
+                end
+
+                if a.MutationText
+                    ~= b.MutationText then
+
+                    return tostring(
+                        a.MutationText
+                    ):lower()
+                        < tostring(
+                            b.MutationText
+                        ):lower()
+                end
+
+                return tostring(a.FruitId)
+                    < tostring(b.FruitId)
+            end
+        )
+
+        table.insert(
+            groups,
+            group
+        )
+    end
+
+    table.sort(groups, function(a, b)
+
+        return tostring(a.Name):lower()
+            < tostring(b.Name):lower()
+    end)
+
+    return groups
+end
+
+function HolyFarmDetailsMutationAllowed(fruit)
+
+    local selected =
+        HOLY_FARM_DETAILS_STATE.SelectedMutations
+
+    if HolyFarmDetailsCountSet(
+        selected
+    ) <= 0 then
+
+        return true
+    end
+
+    for _,
+        mutation in ipairs(
+            fruit.Mutations
+            or {}
+        ) do
+
+        if selected[mutation] == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyFarmDetailsGetVisibleGroups(groups)
+
+    local selected =
+        HOLY_FARM_DETAILS_STATE.SelectedPlants
+
+    local hasSelection =
+        HolyFarmDetailsCountSet(
+            selected
+        ) > 0
+
+    local output =
+        {}
+
+    for _,
+        group in ipairs(groups or {}) do
+
+        if hasSelection ~= true
+        or selected[group.Name] == true then
+
+            local filteredFruits =
+                {}
+
+            local ready =
+                0
+
+            for _,
+                fruit in ipairs(
+                    group.Fruits
+                    or {}
+                ) do
+
+                if HolyFarmDetailsMutationAllowed(
+                    fruit
+                ) then
+
+                    table.insert(
+                        filteredFruits,
+                        fruit
+                    )
+
+                    if fruit.Ready == true then
+
+                        ready +=
+                            1
+                    end
+                end
+            end
+
+            table.insert(
+                output,
+                {
+                    Key =
+                        group.Key,
+
+                    Name =
+                        group.Name,
+
+                    Plants =
+                        group.Plants,
+
+                    Fruits =
+                        filteredFruits,
+
+                    AllFruits =
+                        group.Fruits,
+
+                    Ready =
+                        ready,
+                }
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyFarmDetailsBuildMutationSummary(fruits)
+
+    local counts =
+        {}
+
+    for _,
+        fruit in ipairs(fruits or {}) do
+
+        for _,
+            mutation in ipairs(
+                fruit.Mutations
+                or {
+                    "Normal",
+                }
+            ) do
+
+            counts[mutation] =
+                (
+                    counts[mutation]
+                    or 0
+                )
+                + 1
+        end
+    end
+
+    local entries =
+        {}
+
+    for mutation,
+        amount in pairs(counts) do
+
+        table.insert(
+            entries,
+            {
+                Mutation =
+                    mutation,
+
+                Amount =
+                    amount,
+            }
+        )
+    end
+
+    table.sort(entries, function(a, b)
+
+        if a.Amount ~= b.Amount then
+
+            return a.Amount >
+                b.Amount
+        end
+
+        return tostring(a.Mutation):lower()
+            < tostring(b.Mutation):lower()
+    end)
+
+    local parts =
+        {}
+
+    local shown =
+        math.min(
+            2,
+            #entries
+        )
+
+    for index = 1,
+        shown do
+
+        local entry =
+            entries[index]
+
+        table.insert(
+            parts,
+            '<font color="'
+            .. HolyFarmDetailsMutationHex(
+                entry.Mutation
+            )
+            .. '">'
+            .. HolyFarmDetailsEscape(
+                entry.Mutation
+            )
+            .. " "
+            .. tostring(
+                entry.Amount
+            )
+            .. "</font>"
+        )
+    end
+
+    if #entries > shown then
+
+        table.insert(
+            parts,
+            '<font color="#8E95A5">+'
+            .. tostring(
+                #entries - shown
+            )
+            .. "</font>"
+        )
+    end
+
+    if #parts <= 0 then
+
+        return '<font color="#8E95A5">No matching fruits</font>'
+    end
+
+    return table.concat(
+        parts,
+        " · "
+    )
+end
+
+function HolyFarmDetailsBuildFruitRichText(fruit)
+
+    local mutationParts =
+        {}
+
+    for _,
+        mutation in ipairs(
+            fruit.Mutations
+            or {
+                "Normal",
+            }
+        ) do
+
+        table.insert(
+            mutationParts,
+            '<font color="'
+            .. HolyFarmDetailsMutationHex(
+                mutation
+            )
+            .. '">'
+            .. HolyFarmDetailsEscape(
+                mutation
+            )
+            .. "</font>"
+        )
+    end
+
+    return table.concat(
+        mutationParts,
+        '<font color="#8E95A5"> + </font>'
+    )
+        .. ' <font color="#F2F4F8">'
+        .. HolyFarmDetailsEscape(
+            fruit.PlantName
+        )
+        .. "</font>"
+end
+
+function HolyFarmDetailsScheduleRender()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    if runtime.RefreshQueued == true then
+        return
+    end
+
+    runtime.RefreshQueued =
+        true
+
+    task.defer(function()
+
+        runtime.RefreshQueued =
+            false
+
+        if type(HolyFarmDetailsRender) == "function" then
+
+            HolyFarmDetailsRender()
+        end
+    end)
+end
+
+function HolyFarmDetailsGetGardenNetworking()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    if type(runtime.GardenNetworking) == "table" then
+
+        return runtime.GardenNetworking
+    end
+
+    local networking =
+        nil
+
+    if type(HolyShopRequireModule) == "function" then
+
+        networking =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+    end
+
+    if type(networking) ~= "table" then
+
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local networkingModule =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "Networking"
+            )
+
+        if typeof(networkingModule) == "Instance"
+        and networkingModule:IsA("ModuleScript") then
+
+            local ok,
+                result =
+                pcall(
+                    require,
+                    networkingModule
+                )
+
+            if ok == true
+            and type(result) == "table" then
+
+                networking =
+                    result
+            end
+        end
+    end
+
+    local garden =
+        type(networking) == "table"
+        and type(networking.Garden) == "table"
+        and networking.Garden
+        or nil
+
+    runtime.Networking =
+        networking
+
+    runtime.GardenNetworking =
+        garden
+
+    return garden
+end
+
+function HolyFarmDetailsOwnerMatches(owner)
+
+    return tostring(owner or "")
+        == tostring(
+            LocalPlayer.UserId
+        )
+end
+
+function HolyFarmDetailsDisconnect()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    for _,
+        connection in ipairs(
+            runtime.Connections
+            or {}
+        ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    runtime.Connections =
+        {}
+
+    runtime.EventsConnected =
+        false
+end
+
+function HolyFarmDetailsConnectPacket(
+    packet,
+    callback
+)
+
+    if type(packet) ~= "table"
+    or packet.OnClientEvent == nil then
+
+        return false
+    end
+
+    local ok,
+        connection =
+        pcall(function()
+
+            return packet.OnClientEvent:Connect(
+                callback
+            )
+        end)
+
+    if ok == true
+    and connection ~= nil then
+
+        table.insert(
+            HOLY_FARM_DETAILS_RUNTIME.Connections,
+            connection
+        )
+
+        return true
+    end
+
+    return false
+end
+
+function HolyFarmDetailsApplySnapshot(snapshot)
+
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    local userId =
+        LocalPlayer.UserId
+
+    local gardenData =
+        snapshot[userId]
+        or snapshot[tostring(userId)]
+
+    if type(gardenData) ~= "table"
+    or type(gardenData.Plants) ~= "table" then
+
+        -- Some SyncAllGardens packets only contain another
+        -- player's garden. Never clear our cache from those.
+        return false
+    end
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    runtime.Cache.Plants =
+        gardenData.Plants
+
+    for _,
+        plantData in pairs(
+            runtime.Cache.Plants
+        ) do
+
+        HolyFarmDetailsPreparePlant(
+            plantData
+        )
+    end
+
+    runtime.SnapshotReady =
+        true
+
+    runtime.Status =
+        "Ready"
+
+    HolyFarmDetailsScheduleRender()
+
+    return true
+end
+
+function HolyFarmDetailsConnectEvents()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    HolyFarmDetailsDisconnect()
+
+    local garden =
+        HolyFarmDetailsGetGardenNetworking()
+
+    if type(garden) ~= "table" then
+        return false
+    end
+
+    local snapshotConnected =
+        HolyFarmDetailsConnectPacket(
+            garden.SyncAllGardens,
+            function(snapshot)
+
+                HolyFarmDetailsApplySnapshot(
+                    snapshot
+                )
+            end
+        )
+
+    HolyFarmDetailsConnectPacket(
+        garden.PlantAdded,
+        function(owner, plantId, plantData)
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true
+            or type(plantData) ~= "table" then
+
+                return
+            end
+
+            plantId =
+                tostring(plantId)
+
+            HolyFarmDetailsPreparePlant(
+                plantData
+            )
+
+            runtime.Cache.Plants[plantId] =
+                plantData
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.PlantRemoved,
+        function(owner, plantId)
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            runtime.Cache.Plants[
+                tostring(plantId)
+            ] =
+                nil
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.FruitAdded,
+        function(
+            owner,
+            plantId,
+            fruitId,
+            fruitData
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true
+            or type(fruitData) ~= "table" then
+
+                return
+            end
+
+            plantId =
+                tostring(plantId)
+
+            fruitId =
+                tostring(fruitId)
+
+            local plantData =
+                runtime.Cache.Plants[
+                    plantId
+                ]
+
+            if type(plantData) ~= "table" then
+
+                plantData = {
+                    PlantName =
+                        fruitData.PlantName
+                        or fruitData.Seed
+                        or "Unknown",
+
+                    Fruits =
+                        {},
+                }
+
+                runtime.Cache.Plants[
+                    plantId
+                ] =
+                    plantData
+            end
+
+            plantData.Fruits =
+                type(plantData.Fruits) == "table"
+                and plantData.Fruits
+                or {}
+
+            HolyFarmDetailsPrepareFruit(
+                fruitData
+            )
+
+            plantData.Fruits[fruitId] =
+                fruitData
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.FruitRemoved,
+        function(
+            owner,
+            plantId,
+            fruitId
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[
+                    tostring(plantId)
+                ]
+
+            if type(plantData) == "table"
+            and type(plantData.Fruits) == "table" then
+
+                plantData.Fruits[
+                    tostring(fruitId)
+                ] =
+                    nil
+            end
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.PlantGrowthUpdated,
+        function(
+            owner,
+            plantId,
+            currentAge,
+            growthRate
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[
+                    tostring(plantId)
+                ]
+
+            if type(plantData) == "table" then
+
+                plantData.Age =
+                    tonumber(currentAge)
+                    or plantData.Age
+                    or 0
+
+                plantData.GrowRate =
+                    tonumber(growthRate)
+                    or plantData.GrowRate
+                    or 0
+
+                plantData._HolyFarmDetailsClock =
+                    os.clock()
+            end
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.FruitGrowthUpdated,
+        function(
+            owner,
+            plantId,
+            fruitId,
+            currentAge,
+            growthRate
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[
+                    tostring(plantId)
+                ]
+
+            local fruitData =
+                type(plantData) == "table"
+                and type(plantData.Fruits) == "table"
+                and plantData.Fruits[
+                    tostring(fruitId)
+                ]
+                or nil
+
+            if type(fruitData) == "table" then
+
+                fruitData.Age =
+                    tonumber(currentAge)
+                    or fruitData.Age
+                    or 0
+
+                fruitData.GrowRate =
+                    tonumber(growthRate)
+                    or fruitData.GrowRate
+                    or 0
+
+                fruitData._HolyFarmDetailsClock =
+                    os.clock()
+            end
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.PlantMutationUpdated,
+        function(
+            owner,
+            plantId,
+            mutationData
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[
+                    tostring(plantId)
+                ]
+
+            if type(plantData) == "table" then
+
+                plantData.Mutation =
+                    mutationData
+            end
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.FruitMutationUpdated,
+        function(
+            owner,
+            plantId,
+            fruitId,
+            mutationData
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[
+                    tostring(plantId)
+                ]
+
+            local fruitData =
+                type(plantData) == "table"
+                and type(plantData.Fruits) == "table"
+                and plantData.Fruits[
+                    tostring(fruitId)
+                ]
+                or nil
+
+            if type(fruitData) == "table" then
+
+                fruitData.Mutation =
+                    mutationData
+            end
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    HolyFarmDetailsConnectPacket(
+        garden.FruitOvertimeGrowthUpdated,
+        function(
+            owner,
+            plantId,
+            fruitId,
+            overtimeGrowth
+        )
+
+            if HolyFarmDetailsOwnerMatches(
+                owner
+            ) ~= true then
+
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[
+                    tostring(plantId)
+                ]
+
+            local fruitData =
+                type(plantData) == "table"
+                and type(plantData.Fruits) == "table"
+                and plantData.Fruits[
+                    tostring(fruitId)
+                ]
+                or nil
+
+            if type(fruitData) == "table" then
+
+                fruitData.OvertimeGrowth =
+                    tonumber(overtimeGrowth)
+                    or fruitData.OvertimeGrowth
+            end
+
+            HolyFarmDetailsScheduleRender()
+        end
+    )
+
+    runtime.EventsConnected =
+        snapshotConnected == true
+
+    return runtime.EventsConnected
+end
+
+function HolyFarmDetailsRequestSnapshot()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    local garden =
+        HolyFarmDetailsGetGardenNetworking()
+
+    local packet =
+        type(garden) == "table"
+        and garden.RequestGardens
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        runtime.Status =
+            "Unavailable"
+
+        HolyFarmDetailsScheduleRender()
+
+        return false
+    end
+
+    runtime.LastRequestAt =
+        os.clock()
+
+    runtime.Status =
+        runtime.SnapshotReady == true
+        and "Ready"
+        or "Refreshing"
+
+    local ok =
+        pcall(function()
+
+            packet:Fire()
+        end)
+
+    if ok ~= true then
+
+        runtime.Status =
+            "Refresh failed"
+    end
+
+    HolyFarmDetailsScheduleRender()
+
+    return ok
+end
+
+function HolyFarmDetailsCreateLabel(
+    parent,
+    name,
+    position,
+    size,
+    textSize,
+    alignment
+)
+
+    local label =
+        Instance.new(
+            "TextLabel"
+        )
+
+    label.Name =
+        name
+
+    label.BackgroundTransparency =
+        1
+
+    label.BorderSizePixel =
+        0
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.FontFace =
+        Library.Scheme.Font
+
+    label.Text =
+        ""
+
+    label.TextColor3 =
+        Color3.fromRGB(
+            242,
+            244,
+            248
+        )
+
+    label.TextSize =
+        textSize
+        or 11
+
+    label.TextXAlignment =
+        alignment
+        or Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function HolyFarmDetailsAddCorner(
+    object,
+    radius
+)
+
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            radius or 5
+        )
+
+    corner.Parent =
+        object
+
+    return corner
+end
+
+function HolyFarmDetailsAddStroke(
+    object,
+    color,
+    transparency
+)
+
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    stroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    stroke.Color =
+        color
+        or Color3.fromRGB(
+            42,
+            42,
+            56
+        )
+
+    stroke.Transparency =
+        transparency
+        or 0
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        object
+
+    return stroke
+end
+
+function HolyFarmDetailsCreateButton(
+    parent,
+    text,
+    position,
+    size
+)
+
+    local button =
+        Instance.new(
+            "TextButton"
+        )
+
+    button.AutoButtonColor =
+        false
+
+    button.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            11,
+            19
+        )
+
+    button.BorderSizePixel =
+        0
+
+    button.Position =
+        position
+
+    button.Size =
+        size
+
+    button.FontFace =
+        Library.Scheme.Font
+
+    button.Text =
+        text or ""
+
+    button.TextColor3 =
+        Color3.fromRGB(
+            242,
+            244,
+            248
+        )
+
+    button.TextSize =
+        10
+
+    button.Parent =
+        parent
+
+    HolyFarmDetailsAddCorner(
+        button,
+        5
+    )
+
+    HolyFarmDetailsAddStroke(
+        button,
+        Color3.fromRGB(
+            42,
+            42,
+            56
+        ),
+        0.20
+    )
+
+    return button
+end
+
+function HolyFarmDetailsConfigureOverview()
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    ui.Header1.Text =
+        "PLANT"
+
+    ui.Header1.Position =
+        UDim2.fromScale(
+            0,
+            0
+        )
+
+    ui.Header1.Size =
+        UDim2.fromScale(
+            0.50,
+            1
+        )
+
+    ui.Header2.Visible =
+        true
+
+    ui.Header2.Text =
+        "PLANTS"
+
+    ui.Header2.Position =
+        UDim2.fromScale(
+            0.50,
+            0
+        )
+
+    ui.Header2.Size =
+        UDim2.fromScale(
+            0.17,
+            1
+        )
+
+    ui.Header2.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    ui.Header3.Visible =
+        true
+
+    ui.Header3.Text =
+        "FRUIT"
+
+    ui.Header3.Position =
+        UDim2.fromScale(
+            0.67,
+            0
+        )
+
+    ui.Header3.Size =
+        UDim2.fromScale(
+            0.16,
+            1
+        )
+
+    ui.Header3.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    ui.Header4.Visible =
+        true
+
+    ui.Header4.Text =
+        "READY"
+
+    ui.Header4.Position =
+        UDim2.fromScale(
+            0.83,
+            0
+        )
+
+    ui.Header4.Size =
+        UDim2.fromScale(
+            0.17,
+            1
+        )
+
+    ui.Header4.TextXAlignment =
+        Enum.TextXAlignment.Right
+end
+
+function HolyFarmDetailsConfigureFruits()
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    ui.Header1.Text =
+        "FRUIT"
+
+    ui.Header1.Position =
+        UDim2.fromScale(
+            0,
+            0
+        )
+
+    ui.Header1.Size =
+        UDim2.fromScale(
+            0.58,
+            1
+        )
+
+    ui.Header2.Visible =
+        true
+
+    ui.Header2.Text =
+        "WEIGHT"
+
+    ui.Header2.Position =
+        UDim2.fromScale(
+            0.58,
+            0
+        )
+
+    ui.Header2.Size =
+        UDim2.fromScale(
+            0.22,
+            1
+        )
+
+    ui.Header2.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    ui.Header3.Visible =
+        true
+
+    ui.Header3.Text =
+        "STATUS"
+
+    ui.Header3.Position =
+        UDim2.fromScale(
+            0.80,
+            0
+        )
+
+    ui.Header3.Size =
+        UDim2.fromScale(
+            0.20,
+            1
+        )
+
+    ui.Header3.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    ui.Header4.Visible =
+        false
+end
+
+function HolyFarmDetailsSetFilterDescription(
+    groups
+)
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    if typeof(ui.FilterDescription) ~= "Instance" then
+        return
+    end
+
+    if HOLY_FARM_DETAILS_RUNTIME.SnapshotReady ~= true
+    and #groups <= 0 then
+
+        ui.FilterDescription.Text =
+            "Waiting for garden data..."
+
+        return
+    end
+
+    local plantCount =
+        HolyFarmDetailsCountSet(
+            HOLY_FARM_DETAILS_STATE.SelectedPlants
+        )
+
+    local mutationCount =
+        HolyFarmDetailsCountSet(
+            HOLY_FARM_DETAILS_STATE.SelectedMutations
+        )
+
+    local plantText =
+        "All plants"
+
+    if plantCount == 1 then
+
+        for plantName in pairs(
+            HOLY_FARM_DETAILS_STATE.SelectedPlants
+        ) do
+
+            plantText =
+                plantName
+        end
+
+    elseif plantCount > 1 then
+
+        plantText =
+            tostring(plantCount)
+            .. " plants"
+    end
+
+    local mutationText =
+        "All mutations"
+
+    if mutationCount == 1 then
+
+        for mutation in pairs(
+            HOLY_FARM_DETAILS_STATE.SelectedMutations
+        ) do
+
+            mutationText =
+                mutation
+        end
+
+    elseif mutationCount > 1 then
+
+        mutationText =
+            tostring(mutationCount)
+            .. " mutations"
+    end
+
+    ui.FilterDescription.Text =
+        plantText
+        .. " · "
+        .. mutationText
+end
+
+function HolyFarmDetailsResetRows()
+
+    for _,
+        row in ipairs(
+            HOLY_FARM_DETAILS_UI.Rows
+            or {}
+        ) do
+
+        row.Frame.Visible =
+            false
+
+        row.Name.Visible =
+            true
+
+        row.Sub.Visible =
+            false
+
+        row.Value2.Visible =
+            false
+
+        row.Value3.Visible =
+            false
+
+        row.Value4.Visible =
+            false
+    end
+end
+
+function HolyFarmDetailsShowEmpty(text)
+
+    local row =
+        HOLY_FARM_DETAILS_UI.Rows
+        and HOLY_FARM_DETAILS_UI.Rows[1]
+
+    if type(row) ~= "table" then
+        return
+    end
+
+    row.Frame.Visible =
+        true
+
+    row.Name.Position =
+        UDim2.fromOffset(
+            8,
+            0
+        )
+
+    row.Name.Size =
+        UDim2.new(
+            1,
+            -16,
+            1,
+            0
+        )
+
+    row.Name.Text =
+        '<font color="#8E95A5">'
+        .. HolyFarmDetailsEscape(
+            text
+        )
+        .. "</font>"
+
+    row.Name.TextXAlignment =
+        Enum.TextXAlignment.Center
+end
+
+function HolyFarmDetailsSetPager(
+    page,
+    pageCount
+)
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    HOLY_FARM_DETAILS_RUNTIME.CurrentPageCount =
+        pageCount
+
+    if typeof(ui.PageLabel) == "Instance" then
+
+        ui.PageLabel.Text =
+            tostring(page)
+            .. " / "
+            .. tostring(pageCount)
+    end
+
+    if typeof(ui.PreviousButton) == "Instance" then
+
+        ui.PreviousButton.TextTransparency =
+            page > 1
+            and 0
+            or 0.62
+    end
+
+    if typeof(ui.NextButton) == "Instance" then
+
+        ui.NextButton.TextTransparency =
+            page < pageCount
+            and 0
+            or 0.62
+    end
+end
+
+function HolyFarmDetailsSetBest(fruit)
+
+    local label =
+        HOLY_FARM_DETAILS_UI.BestLabel
+
+    if typeof(label) ~= "Instance" then
+        return
+    end
+
+    if type(fruit) ~= "table"
+    or tonumber(fruit.Weight) == nil then
+
+        label.Text =
+            '<font color="#8E95A5">Best: —</font>'
+
+        return
+    end
+
+    local primaryMutation =
+        fruit.Mutations
+        and fruit.Mutations[1]
+        or "Normal"
+
+    label.Text =
+        '<font color="#8E95A5">Best: </font>'
+        .. '<font color="'
+        .. HolyFarmDetailsMutationHex(
+            primaryMutation
+        )
+        .. '">'
+        .. HolyFarmDetailsEscape(
+            primaryMutation
+        )
+        .. "</font> "
+        .. '<font color="#42EB8B">'
+        .. HolyFarmDetailsEscape(
+            HolyFarmDetailsFormatKg(
+                fruit.Weight
+            )
+        )
+        .. "</font>"
+end
+
+function HolyFarmDetailsRenderOverview(
+    groups
+)
+
+    local state =
+        HOLY_FARM_DETAILS_STATE
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    runtime.CurrentMode =
+        "Overview"
+
+    HolyFarmDetailsConfigureOverview()
+
+    local totalPlants =
+        0
+
+    local totalFruits =
+        0
+
+    local totalReady =
+        0
+
+    local best =
+        nil
+
+    for _,
+        group in ipairs(groups) do
+
+        totalPlants +=
+            tonumber(group.Plants)
+            or 0
+
+        totalFruits +=
+            #group.Fruits
+
+        totalReady +=
+            tonumber(group.Ready)
+            or 0
+
+        for _,
+            fruit in ipairs(
+                group.Fruits
+            ) do
+
+            if tonumber(fruit.Weight) ~= nil
+            and (
+                best == nil
+                or tonumber(fruit.Weight)
+                    > tonumber(best.Weight)
+            ) then
+
+                best =
+                    fruit
+            end
+        end
+    end
+
+    ui.PlantsMetric.Text =
+        tostring(totalPlants)
+
+    ui.FruitsMetric.Text =
+        tostring(totalFruits)
+
+    ui.ReadyMetric.Text =
+        tostring(totalReady)
+
+    local rowsPerPage =
+        state.RowsPerPage
+
+    local pageCount =
+        math.max(
+            1,
+            math.ceil(
+                #groups
+                / rowsPerPage
+            )
+        )
+
+    state.OverviewPage =
+        math.clamp(
+            math.floor(
+                tonumber(state.OverviewPage)
+                or 1
+            ),
+            1,
+            pageCount
+        )
+
+    local firstIndex =
+        (
+            state.OverviewPage - 1
+        )
+        * rowsPerPage
+        + 1
+
+    for rowIndex = 1,
+        rowsPerPage do
+
+        local group =
+            groups[
+                firstIndex
+                + rowIndex
+                - 1
+            ]
+
+        local row =
+            ui.Rows[rowIndex]
+
+        if type(group) == "table"
+        and type(row) == "table" then
+
+            row.Frame.Visible =
+                true
+
+            row.Name.Visible =
+                true
+
+            row.Name.Position =
+                UDim2.fromOffset(
+                    7,
+                    1
+                )
+
+            row.Name.Size =
+                UDim2.new(
+                    0.50,
+                    -9,
+                    0,
+                    15
+                )
+
+            row.Name.TextXAlignment =
+                Enum.TextXAlignment.Left
+
+            row.Name.Text =
+                '<font color="#F2F4F8"><b>'
+                .. HolyFarmDetailsEscape(
+                    group.Name
+                )
+                .. "</b></font>"
+
+            row.Sub.Visible =
+                true
+
+            row.Sub.Position =
+                UDim2.fromOffset(
+                    7,
+                    15
+                )
+
+            row.Sub.Size =
+                UDim2.new(
+                    0.50,
+                    -9,
+                    0,
+                    14
+                )
+
+            row.Sub.Text =
+                HolyFarmDetailsBuildMutationSummary(
+                    group.Fruits
+                )
+
+            row.Value2.Visible =
+                true
+
+            row.Value2.Position =
+                UDim2.fromScale(
+                    0.50,
+                    0
+                )
+
+            row.Value2.Size =
+                UDim2.fromScale(
+                    0.17,
+                    1
+                )
+
+            row.Value2.TextXAlignment =
+                Enum.TextXAlignment.Center
+
+            row.Value2.Text =
+                '<font color="#FF2F68"><b>'
+                .. tostring(
+                    group.Plants
+                )
+                .. "</b></font>"
+
+            row.Value3.Visible =
+                true
+
+            row.Value3.Position =
+                UDim2.fromScale(
+                    0.67,
+                    0
+                )
+
+            row.Value3.Size =
+                UDim2.fromScale(
+                    0.16,
+                    1
+                )
+
+            row.Value3.TextXAlignment =
+                Enum.TextXAlignment.Center
+
+            row.Value3.Text =
+                '<font color="#F2F4F8"><b>'
+                .. tostring(
+                    #group.Fruits
+                )
+                .. "</b></font>"
+
+            row.Value4.Visible =
+                true
+
+            row.Value4.Position =
+                UDim2.fromScale(
+                    0.83,
+                    0
+                )
+
+            row.Value4.Size =
+                UDim2.new(
+                    0.17,
+                    -5,
+                    1,
+                    0
+                )
+
+            row.Value4.TextXAlignment =
+                Enum.TextXAlignment.Right
+
+            row.Value4.Text =
+                '<font color="#42EB8B"><b>'
+                .. tostring(
+                    group.Ready
+                )
+                .. "</b></font>"
+        end
+    end
+
+    if #groups <= 0 then
+
+        HolyFarmDetailsShowEmpty(
+            runtime.SnapshotReady == true
+            and "No plants match these filters."
+            or "Waiting for garden data..."
+        )
+    end
+
+    HolyFarmDetailsSetBest(
+        best
+    )
+
+    HolyFarmDetailsSetPager(
+        state.OverviewPage,
+        pageCount
+    )
+end
+
+function HolyFarmDetailsRenderFruits(group)
+
+    local state =
+        HOLY_FARM_DETAILS_STATE
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    runtime.CurrentMode =
+        "Fruits"
+
+    HolyFarmDetailsConfigureFruits()
+
+    local fruits =
+        group.Fruits
+        or {}
+
+    ui.PlantsMetric.Text =
+        tostring(
+            group.Plants
+            or 0
+        )
+
+    ui.FruitsMetric.Text =
+        tostring(
+            #fruits
+        )
+
+    ui.ReadyMetric.Text =
+        tostring(
+            group.Ready
+            or 0
+        )
+
+    local rowsPerPage =
+        state.RowsPerPage
+
+    local pageCount =
+        math.max(
+            1,
+            math.ceil(
+                #fruits
+                / rowsPerPage
+            )
+        )
+
+    state.FruitPage =
+        math.clamp(
+            math.floor(
+                tonumber(state.FruitPage)
+                or 1
+            ),
+            1,
+            pageCount
+        )
+
+    local firstIndex =
+        (
+            state.FruitPage - 1
+        )
+        * rowsPerPage
+        + 1
+
+    for rowIndex = 1,
+        rowsPerPage do
+
+        local fruit =
+            fruits[
+                firstIndex
+                + rowIndex
+                - 1
+            ]
+
+        local row =
+            ui.Rows[rowIndex]
+
+        if type(fruit) == "table"
+        and type(row) == "table" then
+
+            row.Frame.Visible =
+                true
+
+            row.Name.Visible =
+                true
+
+            row.Name.Position =
+                UDim2.fromOffset(
+                    7,
+                    0
+                )
+
+            row.Name.Size =
+                UDim2.new(
+                    0.58,
+                    -9,
+                    1,
+                    0
+                )
+
+            row.Name.TextXAlignment =
+                Enum.TextXAlignment.Left
+
+            row.Name.Text =
+                HolyFarmDetailsBuildFruitRichText(
+                    fruit
+                )
+
+            row.Sub.Visible =
+                false
+
+            row.Value2.Visible =
+                true
+
+            row.Value2.Position =
+                UDim2.fromScale(
+                    0.58,
+                    0
+                )
+
+            row.Value2.Size =
+                UDim2.new(
+                    0.22,
+                    -4,
+                    1,
+                    0
+                )
+
+            row.Value2.TextXAlignment =
+                Enum.TextXAlignment.Right
+
+            row.Value2.Text =
+                '<font color="#F2F4F8"><b>'
+                .. HolyFarmDetailsEscape(
+                    HolyFarmDetailsFormatKg(
+                        fruit.Weight
+                    )
+                )
+                .. "</b></font>"
+
+            row.Value3.Visible =
+                true
+
+            row.Value3.Position =
+                UDim2.fromScale(
+                    0.80,
+                    0
+                )
+
+            row.Value3.Size =
+                UDim2.new(
+                    0.20,
+                    -5,
+                    1,
+                    0
+                )
+
+            row.Value3.TextXAlignment =
+                Enum.TextXAlignment.Right
+
+            row.Value3.Text =
+                fruit.Ready == true
+                and '<font color="#42EB8B"><b>Ready</b></font>'
+                or '<font color="#8E95A5">Growing</font>'
+
+            row.Value4.Visible =
+                false
+        end
+    end
+
+    if #fruits <= 0 then
+
+        HolyFarmDetailsShowEmpty(
+            #group.AllFruits <= 0
+            and "Harvest crop — no individual fruits."
+            or "No fruits match these filters."
+        )
+    end
+
+    HolyFarmDetailsSetBest(
+        fruits[1]
+    )
+
+    HolyFarmDetailsSetPager(
+        state.FruitPage,
+        pageCount
+    )
+end
+
+function HolyFarmDetailsGetFilterValues(
+    groups
+)
+
+    local plants =
+        {}
+
+    local mutations =
+        {}
+
+    local mutationSeen =
+        {}
+
+    for _,
+        group in ipairs(groups or {}) do
+
+        table.insert(
+            plants,
+            group.Name
+        )
+
+        for _,
+            fruit in ipairs(
+                group.Fruits
+                or {}
+            ) do
+
+            for _,
+                mutation in ipairs(
+                    fruit.Mutations
+                    or {}
+                ) do
+
+                if mutationSeen[mutation] ~= true then
+
+                    mutationSeen[mutation] =
+                        true
+
+                    table.insert(
+                        mutations,
+                        mutation
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(plants, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    table.sort(mutations, function(a, b)
+
+        if a == "Normal" then
+            return true
+        end
+
+        if b == "Normal" then
+            return false
+        end
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return plants,
+        mutations
+end
+
+function HolyFarmDetailsBuildFilterList()
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    local list =
+        ui.FilterList
+
+    if typeof(list) ~= "Instance" then
+        return false
+    end
+
+    for _,
+        child in ipairs(
+            list:GetChildren()
+        ) do
+
+        if child:IsA("TextButton") then
+
+            child:Destroy()
+        end
+    end
+
+    local groups =
+        HolyFarmDetailsBuildGroups()
+
+    local plants,
+        mutations =
+        HolyFarmDetailsGetFilterValues(
+            groups
+        )
+
+    local mode =
+        HOLY_FARM_DETAILS_RUNTIME.FilterMode
+
+    local values =
+        mode == "Mutations"
+        and mutations
+        or plants
+
+    ui.PlantsTab.BackgroundColor3 =
+        mode == "Plants"
+        and Color3.fromRGB(
+            36,
+            13,
+            28
+        )
+        or Color3.fromRGB(
+            12,
+            11,
+            19
+        )
+
+    ui.PlantsTab.TextColor3 =
+        mode == "Plants"
+        and Color3.fromRGB(
+            255,
+            47,
+            104
+        )
+        or Color3.fromRGB(
+            142,
+            149,
+            165
+        )
+
+    ui.MutationsTab.BackgroundColor3 =
+        mode == "Mutations"
+        and Color3.fromRGB(
+            36,
+            13,
+            28
+        )
+        or Color3.fromRGB(
+            12,
+            11,
+            19
+        )
+
+    ui.MutationsTab.TextColor3 =
+        mode == "Mutations"
+        and Color3.fromRGB(
+            255,
+            47,
+            104
+        )
+        or Color3.fromRGB(
+            142,
+            149,
+            165
+        )
+
+    ui.FilterEmpty.Visible =
+        #values <= 0
+
+    ui.FilterEmpty.Text =
+        HOLY_FARM_DETAILS_RUNTIME.SnapshotReady == true
+        and "No filters available."
+        or "Waiting for garden data..."
+
+    local selectedSet =
+        mode == "Mutations"
+        and HOLY_FARM_DETAILS_STATE.SelectedMutations
+        or HOLY_FARM_DETAILS_STATE.SelectedPlants
+
+    for index,
+        value in ipairs(values) do
+
+        local selected =
+            selectedSet[value] == true
+
+        local button =
+            HolyFarmDetailsCreateButton(
+                list,
+                (
+                    selected
+                    and "✓  "
+                    or ""
+                )
+                .. value,
+                UDim2.new(),
+                UDim2.new(
+                    1,
+                    -6,
+                    0,
+                    27
+                )
+            )
+
+        button.LayoutOrder =
+            index
+
+        button.ZIndex =
+            13
+
+        button.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        button.TextSize =
+            10
+
+        button.BackgroundColor3 =
+            selected
+            and Color3.fromRGB(
+                36,
+                13,
+                28
+            )
+            or Color3.fromRGB(
+                12,
+                11,
+                19
+            )
+
+        if mode == "Mutations" then
+
+            local hex =
+                HolyFarmDetailsMutationHex(
+                    value
+                )
+
+            local red,
+                green,
+                blue =
+                hex:match(
+                    "#(%x%x)(%x%x)(%x%x)"
+                )
+
+            if red then
+
+                button.TextColor3 =
+                    Color3.fromRGB(
+                        tonumber(red, 16),
+                        tonumber(green, 16),
+                        tonumber(blue, 16)
+                    )
+            end
+
+        else
+
+            button.TextColor3 =
+                selected
+                and Color3.fromRGB(
+                    255,
+                    47,
+                    104
+                )
+                or Color3.fromRGB(
+                    242,
+                    244,
+                    248
+                )
+        end
+
+        button.MouseButton1Click:Connect(
+            function()
+
+                if selectedSet[value] == true then
+
+                    selectedSet[value] =
+                        nil
+
+                else
+
+                    selectedSet[value] =
+                        true
+                end
+
+                HOLY_FARM_DETAILS_STATE.OverviewPage =
+                    1
+
+                HOLY_FARM_DETAILS_STATE.FruitPage =
+                    1
+
+                HolyFarmDetailsRender()
+
+                HolyFarmDetailsBuildFilterList()
+            end
+        )
+    end
+
+    list.CanvasSize =
+        UDim2.fromOffset(
+            0,
+            math.max(
+                0,
+                #values * 31
+            )
+        )
+
+    return true
+end
+
+function HolyFarmDetailsRender()
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    if typeof(ui.Surface) ~= "Instance" then
+        return false
+    end
+
+    HolyFarmDetailsResetRows()
+
+    local allGroups =
+        HolyFarmDetailsBuildGroups()
+
+    local groups =
+        HolyFarmDetailsGetVisibleGroups(
+            allGroups
+        )
+
+    HolyFarmDetailsSetFilterDescription(
+        groups
+    )
+
+    local selectedPlantCount =
+        HolyFarmDetailsCountSet(
+            HOLY_FARM_DETAILS_STATE.SelectedPlants
+        )
+
+    if selectedPlantCount == 1
+    and #groups == 1 then
+
+        HolyFarmDetailsRenderFruits(
+            groups[1]
+        )
+
+    else
+
+        HolyFarmDetailsRenderOverview(
+            groups
+        )
+    end
+
+    if typeof(ui.FilterPanel) == "Instance"
+    and ui.FilterPanel.Visible == true then
+
+        local signatureParts =
+            {}
+
+        for _,
+            group in ipairs(allGroups) do
+
+            table.insert(
+                signatureParts,
+                group.Name
+                .. ":"
+                .. tostring(
+                    #group.Fruits
+                )
+            )
+        end
+
+        local signature =
+            table.concat(
+                signatureParts,
+                "|"
+            )
+
+        if signature
+            ~= HOLY_FARM_DETAILS_RUNTIME.LastFilterSignature then
+
+            HOLY_FARM_DETAILS_RUNTIME.LastFilterSignature =
+                signature
+
+            HolyFarmDetailsBuildFilterList()
+        end
+    end
+
+    return true
+end
+
+function HolyFarmDetailsCreateSurface()
+
+    local ui =
+        HOLY_FARM_DETAILS_UI
+
+    local surface =
+        Instance.new(
+            "Frame"
+        )
+
+    surface.Name =
+        "HolyFarmDetailsSurface"
+
+    surface.BackgroundTransparency =
+        1
+
+    surface.BorderSizePixel =
+        0
+
+    surface.ClipsDescendants =
+        true
+
+    surface.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            356
+        )
+
+    local function createMetric(
+        index,
+        title,
+        color
+    )
+
+        local card =
+            Instance.new(
+                "Frame"
+            )
+
+        card.BackgroundColor3 =
+            Color3.fromRGB(
+                12,
+                11,
+                19
+            )
+
+        card.BorderSizePixel =
+            0
+
+        card.Position =
+            UDim2.new(
+                (index - 1) / 3,
+                index == 1
+                and 0
+                or 3,
+                0,
+                0
+            )
+
+        card.Size =
+            UDim2.new(
+                1 / 3,
+                -4,
+                0,
+                52
+            )
+
+        card.Parent =
+            surface
+
+        HolyFarmDetailsAddCorner(
+            card,
+            6
+        )
+
+        HolyFarmDetailsAddStroke(
+            card,
+            Color3.fromRGB(
+                42,
+                42,
+                56
+            ),
+            0.30
+        )
+
+        local valueLabel =
+            HolyFarmDetailsCreateLabel(
+                card,
+                title .. "Value",
+                UDim2.fromOffset(
+                    0,
+                    4
+                ),
+                UDim2.new(
+                    1,
+                    0,
+                    0,
+                    27
+                ),
+                16,
+                Enum.TextXAlignment.Center
+            )
+
+        valueLabel.Text =
+            "0"
+
+        valueLabel.TextColor3 =
+            color
+
+        local titleLabel =
+            HolyFarmDetailsCreateLabel(
+                card,
+                title,
+                UDim2.fromOffset(
+                    0,
+                    29
+                ),
+                UDim2.new(
+                    1,
+                    0,
+                    0,
+                    17
+                ),
+                8,
+                Enum.TextXAlignment.Center
+            )
+
+        titleLabel.Text =
+            string.upper(
+                title
+            )
+
+        titleLabel.TextColor3 =
+            Color3.fromRGB(
+                142,
+                149,
+                165
+            )
+
+        return valueLabel
+    end
+
+    ui.PlantsMetric =
+        createMetric(
+            1,
+            "Plants",
+            Color3.fromRGB(
+                242,
+                244,
+                248
+            )
+        )
+
+    ui.FruitsMetric =
+        createMetric(
+            2,
+            "Fruits",
+            Color3.fromRGB(
+                242,
+                244,
+                248
+            )
+        )
+
+    ui.ReadyMetric =
+        createMetric(
+            3,
+            "Ready",
+            Color3.fromRGB(
+                66,
+                235,
+                139
+            )
+        )
+
+    local filterBar =
+        Instance.new(
+            "Frame"
+        )
+
+    filterBar.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            11,
+            19
+        )
+
+    filterBar.BorderSizePixel =
+        0
+
+    filterBar.Position =
+        UDim2.fromOffset(
+            0,
+            58
+        )
+
+    filterBar.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            32
+        )
+
+    filterBar.Parent =
+        surface
+
+    HolyFarmDetailsAddCorner(
+        filterBar,
+        5
+    )
+
+    ui.FilterDescription =
+        HolyFarmDetailsCreateLabel(
+            filterBar,
+            "FilterDescription",
+            UDim2.fromOffset(
+                8,
+                0
+            ),
+            UDim2.new(
+                1,
+                -76,
+                1,
+                0
+            ),
+            9,
+            Enum.TextXAlignment.Left
+        )
+
+    ui.FilterDescription.Text =
+        "Waiting for garden data..."
+
+    ui.FilterDescription.TextColor3 =
+        Color3.fromRGB(
+            142,
+            149,
+            165
+        )
+
+    ui.FilterButton =
+        HolyFarmDetailsCreateButton(
+            filterBar,
+            "FILTERS",
+            UDim2.new(
+                1,
+                -66,
+                0,
+                4
+            ),
+            UDim2.fromOffset(
+                62,
+                24
+            )
+        )
+
+    ui.FilterButton.TextColor3 =
+        Color3.fromRGB(
+            255,
+            47,
+            104
+        )
+
+    local tableHeader =
+        Instance.new(
+            "Frame"
+        )
+
+    tableHeader.BackgroundTransparency =
+        1
+
+    tableHeader.BorderSizePixel =
+        0
+
+    tableHeader.Position =
+        UDim2.fromOffset(
+            5,
+            96
+        )
+
+    tableHeader.Size =
+        UDim2.new(
+            1,
+            -10,
+            0,
+            18
+        )
+
+    tableHeader.Parent =
+        surface
+
+    ui.Header1 =
+        HolyFarmDetailsCreateLabel(
+            tableHeader,
+            "Header1",
+            UDim2.new(),
+            UDim2.new(),
+            8,
+            Enum.TextXAlignment.Left
+        )
+
+    ui.Header2 =
+        HolyFarmDetailsCreateLabel(
+            tableHeader,
+            "Header2",
+            UDim2.new(),
+            UDim2.new(),
+            8,
+            Enum.TextXAlignment.Center
+        )
+
+    ui.Header3 =
+        HolyFarmDetailsCreateLabel(
+            tableHeader,
+            "Header3",
+            UDim2.new(),
+            UDim2.new(),
+            8,
+            Enum.TextXAlignment.Center
+        )
+
+    ui.Header4 =
+        HolyFarmDetailsCreateLabel(
+            tableHeader,
+            "Header4",
+            UDim2.new(),
+            UDim2.new(),
+            8,
+            Enum.TextXAlignment.Right
+        )
+
+    for _,
+        label in ipairs({
+            ui.Header1,
+            ui.Header2,
+            ui.Header3,
+            ui.Header4,
+        }) do
+
+        label.TextColor3 =
+            Color3.fromRGB(
+                142,
+                149,
+                165
+            )
+    end
+
+    ui.Rows =
+        {}
+
+    for index = 1,
+        HOLY_FARM_DETAILS_STATE.RowsPerPage do
+
+        local row =
+            Instance.new(
+                "Frame"
+            )
+
+        row.BackgroundColor3 =
+            Color3.fromRGB(
+                12,
+                11,
+                19
+            )
+
+        row.BackgroundTransparency =
+            index % 2 == 0
+            and 0.08
+            or 0
+
+        row.BorderSizePixel =
+            0
+
+        row.Position =
+            UDim2.fromOffset(
+                0,
+                118
+                + (index - 1) * 34
+            )
+
+        row.Size =
+            UDim2.new(
+                1,
+                0,
+                0,
+                31
+            )
+
+        row.Visible =
+            false
+
+        row.Parent =
+            surface
+
+        HolyFarmDetailsAddCorner(
+            row,
+            4
+        )
+
+        local nameLabel =
+            HolyFarmDetailsCreateLabel(
+                row,
+                "Name",
+                UDim2.new(),
+                UDim2.new(),
+                10,
+                Enum.TextXAlignment.Left
+            )
+
+        nameLabel.RichText =
+            true
+
+        local subLabel =
+            HolyFarmDetailsCreateLabel(
+                row,
+                "Summary",
+                UDim2.new(),
+                UDim2.new(),
+                8,
+                Enum.TextXAlignment.Left
+            )
+
+        subLabel.RichText =
+            true
+
+        subLabel.TextColor3 =
+            Color3.fromRGB(
+                142,
+                149,
+                165
+            )
+
+        local value2 =
+            HolyFarmDetailsCreateLabel(
+                row,
+                "Value2",
+                UDim2.new(),
+                UDim2.new(),
+                9,
+                Enum.TextXAlignment.Center
+            )
+
+        value2.RichText =
+            true
+
+        local value3 =
+            HolyFarmDetailsCreateLabel(
+                row,
+                "Value3",
+                UDim2.new(),
+                UDim2.new(),
+                9,
+                Enum.TextXAlignment.Center
+            )
+
+        value3.RichText =
+            true
+
+        local value4 =
+            HolyFarmDetailsCreateLabel(
+                row,
+                "Value4",
+                UDim2.new(),
+                UDim2.new(),
+                9,
+                Enum.TextXAlignment.Right
+            )
+
+        value4.RichText =
+            true
+
+        ui.Rows[index] = {
+            Frame =
+                row,
+
+            Name =
+                nameLabel,
+
+            Sub =
+                subLabel,
+
+            Value2 =
+                value2,
+
+            Value3 =
+                value3,
+
+            Value4 =
+                value4,
+        }
+    end
+
+    local footer =
+        Instance.new(
+            "Frame"
+        )
+
+    footer.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            11,
+            19
+        )
+
+    footer.BorderSizePixel =
+        0
+
+    footer.Position =
+        UDim2.fromOffset(
+            0,
+            326
+        )
+
+    footer.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            30
+        )
+
+    footer.Parent =
+        surface
+
+    HolyFarmDetailsAddCorner(
+        footer,
+        5
+    )
+
+    HolyFarmDetailsAddStroke(
+        footer,
+        Color3.fromRGB(
+            42,
+            42,
+            56
+        ),
+        0.30
+    )
+
+    ui.BestLabel =
+        HolyFarmDetailsCreateLabel(
+            footer,
+            "Best",
+            UDim2.fromOffset(
+                7,
+                0
+            ),
+            UDim2.new(
+                0.57,
+                -7,
+                1,
+                0
+            ),
+            9,
+            Enum.TextXAlignment.Left
+        )
+
+    ui.BestLabel.RichText =
+        true
+
+    ui.PreviousButton =
+        HolyFarmDetailsCreateButton(
+            footer,
+            "<",
+            UDim2.new(
+                0.58,
+                0,
+                0,
+                3
+            ),
+            UDim2.new(
+                0.10,
+                0,
+                0,
+                24
+            )
+        )
+
+    ui.PageLabel =
+        HolyFarmDetailsCreateLabel(
+            footer,
+            "Page",
+            UDim2.new(
+                0.68,
+                0,
+                0,
+                0
+            ),
+            UDim2.new(
+                0.22,
+                0,
+                1,
+                0
+            ),
+            9,
+            Enum.TextXAlignment.Center
+        )
+
+    ui.PageLabel.TextColor3 =
+        Color3.fromRGB(
+            142,
+            149,
+            165
+        )
+
+    ui.NextButton =
+        HolyFarmDetailsCreateButton(
+            footer,
+            ">",
+            UDim2.new(
+                0.90,
+                0,
+                0,
+                3
+            ),
+            UDim2.new(
+                0.10,
+                0,
+                0,
+                24
+            )
+        )
+
+    local filterPanel =
+        Instance.new(
+            "Frame"
+        )
+
+    filterPanel.BackgroundColor3 =
+        Color3.fromRGB(
+            7,
+            7,
+            12
+        )
+
+    filterPanel.BorderSizePixel =
+        0
+
+    filterPanel.Position =
+        UDim2.fromOffset(
+            0,
+            58
+        )
+
+    filterPanel.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            298
+        )
+
+    filterPanel.Visible =
+        false
+
+    filterPanel.ZIndex =
+        10
+
+    filterPanel.Parent =
+        surface
+
+    HolyFarmDetailsAddCorner(
+        filterPanel,
+        6
+    )
+
+    HolyFarmDetailsAddStroke(
+        filterPanel,
+        Color3.fromRGB(
+            42,
+            42,
+            56
+        ),
+        0
+    )
+
+    local filterTitle =
+        HolyFarmDetailsCreateLabel(
+            filterPanel,
+            "Title",
+            UDim2.fromOffset(
+                8,
+                2
+            ),
+            UDim2.new(
+                1,
+                -16,
+                0,
+                28
+            ),
+            9,
+            Enum.TextXAlignment.Left
+        )
+
+    filterTitle.Text =
+        "FILTERS  ·  None selected = all"
+
+    filterTitle.TextColor3 =
+        Color3.fromRGB(
+            142,
+            149,
+            165
+        )
+
+    filterTitle.ZIndex =
+        12
+
+    ui.PlantsTab =
+        HolyFarmDetailsCreateButton(
+            filterPanel,
+            "PLANTS",
+            UDim2.fromOffset(
+                5,
+                33
+            ),
+            UDim2.new(
+                0.50,
+                -7,
+                0,
+                26
+            )
+        )
+
+    ui.PlantsTab.ZIndex =
+        12
+
+    ui.MutationsTab =
+        HolyFarmDetailsCreateButton(
+            filterPanel,
+            "MUTATIONS",
+            UDim2.new(
+                0.50,
+                2,
+                0,
+                33
+            ),
+            UDim2.new(
+                0.50,
+                -7,
+                0,
+                26
+            )
+        )
+
+    ui.MutationsTab.ZIndex =
+        12
+
+    ui.FilterList =
+        Instance.new(
+            "ScrollingFrame"
+        )
+
+    ui.FilterList.Active =
+        true
+
+    ui.FilterList.BackgroundColor3 =
+        Color3.fromRGB(
+            9,
+            9,
+            15
+        )
+
+    ui.FilterList.BorderSizePixel =
+        0
+
+    ui.FilterList.CanvasSize =
+        UDim2.new()
+
+    ui.FilterList.Position =
+        UDim2.fromOffset(
+            5,
+            64
+        )
+
+    ui.FilterList.ScrollBarImageColor3 =
+        Color3.fromRGB(
+            255,
+            47,
+            104
+        )
+
+    ui.FilterList.ScrollBarThickness =
+        3
+
+    ui.FilterList.Size =
+        UDim2.new(
+            1,
+            -10,
+            0,
+            195
+        )
+
+    ui.FilterList.ZIndex =
+        11
+
+    ui.FilterList.Parent =
+        filterPanel
+
+    HolyFarmDetailsAddCorner(
+        ui.FilterList,
+        5
+    )
+
+    local filterLayout =
+        Instance.new(
+            "UIListLayout"
+        )
+
+    filterLayout.Padding =
+        UDim.new(
+            0,
+            4
+        )
+
+    filterLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    filterLayout.Parent =
+        ui.FilterList
+
+    ui.FilterEmpty =
+        HolyFarmDetailsCreateLabel(
+            filterPanel,
+            "FilterEmpty",
+            UDim2.fromOffset(
+                10,
+                64
+            ),
+            UDim2.new(
+                1,
+                -20,
+                0,
+                195
+            ),
+            9,
+            Enum.TextXAlignment.Center
+        )
+
+    ui.FilterEmpty.TextColor3 =
+        Color3.fromRGB(
+            142,
+            149,
+            165
+        )
+
+    ui.FilterEmpty.ZIndex =
+        12
+
+    ui.ResetButton =
+        HolyFarmDetailsCreateButton(
+            filterPanel,
+            "RESET",
+            UDim2.fromOffset(
+                5,
+                264
+            ),
+            UDim2.new(
+                0.50,
+                -7,
+                0,
+                29
+            )
+        )
+
+    ui.ResetButton.TextColor3 =
+        Color3.fromRGB(
+            255,
+            47,
+            104
+        )
+
+    ui.ResetButton.ZIndex =
+        12
+
+    ui.DoneButton =
+        HolyFarmDetailsCreateButton(
+            filterPanel,
+            "DONE",
+            UDim2.new(
+                0.50,
+                2,
+                0,
+                264
+            ),
+            UDim2.new(
+                0.50,
+                -7,
+                0,
+                29
+            )
+        )
+
+    ui.DoneButton.BackgroundColor3 =
+        Color3.fromRGB(
+            255,
+            47,
+            104
+        )
+
+    ui.DoneButton.ZIndex =
+        12
+
+    ui.Surface =
+        surface
+
+    ui.FilterPanel =
+        filterPanel
+
+    ui.FilterButton.MouseButton1Click:Connect(
+        function()
+
+            filterPanel.Visible =
+                not filterPanel.Visible
+
+            if filterPanel.Visible == true then
+
+                HOLY_FARM_DETAILS_RUNTIME.LastFilterSignature =
+                    nil
+
+                HolyFarmDetailsBuildFilterList()
+            end
+        end
+    )
+
+    ui.PlantsTab.MouseButton1Click:Connect(
+        function()
+
+            HOLY_FARM_DETAILS_RUNTIME.FilterMode =
+                "Plants"
+
+            HolyFarmDetailsBuildFilterList()
+        end
+    )
+
+    ui.MutationsTab.MouseButton1Click:Connect(
+        function()
+
+            HOLY_FARM_DETAILS_RUNTIME.FilterMode =
+                "Mutations"
+
+            HolyFarmDetailsBuildFilterList()
+        end
+    )
+
+    ui.ResetButton.MouseButton1Click:Connect(
+        function()
+
+            table.clear(
+                HOLY_FARM_DETAILS_STATE.SelectedPlants
+            )
+
+            table.clear(
+                HOLY_FARM_DETAILS_STATE.SelectedMutations
+            )
+
+            HOLY_FARM_DETAILS_STATE.OverviewPage =
+                1
+
+            HOLY_FARM_DETAILS_STATE.FruitPage =
+                1
+
+            HolyFarmDetailsRender()
+
+            HolyFarmDetailsBuildFilterList()
+        end
+    )
+
+    ui.DoneButton.MouseButton1Click:Connect(
+        function()
+
+            filterPanel.Visible =
+                false
+        end
+    )
+
+    ui.PreviousButton.MouseButton1Click:Connect(
+        function()
+
+            local runtime =
+                HOLY_FARM_DETAILS_RUNTIME
+
+            if runtime.CurrentMode == "Fruits" then
+
+                if HOLY_FARM_DETAILS_STATE.FruitPage > 1 then
+
+                    HOLY_FARM_DETAILS_STATE.FruitPage -=
+                        1
+
+                    HolyFarmDetailsRender()
+                end
+
+            elseif HOLY_FARM_DETAILS_STATE.OverviewPage > 1 then
+
+                HOLY_FARM_DETAILS_STATE.OverviewPage -=
+                    1
+
+                HolyFarmDetailsRender()
+            end
+        end
+    )
+
+    ui.NextButton.MouseButton1Click:Connect(
+        function()
+
+            local runtime =
+                HOLY_FARM_DETAILS_RUNTIME
+
+            if runtime.CurrentMode == "Fruits" then
+
+                if HOLY_FARM_DETAILS_STATE.FruitPage
+                    < runtime.CurrentPageCount then
+
+                    HOLY_FARM_DETAILS_STATE.FruitPage +=
+                        1
+
+                    HolyFarmDetailsRender()
+                end
+
+            elseif HOLY_FARM_DETAILS_STATE.OverviewPage
+                < runtime.CurrentPageCount then
+
+                HOLY_FARM_DETAILS_STATE.OverviewPage +=
+                    1
+
+                HolyFarmDetailsRender()
+            end
+        end
+    )
+
+    HolyFarmDetailsRender()
+
+    return surface
+end
+
+function HolyFarmDetailsBuildMainUI(groupbox)
+
+    local surface =
+        HolyFarmDetailsCreateSurface()
+
+    HOLY_FARM_DETAILS_UI.Passthrough =
+        groupbox:AddUIPassthrough(
+            "HolyMainFarmDetailsSurface",
+            {
+                Instance =
+                    surface,
+
+                Height =
+                    356,
+
+                Visible =
+                    true,
+            }
+        )
+
+    HolyFarmDetailsRender()
+
+    return true
+end
+
+function HolyFarmDetailsStart()
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    if runtime.Running == true then
+        return false
+    end
+
+    runtime.Running =
+        true
+
+    runtime.Token =
+        {}
+
+    local token =
+        runtime.Token
+
+    runtime.Status =
+        "Loading"
+
+    if HolyFarmDetailsConnectEvents() == true then
+
+        HolyFarmDetailsRequestSnapshot()
+
+    else
+
+        runtime.Status =
+            "Unavailable"
+
+        HolyFarmDetailsScheduleRender()
+    end
+
+    task.spawn(function()
+
+        while runtime.Token == token do
+
+            if runtime.EventsConnected ~= true
+            and os.clock()
+                - (
+                    tonumber(runtime.LastRequestAt)
+                    or 0
+                )
+                >= 5 then
+
+                if HolyFarmDetailsConnectEvents() == true then
+
+                    HolyFarmDetailsRequestSnapshot()
+                end
+
+            elseif runtime.SnapshotReady ~= true
+            and os.clock()
+                - (
+                    tonumber(runtime.LastRequestAt)
+                    or 0
+                )
+                >= 5 then
+
+                HolyFarmDetailsRequestSnapshot()
+            end
+
+            HolyFarmDetailsRender()
+
+            task.wait(
+                1
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyFarmDetailsStop(reason)
+
+    local runtime =
+        HOLY_FARM_DETAILS_RUNTIME
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    HolyFarmDetailsDisconnect()
+
+    return true
+end
+
+
 function HolySniperAutoHopReset(reason)
 
     HOLY_SNIPER_RUNTIME.NoMatchSince =
@@ -80060,6 +84271,14 @@ local MainPetInventoryBox =
         "panda"
     )
 
+local MainFarmDetailsBox =
+    HolyAddRightGroupbox(
+        Tabs.Main,
+        "Main.FarmDetails",
+        "Farm Details",
+        "sprout"
+    )
+
 local ServerControlsBox =
     HolyAddLeftGroupbox(
         Tabs.Server,
@@ -89078,6 +93297,10 @@ HOLY_PET_INVENTORY_UI.List =
         }
     )
 
+HolyFarmDetailsBuildMainUI(
+    MainFarmDetailsBox
+)
+
 HolyMoonBuildMainUI(
     MainMoonPredictorBox
 )
@@ -89092,6 +93315,8 @@ HolyPetInventoryRefreshUI(
 )
 
 HolyPetInventoryStart()
+
+HolyFarmDetailsStart()
 
 HolyServerFinderStartReporter()
 
