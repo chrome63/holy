@@ -33619,21 +33619,24 @@ function HolyFarmDetailsCreateLabel(
         size
 
     label.Font =
-        Enum.Font.GothamMedium
+        Enum.Font.GothamBold
 
     label.Text =
         ""
 
     label.TextColor3 =
         Color3.fromRGB(
-            244,
             245,
-            248
+            246,
+            249
         )
 
     label.TextSize =
         textSize
-        or 11
+        or 12
+
+    label.TextScaled =
+        false
 
     label.TextTransparency =
         0
@@ -34089,34 +34092,49 @@ function HolyFarmDetailsApplyCleanStyle(
             )
 
             row.Name.Font =
-                Enum.Font.GothamMedium
+                Enum.Font.GothamBold
 
             row.Name.TextSize =
-                11
+                12
+
+            row.Name.TextScaled =
+                false
 
             row.Sub.Font =
                 Enum.Font.GothamMedium
 
             row.Sub.TextSize =
-                9
+                10
+
+            row.Sub.TextScaled =
+                false
 
             row.Value2.Font =
                 Enum.Font.GothamBold
 
             row.Value2.TextSize =
-                10
+                11
+
+            row.Value2.TextScaled =
+                false
 
             row.Value3.Font =
                 Enum.Font.GothamBold
 
             row.Value3.TextSize =
-                10
+                11
+
+            row.Value3.TextScaled =
+                false
 
             row.Value4.Font =
                 Enum.Font.GothamBold
 
             row.Value4.TextSize =
-                10
+                11
+
+            row.Value4.TextScaled =
+                false
         end
     end
 
@@ -34133,7 +34151,10 @@ function HolyFarmDetailsApplyCleanStyle(
                 Enum.Font.GothamBold
 
             metric.TextSize =
-                16
+                18
+
+            metric.TextScaled =
+                false
         end
     end
 
@@ -34156,13 +34177,16 @@ function HolyFarmDetailsApplyCleanStyle(
                         Enum.Font.GothamBold
 
                     child.TextSize =
-                        9
+                        10
+
+                    child.TextScaled =
+                        false
 
                     child.TextColor3 =
                         Color3.fromRGB(
-                            145,
-                            151,
-                            164
+                            156,
+                            162,
+                            175
                         )
                 end
             end
@@ -34195,13 +34219,16 @@ function HolyFarmDetailsApplyCleanStyle(
             Enum.Font.GothamMedium
 
         ui.FilterDescription.TextSize =
-            10
+            11
+
+        ui.FilterDescription.TextScaled =
+            false
 
         ui.FilterDescription.TextColor3 =
             Color3.fromRGB(
-                158,
-                164,
-                177
+                166,
+                172,
+                185
             )
     end
 
@@ -34214,7 +34241,10 @@ function HolyFarmDetailsApplyCleanStyle(
             Enum.Font.GothamBold
 
         ui.FilterButton.TextSize =
-            10
+            11
+
+        ui.FilterButton.TextScaled =
+            false
 
         ui.FilterButton.TextColor3 =
             Color3.fromRGB(
@@ -34238,13 +34268,16 @@ function HolyFarmDetailsApplyCleanStyle(
                 Enum.Font.GothamBold
 
             header.TextSize =
-                9
+                10
+
+            header.TextScaled =
+                false
 
             header.TextColor3 =
                 Color3.fromRGB(
-                    150,
-                    156,
-                    169
+                    160,
+                    166,
+                    179
                 )
         end
     end
@@ -34272,19 +34305,25 @@ function HolyFarmDetailsApplyCleanStyle(
     if typeof(ui.BestLabel) == "Instance" then
 
         ui.BestLabel.Font =
-            Enum.Font.GothamMedium
+            Enum.Font.GothamBold
 
         ui.BestLabel.TextSize =
-            10
+            11
+
+        ui.BestLabel.TextScaled =
+            false
     end
 
     if typeof(ui.PageLabel) == "Instance" then
 
         ui.PageLabel.Font =
-            Enum.Font.GothamMedium
+            Enum.Font.GothamBold
 
         ui.PageLabel.TextSize =
-            10
+            11
+
+        ui.PageLabel.TextScaled =
+            false
     end
 
     if typeof(ui.PreviousButton) == "Instance" then
@@ -34292,8 +34331,14 @@ function HolyFarmDetailsApplyCleanStyle(
         ui.PreviousButton.BackgroundTransparency =
             1
 
+        ui.PreviousButton.Font =
+            Enum.Font.GothamBold
+
         ui.PreviousButton.TextSize =
-            12
+            14
+
+        ui.PreviousButton.TextScaled =
+            false
     end
 
     if typeof(ui.NextButton) == "Instance" then
@@ -34301,8 +34346,14 @@ function HolyFarmDetailsApplyCleanStyle(
         ui.NextButton.BackgroundTransparency =
             1
 
+        ui.NextButton.Font =
+            Enum.Font.GothamBold
+
         ui.NextButton.TextSize =
-            12
+            14
+
+        ui.NextButton.TextScaled =
+            false
     end
 
     if typeof(ui.FilterPanel) == "Instance" then
@@ -34715,34 +34766,74 @@ function HolyFarmDetailsSetBest(fruit)
     or tonumber(fruit.Weight) == nil then
 
         label.Text =
-            '<font color="#8E95A5">Best: —</font>'
+            '<font color="#969CAB">Best: —</font>'
 
         return
     end
 
-    local primaryMutation =
-        fruit.Mutations
-        and fruit.Mutations[1]
-        or "Normal"
+    local plantName =
+        HolyFarmDetailsCleanName(
+            fruit.PlantName
+            or "Unknown"
+        )
+
+    if plantName == "" then
+
+        plantName =
+            "Unknown"
+    end
+
+    local mutationParts =
+        {}
+
+    for _,
+        mutation in ipairs(
+            fruit.Mutations
+            or {
+                "Normal",
+            }
+        ) do
+
+        table.insert(
+            mutationParts,
+            '<font color="'
+            .. HolyFarmDetailsMutationHex(
+                mutation
+            )
+            .. '">'
+            .. HolyFarmDetailsEscape(
+                mutation
+            )
+            .. "</font>"
+        )
+    end
+
+    if #mutationParts <= 0 then
+
+        mutationParts[1] =
+            '<font color="#DCDDE6">Normal</font>'
+    end
 
     label.Text =
-        '<font color="#8E95A5">Best: </font>'
-        .. '<font color="'
-        .. HolyFarmDetailsMutationHex(
-            primaryMutation
-        )
-        .. '">'
+        '<font color="#969CAB">Best: </font>'
+        .. '<font color="#F5F6F9"><b>'
         .. HolyFarmDetailsEscape(
-            primaryMutation
+            plantName
         )
-        .. "</font> "
-        .. '<font color="#42EB8B">'
+        .. "</b></font>"
+        .. '<font color="#707684"> · </font>'
+        .. table.concat(
+            mutationParts,
+            '<font color="#707684"> + </font>'
+        )
+        .. '<font color="#707684"> · </font>'
+        .. '<font color="#42EB8B"><b>'
         .. HolyFarmDetailsEscape(
             HolyFarmDetailsFormatKg(
                 fruit.Weight
             )
         )
-        .. "</font>"
+        .. "</b></font>"
 end
 
 function HolyFarmDetailsRenderOverview(
@@ -36133,12 +36224,12 @@ function HolyFarmDetailsCreateSurface()
                 0
             ),
             UDim2.new(
-                0.57,
+                0.69,
                 -7,
                 1,
                 0
             ),
-            9,
+            11,
             Enum.TextXAlignment.Left
         )
 
@@ -36148,15 +36239,15 @@ function HolyFarmDetailsCreateSurface()
     ui.PreviousButton =
         HolyFarmDetailsCreateButton(
             footer,
-            "<",
+            "‹",
             UDim2.new(
-                0.58,
+                0.70,
                 0,
                 0,
                 3
             ),
             UDim2.new(
-                0.10,
+                0.07,
                 0,
                 0,
                 24
@@ -36168,40 +36259,40 @@ function HolyFarmDetailsCreateSurface()
             footer,
             "Page",
             UDim2.new(
-                0.68,
+                0.77,
                 0,
                 0,
                 0
             ),
             UDim2.new(
-                0.22,
+                0.16,
                 0,
                 1,
                 0
             ),
-            9,
+            11,
             Enum.TextXAlignment.Center
         )
 
     ui.PageLabel.TextColor3 =
         Color3.fromRGB(
-            142,
-            149,
-            165
+            156,
+            162,
+            175
         )
 
     ui.NextButton =
         HolyFarmDetailsCreateButton(
             footer,
-            ">",
+            "›",
             UDim2.new(
-                0.90,
+                0.93,
                 0,
                 0,
                 3
             ),
             UDim2.new(
-                0.10,
+                0.07,
                 0,
                 0,
                 24
