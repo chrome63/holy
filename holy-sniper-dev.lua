@@ -458,6 +458,8 @@ HOLY_DEV_UI_STATE = {
     AntiAfk = true,
     AutoFarmMiddle = true,
 
+    LowEndMode = false,
+
     PerformanceMode = false,
 
     UnloadOtherGardens = false,
@@ -653,6 +655,12 @@ HOLY_PERFORMANCE_STATE = {
 }
 
 HOLY_PERFORMANCE_UI = {}
+
+function HolyLowEndModeEnabled()
+
+    return type(HOLY_DEV_UI_STATE) == "table"
+        and HOLY_DEV_UI_STATE.LowEndMode == true
+end
 
 if type(getgenv().HOLY_SprinklerESPStop) == "function" then
 
@@ -2343,6 +2351,9 @@ function HolySaveUISettings()
         AutoFarmMiddle =
             HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
 
+        LowEndMode =
+            HOLY_DEV_UI_STATE.LowEndMode == true,
+
         PerformanceMode =
             HOLY_DEV_UI_STATE.PerformanceMode == true,
 
@@ -2536,6 +2547,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.AutoFarmMiddle =
             data.AutoFarmMiddle
+    end
+
+    if type(data.LowEndMode) == "boolean" then
+
+        HOLY_DEV_UI_STATE.LowEndMode =
+            data.LowEndMode
     end
 
     if type(data.PerformanceMode) == "boolean" then
@@ -10379,10 +10396,15 @@ end
 
 function HolyProFarmReadCollectionDelay(value)
 
+    local minimumDelay =
+        HolyLowEndModeEnabled() == true
+        and 0.10
+        or 0.035
+
     return math.clamp(
         tonumber(value)
         or 0.05,
-        0.035,
+        minimumDelay,
         1
     )
 end
@@ -10732,8 +10754,20 @@ function HolyProFarmSendNewTarget(token, packet)
         return false
     end
 
+    local maximumPending =
+        runtime.MaxPending
+
+    if HolyLowEndModeEnabled() == true then
+
+        maximumPending =
+            math.min(
+                maximumPending,
+                4
+            )
+    end
+
     if HolyProFarmGetPendingCount()
-        >= runtime.MaxPending then
+        >= maximumPending then
 
         return false
     end
@@ -10806,10 +10840,6 @@ function HolyProFarmPipelineStep(token)
 
     local runtime =
         HolyProFarmEnsureRuntime()
-
-    HolyProFarmProcessPending(
-        token
-    )
 
     if runtime.Token ~= token
     or HOLY_FARM_STATE.ProFruitCollector ~= true then
@@ -10937,7 +10967,9 @@ function HolyProFarmRunWorker(token)
         )
 
         task.wait(
-            0.01
+            HolyLowEndModeEnabled() == true
+            and 0.04
+            or 0.01
         )
     end
 
@@ -31094,11 +31126,23 @@ function HolyLivePetsStart()
     HOLY_LIVE_PETS_RUNTIME.Running =
         true
 
+    HOLY_LIVE_PETS_RUNTIME.RefreshQueued =
+        true
+
+    HOLY_LIVE_PETS_RUNTIME.LastRefreshAt =
+        0
+
     local token =
         {}
 
     HOLY_LIVE_PETS_RUNTIME.Token =
         token
+
+    local function queueRefresh()
+
+        HOLY_LIVE_PETS_RUNTIME.RefreshQueued =
+            true
+    end
 
     local function connectRoot(root)
 
@@ -31108,22 +31152,16 @@ function HolyLivePetsStart()
 
         table.insert(
             HOLY_LIVE_PETS_RUNTIME.Connections,
-            root.ChildAdded:Connect(function()
-
-                task.defer(
-                    HolyLivePetsRefreshUI
-                )
-            end)
+            root.ChildAdded:Connect(
+                queueRefresh
+            )
         )
 
         table.insert(
             HOLY_LIVE_PETS_RUNTIME.Connections,
-            root.ChildRemoved:Connect(function()
-
-                task.defer(
-                    HolyLivePetsRefreshUI
-                )
-            end)
+            root.ChildRemoved:Connect(
+                queueRefresh
+            )
         )
     end
 
@@ -31139,10 +31177,54 @@ function HolyLivePetsStart()
 
         while HOLY_LIVE_PETS_RUNTIME.Token == token do
 
-            HolyLivePetsRefreshUI()
+            local lowEnd =
+                HolyLowEndModeEnabled()
+
+            local periodicInterval =
+                lowEnd == true
+                and 1
+                or 0.35
+
+            local eventInterval =
+                lowEnd == true
+                and 0.75
+                or 0.25
+
+            local now =
+                os.clock()
+
+            local elapsed =
+                now
+                - (
+                    tonumber(
+                        HOLY_LIVE_PETS_RUNTIME.LastRefreshAt
+                    )
+                    or 0
+                )
+
+            local eventReady =
+                HOLY_LIVE_PETS_RUNTIME.RefreshQueued == true
+                and elapsed >= eventInterval
+
+            local periodicReady =
+                elapsed >= periodicInterval
+
+            if eventReady
+            or periodicReady then
+
+                HOLY_LIVE_PETS_RUNTIME.RefreshQueued =
+                    false
+
+                HOLY_LIVE_PETS_RUNTIME.LastRefreshAt =
+                    now
+
+                HolyLivePetsRefreshUI()
+            end
 
             task.wait(
-                0.35
+                lowEnd == true
+                and 0.25
+                or 0.10
             )
         end
 
@@ -31652,6 +31734,15 @@ function HolyPetInventoryRefreshUI(force)
     local rows =
         HolyPetInventoryScanRows()
 
+    HOLY_PET_INVENTORY_RUNTIME.LastRows =
+        rows
+
+    HOLY_PET_INVENTORY_RUNTIME.LastRefreshAt =
+        os.clock()
+
+    HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
+        false
+
     local list =
         HOLY_PET_INVENTORY_UI.List
 
@@ -31744,22 +31835,38 @@ function HolyPetInventoryRefreshUI(force)
     return rows
 end
 
-function HolyPetInventoryScheduleRefresh()
+function HolyPetInventoryIsPetTool(instance)
 
-    if HOLY_PET_INVENTORY_RUNTIME.RefreshQueued == true then
-        return
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("Tool") ~= true then
+
+        return false
     end
+
+    local petName =
+        HolyCleanText(
+            instance:GetAttribute(
+                "Pet"
+            )
+            or ""
+        )
+
+    local petId =
+        HolyCleanText(
+            instance:GetAttribute(
+                "PetId"
+            )
+            or ""
+        )
+
+    return petName ~= ""
+        and petId ~= ""
+end
+
+function HolyPetInventoryScheduleRefresh()
 
     HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
         true
-
-    task.defer(function()
-
-        HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
-            false
-
-        HolyPetInventoryRefreshUI()
-    end)
 end
 
 function HolyPetInventoryDisconnect()
@@ -31841,7 +31948,9 @@ function HolyPetInventoryStart()
         addConnection(
             root.ChildAdded:Connect(function(child)
 
-                if child:IsA("Tool") then
+                if HolyPetInventoryIsPetTool(
+                    child
+                ) == true then
 
                     HolyPetInventoryScheduleRefresh()
                 end
@@ -31851,7 +31960,9 @@ function HolyPetInventoryStart()
         addConnection(
             root.ChildRemoved:Connect(function(child)
 
-                if child:IsA("Tool") then
+                if HolyPetInventoryIsPetTool(
+                    child
+                ) == true then
 
                     HolyPetInventoryScheduleRefresh()
                 end
@@ -31906,23 +32017,64 @@ function HolyPetInventoryStart()
         )
     end
 
+    HOLY_PET_INVENTORY_RUNTIME.LastRefreshAt =
+        0
+
+    HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
+        true
+
+    HolyPetInventoryRefreshUI(
+        true
+    )
+
     task.spawn(function()
 
         while HOLY_PET_INVENTORY_RUNTIME.Token == token do
 
             connectCurrentRoots()
 
-            HolyPetInventoryRefreshUI()
+            local lowEnd =
+                HolyLowEndModeEnabled()
+
+            local dirtyInterval =
+                lowEnd == true
+                and 0.75
+                or 0.15
+
+            local safetyInterval =
+                lowEnd == true
+                and 15
+                or 5
+
+            local elapsed =
+                os.clock()
+                - (
+                    tonumber(
+                        HOLY_PET_INVENTORY_RUNTIME.LastRefreshAt
+                    )
+                    or 0
+                )
+
+            local dirtyReady =
+                HOLY_PET_INVENTORY_RUNTIME.RefreshQueued == true
+                and elapsed >= dirtyInterval
+
+            local safetyReady =
+                elapsed >= safetyInterval
+
+            if dirtyReady
+            or safetyReady then
+
+                HolyPetInventoryRefreshUI()
+            end
 
             task.wait(
-                0.75
+                lowEnd == true
+                and 0.25
+                or 0.10
             )
         end
     end)
-
-    HolyPetInventoryRefreshUI(
-        true
-    )
 
     return true
 end
@@ -32012,6 +32164,9 @@ HOLY_FARM_DETAILS_RUNTIME = {
 
     RefreshQueued =
         false,
+
+    LastRenderAt =
+        0,
 
     FilterMode =
         "Plants",
@@ -32968,26 +33123,8 @@ end
 
 function HolyFarmDetailsScheduleRender()
 
-    local runtime =
-        HOLY_FARM_DETAILS_RUNTIME
-
-    if runtime.RefreshQueued == true then
-        return
-    end
-
-    runtime.RefreshQueued =
+    HOLY_FARM_DETAILS_RUNTIME.RefreshQueued =
         true
-
-    task.defer(function()
-
-        runtime.RefreshQueued =
-            false
-
-        if type(HolyFarmDetailsRender) == "function" then
-
-            HolyFarmDetailsRender()
-        end
-    end)
 end
 
 function HolyFarmDetailsGetGardenNetworking()
@@ -35603,6 +35740,12 @@ function HolyFarmDetailsRender()
         return false
     end
 
+    HOLY_FARM_DETAILS_RUNTIME.LastRenderAt =
+        os.clock()
+
+    HOLY_FARM_DETAILS_RUNTIME.RefreshQueued =
+        false
+
     HolyFarmDetailsResetRows()
 
     local allGroups =
@@ -36776,8 +36919,11 @@ function HolyFarmDetailsStart()
 
         while runtime.Token == token do
 
+            local now =
+                os.clock()
+
             if runtime.EventsConnected ~= true
-            and os.clock()
+            and now
                 - (
                     tonumber(runtime.LastRequestAt)
                     or 0
@@ -36790,7 +36936,7 @@ function HolyFarmDetailsStart()
                 end
 
             elseif runtime.SnapshotReady ~= true
-            and os.clock()
+            and now
                 - (
                     tonumber(runtime.LastRequestAt)
                     or 0
@@ -36800,10 +36946,49 @@ function HolyFarmDetailsStart()
                 HolyFarmDetailsRequestSnapshot()
             end
 
-            HolyFarmDetailsRender()
+            local lowEnd =
+                HolyLowEndModeEnabled()
+
+            local dirtyInterval =
+                lowEnd == true
+                and 1.25
+                or 0.50
+
+            local safetyInterval =
+                lowEnd == true
+                and 5
+                or 1
+
+            local elapsed =
+                now
+                - (
+                    tonumber(runtime.LastRenderAt)
+                    or 0
+                )
+
+            local dirtyReady =
+                runtime.RefreshQueued == true
+                and elapsed >= dirtyInterval
+
+            local safetyReady =
+                elapsed >= safetyInterval
+
+            if dirtyReady
+            or safetyReady then
+
+                runtime.RefreshQueued =
+                    false
+
+                runtime.LastRenderAt =
+                    now
+
+                HolyFarmDetailsRender()
+            end
 
             task.wait(
-                1
+                lowEnd == true
+                and 0.25
+                or 0.10
             )
         end
     end)
@@ -73780,8 +73965,8 @@ Library:SetAnimations(
         ToggleWindow = false,
 
         TabSwitch =
-            HOLY_DEV_UI_STATE.InterfaceAnimations
-            ~= false,
+            HOLY_DEV_UI_STATE.InterfaceAnimations ~= false
+            and HolyLowEndModeEnabled() ~= true,
 
         Groupbox = false,
         Dropdown = false,
@@ -93997,12 +94182,7 @@ HolyMoonBuildMainUI(
 
 HolyMoonStart()
 
-HolyLivePetsRefreshUI()
 HolyLivePetsStart()
-
-HolyPetInventoryRefreshUI(
-    true
-)
 
 HolyPetInventoryStart()
 
@@ -102110,6 +102290,66 @@ SettingsUIBox:AddToggle(
 
     HOLY_DEV_UI_STATE.ShowHolyLoadingScreen =
         value == true
+
+    HolySaveUISettings()
+end)
+
+SettingsPerformanceBox:AddToggle(
+    "HolyLowEndMode",
+    {
+        Text =
+            "Low End Mode",
+
+        Default =
+            HOLY_DEV_UI_STATE.LowEndMode == true,
+
+        Tooltip =
+            "Reduces client script workload by throttling the collector worker, coalescing Farm Details updates, making Pet Inventory event-driven, lowering Live Wild Pets refresh speed, and disabling interface animations. Does not delete your Backpack, garden, tools, or models.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.LowEndMode =
+        value == true
+
+    Library:SetAnimations(
+        {
+            ToggleWindow = false,
+
+            TabSwitch =
+                HOLY_DEV_UI_STATE.InterfaceAnimations ~= false
+                and HOLY_DEV_UI_STATE.LowEndMode ~= true,
+
+            Groupbox = false,
+            Dropdown = false,
+            KeyPicker = false,
+        },
+        0.16,
+        12,
+        "bottom"
+    )
+
+    if type(HOLY_PET_INVENTORY_RUNTIME) == "table" then
+
+        HOLY_PET_INVENTORY_RUNTIME.RefreshQueued =
+            true
+    end
+
+    if type(HOLY_LIVE_PETS_RUNTIME) == "table" then
+
+        HOLY_LIVE_PETS_RUNTIME.RefreshQueued =
+            true
+    end
+
+    if type(HolyFarmDetailsScheduleRender) == "function" then
+
+        HolyFarmDetailsScheduleRender()
+    end
+
+    HolyPerformanceSetStatus(
+        value == true
+        and "Low End Mode enabled."
+        or "Low End Mode disabled."
+    )
 
     HolySaveUISettings()
 end)
