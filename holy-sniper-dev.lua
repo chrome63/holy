@@ -45660,7 +45660,7 @@ function HolyAuctionHudCreateUI()
     local miniTitle =
         HolyAuctionHudLabel(
             miniButton,
-            "Auction Live",
+            "Auction HUD",
             37,
             0,
             76,
@@ -74335,9 +74335,7 @@ HOLY_MOON_PREDICTOR_RUNTIME = {
 
     HudScreenGui = nil,
     HudHolder = nil,
-    HudHeader = nil,
-    HudCurrentIcon = nil,
-    HudCurrentLabel = nil,
+    HudCurrentCard = nil,
     HudEmptyLabel = nil,
 
     Stop = nil,
@@ -76851,13 +76849,7 @@ function HolyMoonHudDestroy()
     runtime.HudHolder =
         nil
 
-    runtime.HudHeader =
-        nil
-
-    runtime.HudCurrentIcon =
-        nil
-
-    runtime.HudCurrentLabel =
+    runtime.HudCurrentCard =
         nil
 
     runtime.HudEmptyLabel =
@@ -76953,11 +76945,11 @@ function HolyMoonHudReadPosition()
     return UDim2.fromOffset(
         math.max(
             12,
-            viewport.X - 432
+            viewport.X - 513
         ),
         math.max(
             12,
-            viewport.Y - 190
+            viewport.Y - 165
         )
     )
 end
@@ -76981,11 +76973,11 @@ function HolyMoonHudClampHolder()
         holder.AbsoluteSize.Y
 
     if width <= 0 then
-        width = 420
+        width = 501
     end
 
     if height <= 0 then
-        height = 112
+        height = 87
     end
 
     local x =
@@ -77321,7 +77313,9 @@ function HolyMoonHudRender()
         )
 
     if activeWeather == "" then
-        activeWeather = "Unknown"
+
+        activeWeather =
+            "Unknown"
     end
 
     local now =
@@ -77351,40 +77345,44 @@ function HolyMoonHudRender()
             currentData
         )
 
-    if typeof(runtime.HudCurrentLabel) == "Instance" then
+    local currentCard =
+        runtime.HudCurrentCard
 
-        runtime.HudCurrentLabel.Text =
-            '<font color="rgb(226,232,240)"><b>Current:</b></font> '
-            .. '<font color="'
-            .. HolyMoonRichColor(currentColor)
-            .. '"><b>'
-            .. HolyMoonEscape(
-                HolyMoonDisplayName(
-                    activeWeather
-                )
+    if type(currentCard) == "table"
+    and typeof(currentCard.Frame) == "Instance" then
+
+        currentCard.Frame.Visible =
+            true
+
+        currentCard.Name.Text =
+            HolyMoonDisplayName(
+                activeWeather
             )
-            .. '</b></font> '
-            .. '<font color="rgb(148,163,184)">· '
-            .. HolyMoonFormatSeconds(
+
+        currentCard.Name.TextColor3 =
+            currentColor
+
+        currentCard.Timer.Text =
+            HolyMoonFormatSeconds(
                 math.max(
                     0,
                     phaseEnd - now
                 )
             )
-            .. ' left</font>'
-    end
-
-    if typeof(runtime.HudCurrentIcon) == "Instance" then
+            .. " left"
 
         local currentImage =
             type(currentData) == "table"
-            and tostring(currentData.Image or "")
+            and tostring(
+                currentData.Image
+                or ""
+            )
             or ""
 
-        runtime.HudCurrentIcon.Image =
+        currentCard.Icon.Image =
             currentImage
 
-        runtime.HudCurrentIcon.Visible =
+        currentCard.Icon.Visible =
             currentImage ~= ""
     end
 
@@ -77430,15 +77428,27 @@ function HolyMoonHudRender()
                         weatherData
                     )
 
+                local startsAt =
+                    tonumber(
+                        prediction.StartsAt
+                    )
+                    or now
+
                 card.Timer.Text =
-                    HolyMoonFormatSeconds(
-                        tonumber(prediction.StartsAt)
-                        - now
+                    "in "
+                    .. HolyMoonFormatSeconds(
+                        math.max(
+                            0,
+                            startsAt - now
+                        )
                     )
 
                 local image =
                     type(weatherData) == "table"
-                    and tostring(weatherData.Image or "")
+                    and tostring(
+                        weatherData.Image
+                        or ""
+                    )
                     or ""
 
                 card.Icon.Image =
@@ -77480,6 +77490,7 @@ function HolyMoonHudCreate()
         HOLY_MOON_PREDICTOR_RUNTIME
 
     if state.HudEnabled ~= true then
+
         return false
     end
 
@@ -77548,8 +77559,8 @@ function HolyMoonHudCreate()
 
     holder.Size =
         UDim2.fromOffset(
-            420,
-            112
+            501,
+            87
         )
 
     holder.Parent =
@@ -77584,6 +77595,9 @@ function HolyMoonHudCreate()
             58
         )
 
+    holderStroke.LineJoinMode =
+        Enum.LineJoinMode.Round
+
     holderStroke.Transparency =
         0.10
 
@@ -77593,132 +77607,10 @@ function HolyMoonHudCreate()
     holderStroke.Parent =
         holder
 
-    local header =
-        Instance.new(
-            "Frame"
-        )
-
-    header.Name =
-        "DragHeader"
-
-    header.Active =
-        true
-
-    header.BackgroundColor3 =
-        Color3.fromRGB(
-            11,
-            12,
-            17
-        )
-
-    header.BackgroundTransparency =
-        0.08
-
-    header.BorderSizePixel =
-        0
-
-    header.Position =
-        UDim2.fromOffset(
-            0,
-            2
-        )
-
-    header.Size =
-        UDim2.new(
-            1,
-            0,
-            0,
-            28
-        )
-
-    header.Parent =
-        holder
-
-    local currentIcon =
-        Instance.new(
-            "ImageLabel"
-        )
-
-    currentIcon.BackgroundTransparency =
-        1
-
-    currentIcon.Position =
-        UDim2.fromOffset(
-            8,
-            4
-        )
-
-    currentIcon.Size =
-        UDim2.fromOffset(
-            20,
-            20
-        )
-
-    currentIcon.ScaleType =
-        Enum.ScaleType.Fit
-
-    currentIcon.ZIndex =
-        3
-
-    currentIcon.Parent =
-        header
-
-    local currentLabel =
-        Instance.new(
-            "TextLabel"
-        )
-
-    currentLabel.BackgroundTransparency =
-        1
-
-    currentLabel.Position =
-        UDim2.fromOffset(
-            34,
-            0
-        )
-
-    currentLabel.Size =
-        UDim2.new(
-            1,
-            -42,
-            1,
-            0
-        )
-
-    currentLabel.FontFace =
-        Library.Scheme.Font
-
-    currentLabel.RichText =
-        true
-
-    currentLabel.Text =
-        "Current: Loading..."
-
-    currentLabel.TextColor3 =
-        Library.Scheme.FontColor
-
-    currentLabel.TextSize =
-        11
-
-    currentLabel.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    currentLabel.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    currentLabel.TextTruncate =
-        Enum.TextTruncate.AtEnd
-
-    currentLabel.ZIndex =
-        3
-
-    currentLabel.Parent =
-        header
-
-    local cards =
-        {}
-
-    for index = 1, 5 do
+    local function createMoonCard(
+        slotIndex,
+        isCurrent
+    )
 
         local card =
             Instance.new(
@@ -77726,18 +77618,33 @@ function HolyMoonHudCreate()
             )
 
         card.Name =
-            "MoonCard"
-            .. tostring(index)
+            isCurrent
+            and "CurrentWeatherCard"
+            or (
+                "MoonCard"
+                .. tostring(
+                    slotIndex - 1
+                )
+            )
+
+        card.Active =
+            true
 
         card.BackgroundColor3 =
-            Color3.fromRGB(
+            isCurrent
+            and Color3.fromRGB(
+                16,
+                18,
+                24
+            )
+            or Color3.fromRGB(
                 13,
                 15,
                 20
             )
 
         card.BackgroundTransparency =
-            0.10
+            0.06
 
         card.BorderSizePixel =
             0
@@ -77745,8 +77652,11 @@ function HolyMoonHudCreate()
         card.Position =
             UDim2.fromOffset(
                 10
-                + (index - 1) * 81,
-                35
+                + (
+                    slotIndex - 1
+                )
+                * 81,
+                10
             )
 
         card.Size =
@@ -77756,7 +77666,7 @@ function HolyMoonHudCreate()
             )
 
         card.Visible =
-            false
+            isCurrent == true
 
         card.ZIndex =
             2
@@ -77787,14 +77697,25 @@ function HolyMoonHudCreate()
             Enum.ApplyStrokeMode.Border
 
         cardStroke.Color =
-            Color3.fromRGB(
+            isCurrent
+            and Color3.fromRGB(
+                82,
+                87,
+                101
+            )
+            or Color3.fromRGB(
                 58,
                 62,
                 74
             )
 
+        cardStroke.LineJoinMode =
+            Enum.LineJoinMode.Round
+
         cardStroke.Transparency =
-            0.35
+            isCurrent
+            and 0.12
+            or 0.35
 
         cardStroke.Thickness =
             1
@@ -77806,6 +77727,9 @@ function HolyMoonHudCreate()
             Instance.new(
                 "ImageLabel"
             )
+
+        icon.Name =
+            "WeatherIcon"
 
         icon.BackgroundTransparency =
             1
@@ -77838,6 +77762,9 @@ function HolyMoonHudCreate()
                 "TextLabel"
             )
 
+        nameLabel.Name =
+            "WeatherName"
+
         nameLabel.BackgroundTransparency =
             1
 
@@ -77859,7 +77786,9 @@ function HolyMoonHudCreate()
             Library.Scheme.Font
 
         nameLabel.Text =
-            "Moon"
+            isCurrent
+            and "Loading"
+            or "Moon"
 
         nameLabel.TextColor3 =
             Library.Scheme.FontColor
@@ -77883,6 +77812,9 @@ function HolyMoonHudCreate()
             Instance.new(
                 "TextLabel"
             )
+
+        timerLabel.Name =
+            "WeatherTimer"
 
         timerLabel.BackgroundTransparency =
             1
@@ -77908,14 +77840,23 @@ function HolyMoonHudCreate()
             "--"
 
         timerLabel.TextColor3 =
-            Color3.fromRGB(
+            isCurrent
+            and Color3.fromRGB(
+                226,
+                232,
+                240
+            )
+            or Color3.fromRGB(
                 124,
                 252,
                 0
             )
 
         timerLabel.TextSize =
-            10
+            9
+
+        timerLabel.TextTruncate =
+            Enum.TextTruncate.AtEnd
 
         timerLabel.TextXAlignment =
             Enum.TextXAlignment.Center
@@ -77926,9 +77867,12 @@ function HolyMoonHudCreate()
         timerLabel.Parent =
             card
 
-        cards[index] = {
+        return {
             Frame =
                 card,
+
+            Stroke =
+                cardStroke,
 
             Icon =
                 icon,
@@ -77941,25 +77885,44 @@ function HolyMoonHudCreate()
         }
     end
 
+    local currentCard =
+        createMoonCard(
+            1,
+            true
+        )
+
+    local cards =
+        {}
+
+    for index = 1, 5 do
+
+        cards[index] =
+            createMoonCard(
+                index + 1,
+                false
+            )
+    end
+
     local emptyLabel =
         Instance.new(
             "TextLabel"
         )
+
+    emptyLabel.Name =
+        "EmptyPredictionLabel"
 
     emptyLabel.BackgroundTransparency =
         1
 
     emptyLabel.Position =
         UDim2.fromOffset(
-            10,
-            35
+            91,
+            10
         )
 
     emptyLabel.Size =
-        UDim2.new(
-            1,
-            -20,
-            0,
+        UDim2.fromOffset(
+            400,
             67
         )
 
@@ -77985,20 +77948,49 @@ function HolyMoonHudCreate()
     emptyLabel.Parent =
         holder
 
+    local dragSurface =
+        Instance.new(
+            "Frame"
+        )
+
+    dragSurface.Name =
+        "DragSurface"
+
+    dragSurface.Active =
+        true
+
+    dragSurface.BackgroundTransparency =
+        1
+
+    dragSurface.BorderSizePixel =
+        0
+
+    dragSurface.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    dragSurface.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    dragSurface.ZIndex =
+        10
+
+    dragSurface.Parent =
+        holder
+
     runtime.HudScreenGui =
         screenGui
 
     runtime.HudHolder =
         holder
 
-    runtime.HudHeader =
-        header
-
-    runtime.HudCurrentIcon =
-        currentIcon
-
-    runtime.HudCurrentLabel =
-        currentLabel
+    runtime.HudCurrentCard =
+        currentCard
 
     runtime.HudEmptyLabel =
         emptyLabel
@@ -78008,7 +78000,7 @@ function HolyMoonHudCreate()
 
     HolyMoonHudMakeDraggable(
         holder,
-        header
+        dragSurface
     )
 
     task.defer(function()
