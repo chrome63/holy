@@ -1708,7 +1708,15 @@ local WATERING_REJOIN_LEGACY_FILE =
 
 local DEV_UPDATE_BASELINE_FILE =
     UI_SETTINGS_FOLDER
-    .. "/HolyDevUpdateBaseline.json"
+    .. "/HolyDevUpdateBaselineV2.json"
+
+local DEV_UPDATE_PENDING_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevUpdatePendingV2.json"
+
+local DEV_UPDATE_HISTORY_PREFIX =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevUpdateBaselineV2_"
 
 local DEV_PERSISTENCE_FILE =
     UI_SETTINGS_FOLDER
@@ -2212,6 +2220,8 @@ HOLY_DEV_SUITE_STATE = {
     PersistenceTarget = "",
     ActionScope = "Player Tools",
 
+    UpdateScope = "Everything",
+
     RecorderArea = "Auction",
     RecorderMode = "Manual Test",
     RecorderNote = "",
@@ -2243,6 +2253,10 @@ HOLY_DEV_SUITE_RUNTIME = {
     LastActionReport = nil,
 
     LastUpdateDiff = nil,
+    LastUpdateSummary = nil,
+    PendingUpdateSnapshot = nil,
+    UpdateScanning = false,
+
     LastDataReport = nil,
 
     ModuleMap = {},
@@ -88445,44 +88459,1496 @@ function HolyDevEndActionCapture()
     return true
 end
 
-function HolyDevSnapshotUpdateState()
+local HOLY_DEV_UPDATE_IGNORED_KEYS = {
+    onclientevent = true,
+    onserverevent = true,
+    onclientinvoke = true,
+    onserverinvoke = true,
+    next = true,
+    previous = true,
+    once = true,
+    ["function"] = true,
+    callback = true,
+    callbacks = true,
+    connection = true,
+    connections = true,
+    signal = true,
+    changed = true,
+    loaded = true,
+    cs = true,
+    maid = true,
+    janitor = true,
+    trove = true,
+}
 
-    local snapshot = {
-        PlaceId = game.PlaceId,
-        PlaceVersion = nil,
-        CapturedAt = os.time(),
-        Values = {},
-    }
+local HOLY_DEV_UPDATE_SAFE_DATA_MODULES = {
+    itemcatalog = true,
+    gearshopdata = true,
+    wateringcandata = true,
+    sprinklerdata = true,
+    seeddata = true,
+    eggdata = true,
+    cratedata = true,
+    propdata = true,
+    fencedata = true,
+    raritydata = true,
+    weatherdata = true,
+    timecycledata = true,
+    mushroomdata = true,
+    plantsizemultipliers = true,
+    growratedata = true,
+    growthboostsources = true,
+    petteleporterdata = true,
+    troweldata = true,
+    sellvaluedata = true,
+    devproducts = true,
+    exclusiveshopdata = true,
+    robuxshopcontent = true,
+    seedpackdata = true,
+    petgating = true,
+    crateshopenabled = true,
+    crateshoplimited = true,
+    seedshoplimited = true,
+}
+
+function HolyDevUpdateScope(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower:find("script", 1, true)
+    or lower:find("controller", 1, true) then
+
+        return "Scripts & Controllers"
+    end
+
+    if lower:find("network", 1, true) then
+        return "Networking"
+    end
+
+    if lower:find("catalog", 1, true)
+    or lower:find("data", 1, true) then
+
+        return "Catalogs & Data"
+    end
+
+    if lower:find("structure", 1, true) then
+        return "Structure"
+    end
+
+    return "Everything"
+end
+
+function HolyDevUpdateWants(scope, category)
+
+    scope =
+        HolyDevUpdateScope(
+            scope
+        )
+
+    return scope == "Everything"
+        or scope == category
+end
+
+function HolyDevUpdateEncodeExact(value)
+
+    local success,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                value
+            )
+        end)
+
+    if success == true
+    and type(encoded) == "string" then
+
+        return encoded
+    end
+
+    return nil,
+        encoded
+end
+
+function HolyDevUpdateWriteExact(fileName, value)
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local encoded =
+        HolyDevUpdateEncodeExact(
+            value
+        )
+
+    if type(encoded) ~= "string" then
+        return false
+    end
+
+    return pcall(function()
+
+        writefile(
+            fileName,
+            encoded
+        )
+    end)
+end
+
+function HolyDevUpdateHistoryFile(placeVersion)
+
+    local safeVersion =
+        tostring(
+            placeVersion
+            or "unknown"
+        ):gsub(
+            "[^%w_%-]",
+            "_"
+        )
+
+    return DEV_UPDATE_HISTORY_PREFIX
+        .. safeVersion
+        .. ".json"
+end
+
+function HolyDevUpdateHashText(value)
+
+    if type(value) ~= "string" then
+
+        value =
+            tostring(
+                value
+                or ""
+            )
+    end
+
+    local hash =
+        5381
+
+    for index = 1, #value do
+
+        hash =
+            (
+                hash * 33
+                + string.byte(
+                    value,
+                    index
+                )
+            )
+            % 4294967296
+    end
+
+    return string.format(
+        "%08x:%d",
+        math.floor(hash),
+        #value
+    )
+end
+
+function HolyDevUpdateBytecodeReader()
+
+    local candidates =
+        {}
+
+    local function addCandidate(value)
+
+        if type(value) == "function" then
+
+            candidates[#candidates + 1] =
+                value
+        end
+    end
+
+    addCandidate(
+        getscriptbytecode
+    )
+
+    addCandidate(
+        get_script_bytecode
+    )
+
+    if type(getgenv) == "function" then
+
+        pcall(function()
+
+            local environment =
+                getgenv()
+
+            if type(environment) == "table" then
+
+                addCandidate(
+                    environment.getscriptbytecode
+                )
+
+                addCandidate(
+                    environment.get_script_bytecode
+                )
+            end
+        end)
+    end
+
+    return candidates[1]
+end
+
+function HolyDevUpdateWarn(snapshot, message)
+
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    message =
+        HolyCleanText(
+            message
+        )
+
+    if message == "" then
+        return false
+    end
+
+    snapshot._WarningMap =
+        type(snapshot._WarningMap) == "table"
+        and snapshot._WarningMap
+        or {}
+
+    if snapshot._WarningMap[message] == true then
+        return false
+    end
+
+    snapshot._WarningMap[message] =
+        true
+
+    snapshot.Warnings[#snapshot.Warnings + 1] =
+        message
+
+    return true
+end
+
+function HolyDevUpdatePrimitive(value, path)
+
+    local valueType =
+        typeof(value)
+
+    if valueType == "boolean" then
+        return value,
+            true
+    end
+
+    if valueType == "number" then
+
+        if value ~= value
+        or value == math.huge
+        or value == -math.huge then
+
+            return tostring(value),
+                true
+        end
+
+        return value,
+            true
+    end
+
+    if valueType == "string" then
+
+        if HolyDevSensitiveKey(path) == true then
+            return "<redacted>",
+                true
+        end
+
+        if HolyDevSensitiveString(value) == true then
+            return "<redacted sensitive string>",
+                true
+        end
+
+        local utf8Success,
+            utf8Length =
+            pcall(
+                utf8.len,
+                value
+            )
+
+        if utf8Success ~= true
+        or utf8Length == nil then
+
+            return "<binary "
+                .. HolyDevUpdateHashText(value)
+                .. ">",
+                true
+        end
+
+        if #value > 4000 then
+
+            return "<long-string "
+                .. HolyDevUpdateHashText(value)
+                .. ">",
+                true
+        end
+
+        return value,
+            true
+    end
+
+    if valueType == "EnumItem" then
+        return tostring(value),
+            true
+    end
+
+    if valueType == "Instance" then
+
+        return value.ClassName
+            .. ":"
+            .. HolyDevGetFullName(value),
+            true
+    end
+
+    if valueType == "buffer" then
+
+        local length =
+            0
+
+        local content =
+            ""
+
+        pcall(function()
+
+            length =
+                buffer.len(value)
+
+            content =
+                buffer.tostring(value)
+        end)
+
+        return "buffer:"
+            .. HolyDevUpdateHashText(content)
+            .. ":"
+            .. tostring(length),
+            true
+    end
+
+    if valueType == "Vector2"
+    or valueType == "Vector3"
+    or valueType == "CFrame"
+    or valueType == "Color3"
+    or valueType == "UDim"
+    or valueType == "UDim2"
+    or valueType == "BrickColor"
+    or valueType == "NumberRange"
+    or valueType == "NumberSequence"
+    or valueType == "ColorSequence"
+    or valueType == "Rect"
+    or valueType == "Ray" then
+
+        return valueType
+            .. ":"
+            .. tostring(value),
+            true
+    end
+
+    return nil,
+        false
+end
+
+function HolyDevUpdateAdd(snapshot, path, value)
+
+    if type(snapshot) ~= "table"
+    or type(snapshot.Values) ~= "table" then
+
+        return false
+    end
+
+    if snapshot.EntryLimitHit == true then
+        return false
+    end
+
+    path =
+        tostring(
+            path
+            or ""
+        )
+
+    if path == "" then
+        return false
+    end
+
+    local normalized,
+        supported =
+        HolyDevUpdatePrimitive(
+            value,
+            path
+        )
+
+    if supported ~= true then
+
+        snapshot.Stats.UnsupportedValues +=
+            1
+
+        return false
+    end
+
+    if snapshot.Values[path] == nil then
+
+        snapshot._EntryCount +=
+            1
+
+        if snapshot._EntryCount
+        > snapshot.EntryLimit then
+
+            snapshot.EntryLimitHit =
+                true
+
+            snapshot.Complete =
+                false
+
+            HolyDevUpdateWarn(
+                snapshot,
+                "Stable entry limit reached; this capture cannot become a baseline."
+            )
+
+            return false
+        end
+    end
+
+    snapshot.Values[path] =
+        normalized
+
+    return true
+end
+
+function HolyDevUpdateSortedKeys(value)
+
+    local keys =
+        {}
+
+    if type(value) ~= "table" then
+        return keys
+    end
+
+    for key in pairs(value) do
+
+        keys[#keys + 1] =
+            key
+    end
+
+    table.sort(keys, function(a, b)
+
+        local aType =
+            typeof(a)
+
+        local bType =
+            typeof(b)
+
+        if aType ~= bType then
+            return aType < bType
+        end
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return keys
+end
+
+function HolyDevUpdateIgnoreKey(key)
+
+    local text =
+        tostring(
+            key
+            or ""
+        )
+
+    local lower =
+        text:lower()
+
+    if HOLY_DEV_UPDATE_IGNORED_KEYS[lower] == true then
+        return true
+    end
+
+    if lower:sub(1, 2) == "__" then
+        return true
+    end
+
+    return false
+end
+
+function HolyDevUpdateFlattenData(
+    snapshot,
+    value,
+    prefix,
+    depth,
+    seen
+)
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    if typeof(value) ~= "table" then
+
+        return HolyDevUpdateAdd(
+            snapshot,
+            prefix,
+            value
+        )
+    end
+
+    if depth >= 12 then
+
+        snapshot.Stats.DepthLimited +=
+            1
+
+        return false
+    end
+
+    if seen[value] == true then
+
+        snapshot.Stats.CyclesIgnored +=
+            1
+
+        return false
+    end
+
+    seen[value] =
+        true
+
+    local captured =
+        false
+
+    local visibleKeys =
+        0
+
+    for _, key in ipairs(
+        HolyDevUpdateSortedKeys(value)
+    ) do
+
+        if HolyDevUpdateIgnoreKey(key) == true then
+
+            snapshot.Stats.RuntimeKeysIgnored +=
+                1
+
+        else
+
+            visibleKeys +=
+                1
+
+            local child =
+                value[key]
+
+            local childPath =
+                prefix
+                .. "."
+                .. tostring(key)
+
+            if typeof(child) == "table" then
+
+                if HolyDevUpdateFlattenData(
+                    snapshot,
+                    child,
+                    childPath,
+                    depth + 1,
+                    seen
+                ) == true then
+
+                    captured =
+                        true
+                end
+
+            elseif typeof(child) == "function"
+            or typeof(child) == "thread" then
+
+                snapshot.Stats.RuntimeValuesIgnored +=
+                    1
+
+            elseif HolyDevUpdateAdd(
+                snapshot,
+                childPath,
+                child
+            ) == true then
+
+                captured =
+                    true
+            end
+        end
+
+        if snapshot.EntryLimitHit == true then
+            break
+        end
+    end
+
+    if visibleKeys <= 0 then
+
+        captured =
+            HolyDevUpdateAdd(
+                snapshot,
+                prefix .. ".Present",
+                true
+            )
+            or captured
+    end
+
+    seen[value] =
+        nil
+
+    return captured
+end
+
+function HolyDevUpdateRelativePath(object, root, prefix)
+
+    prefix =
+        tostring(
+            prefix
+            or "Root"
+        )
+
+    if object == root then
+        return prefix
+    end
+
+    local parts =
+        {}
+
+    local current =
+        object
+
+    while current
+    and current ~= root do
+
+        table.insert(
+            parts,
+            1,
+            tostring(current.Name)
+        )
+
+        current =
+            current.Parent
+    end
+
+    if current ~= root then
+
+        return prefix
+            .. "."
+            .. tostring(object.Name)
+    end
+
+    if #parts <= 0 then
+        return prefix
+    end
+
+    return prefix
+        .. "."
+        .. table.concat(
+            parts,
+            "."
+        )
+end
+
+function HolyDevUpdateSortedDescendants(root, prefix)
+
+    local objects =
+        {}
+
+    if typeof(root) ~= "Instance" then
+        return objects
+    end
+
+    objects[1] =
+        root
+
+    for _, object in ipairs(
+        root:GetDescendants()
+    ) do
+
+        objects[#objects + 1] =
+            object
+    end
+
+    table.sort(objects, function(a, b)
+
+        return HolyDevUpdateRelativePath(
+            a,
+            root,
+            prefix
+        ):lower()
+            < HolyDevUpdateRelativePath(
+                b,
+                root,
+                prefix
+            ):lower()
+    end)
+
+    return objects
+end
+
+function HolyDevUpdateCaptureStructure(
+    snapshot,
+    root,
+    prefix
+)
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    for _, object in ipairs(
+        HolyDevUpdateSortedDescendants(
+            root,
+            prefix
+        )
+    ) do
+
+        local path =
+            HolyDevUpdateRelativePath(
+                object,
+                root,
+                prefix
+            )
+
+        HolyDevUpdateAdd(
+            snapshot,
+            "Structure."
+                .. path
+                .. ".Class",
+            object.ClassName
+        )
+
+        local attributes =
+            {}
+
+        pcall(function()
+
+            attributes =
+                object:GetAttributes()
+        end)
+
+        for _, attributeName in ipairs(
+            HolyDevUpdateSortedKeys(attributes)
+        ) do
+
+            HolyDevUpdateAdd(
+                snapshot,
+                "Structure."
+                    .. path
+                    .. ".Attribute."
+                    .. tostring(attributeName),
+                attributes[attributeName]
+            )
+        end
+
+        if snapshot.EntryLimitHit == true then
+            break
+        end
+    end
+
+    return true
+end
+
+function HolyDevUpdateCaptureScripts(snapshot, roots)
+
+    local reader =
+        HolyDevUpdateBytecodeReader()
+
+    snapshot.Capabilities.BytecodeHashing =
+        type(reader) == "function"
+
+    if type(reader) ~= "function" then
+
+        HolyDevUpdateWarn(
+            snapshot,
+            "Bytecode hashing is unavailable; script additions and removals will still be detected."
+        )
+    end
+
+    for _, rootRecord in ipairs(roots) do
+
+        local root =
+            rootRecord.Root
+
+        local prefix =
+            rootRecord.Prefix
+
+        if typeof(root) == "Instance" then
+
+            for _, object in ipairs(
+                HolyDevUpdateSortedDescendants(
+                    root,
+                    prefix
+                )
+            ) do
+
+                if object:IsA("LuaSourceContainer") then
+
+                    local path =
+                        HolyDevUpdateRelativePath(
+                            object,
+                            root,
+                            prefix
+                        )
+
+                    HolyDevUpdateAdd(
+                        snapshot,
+                        "Scripts."
+                            .. path
+                            .. ".Class",
+                        object.ClassName
+                    )
+
+                    if object:IsA("LocalScript")
+                    or object:IsA("Script") then
+
+                        HolyDevUpdateAdd(
+                            snapshot,
+                            "Scripts."
+                                .. path
+                                .. ".Disabled",
+                            object.Disabled
+                        )
+                    end
+
+                    if type(reader) == "function" then
+
+                        snapshot.Stats.BytecodeAttempted +=
+                            1
+
+                        local success,
+                            bytecode =
+                            pcall(
+                                reader,
+                                object
+                            )
+
+                        if success == true
+                        and type(bytecode) == "string"
+                        and bytecode ~= "" then
+
+                            snapshot.Stats.BytecodeHashed +=
+                                1
+
+                            HolyDevUpdateAdd(
+                                snapshot,
+                                "Scripts."
+                                    .. path
+                                    .. ".BytecodeHash",
+                                HolyDevUpdateHashText(
+                                    bytecode
+                                )
+                            )
+
+                        else
+
+                            snapshot.Stats.BytecodeFailed +=
+                                1
+
+                            if snapshot.Stats.BytecodeFailed <= 5 then
+
+                                HolyDevUpdateWarn(
+                                    snapshot,
+                                    "Could not hash "
+                                        .. path
+                                        .. "."
+                                )
+                            end
+                        end
+                    end
+                end
+
+                if snapshot.EntryLimitHit == true then
+                    break
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyDevUpdateCaptureNetworkSchema(
+    snapshot,
+    endpoint,
+    path,
+    schemaName
+)
+
+    local schema =
+        rawget(
+            endpoint,
+            schemaName
+        )
+
+    if type(schema) ~= "table" then
+        return false
+    end
+
+    local keys =
+        HolyDevUpdateSortedKeys(
+            schema
+        )
+
+    HolyDevUpdateAdd(
+        snapshot,
+        path
+            .. "."
+            .. schemaName
+            .. ".Count",
+        #keys
+    )
+
+    for index, key in ipairs(keys) do
+
+        HolyDevUpdateAdd(
+            snapshot,
+            path
+                .. "."
+                .. schemaName
+                .. "."
+                .. tostring(index)
+                .. ".Type",
+            typeof(schema[key])
+        )
+    end
+
+    return true
+end
+
+function HolyDevUpdateCaptureNetworkingTable(
+    snapshot,
+    value,
+    path,
+    depth,
+    seen
+)
+
+    if type(value) ~= "table"
+    or depth >= 12 then
+
+        return false
+    end
+
+    if seen[value] == true then
+
+        snapshot.Stats.CyclesIgnored +=
+            1
+
+        return false
+    end
+
+    seen[value] =
+        true
+
+    local endpointId =
+        tonumber(
+            rawget(
+                value,
+                "Id"
+            )
+        )
+
+    local endpointName =
+        rawget(
+            value,
+            "Name"
+        )
+
+    if endpointId ~= nil
+    or type(endpointName) == "string" then
+
+        HolyDevUpdateAdd(
+            snapshot,
+            path .. ".Present",
+            true
+        )
+
+        if endpointId ~= nil then
+
+            HolyDevUpdateAdd(
+                snapshot,
+                path .. ".Id",
+                endpointId
+            )
+        end
+
+        if type(endpointName) == "string" then
+
+            HolyDevUpdateAdd(
+                snapshot,
+                path .. ".Name",
+                endpointName
+            )
+        end
+
+        local responseTimeout =
+            rawget(
+                value,
+                "ResponseTimeout"
+            )
+
+        if tonumber(responseTimeout) ~= nil then
+
+            HolyDevUpdateAdd(
+                snapshot,
+                path .. ".ResponseTimeout",
+                tonumber(responseTimeout)
+            )
+        end
+
+        for _, schemaName in ipairs({
+            "Reads",
+            "Writes",
+            "ResponseReads",
+            "ResponseWrites",
+        }) do
+
+            HolyDevUpdateCaptureNetworkSchema(
+                snapshot,
+                value,
+                path,
+                schemaName
+            )
+        end
+
+        seen[value] =
+            nil
+
+        return true
+    end
+
+    HolyDevUpdateAdd(
+        snapshot,
+        path .. ".Present",
+        true
+    )
+
+    for _, key in ipairs(
+        HolyDevUpdateSortedKeys(value)
+    ) do
+
+        if HolyDevUpdateIgnoreKey(key) == true then
+
+            snapshot.Stats.RuntimeKeysIgnored +=
+                1
+
+        else
+
+            local child =
+                value[key]
+
+            if type(child) == "table" then
+
+                HolyDevUpdateCaptureNetworkingTable(
+                    snapshot,
+                    child,
+                    path
+                        .. "."
+                        .. tostring(key),
+                    depth + 1,
+                    seen
+                )
+            end
+        end
+
+        if snapshot.EntryLimitHit == true then
+            break
+        end
+    end
+
+    seen[value] =
+        nil
+
+    return true
+end
+
+function HolyDevUpdateCaptureNetworking(
+    snapshot,
+    sharedModules
+)
+
+    local networkingModule =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "Networking"
+        )
+
+    if typeof(networkingModule) ~= "Instance"
+    or networkingModule:IsA("ModuleScript") ~= true then
+
+        HolyDevUpdateWarn(
+            snapshot,
+            "SharedModules.Networking was not found."
+        )
+
+        return false
+    end
+
+    local success,
+        result =
+        pcall(
+            require,
+            networkingModule
+        )
+
+    if success ~= true
+    or type(result) ~= "table" then
+
+        HolyDevUpdateWarn(
+            snapshot,
+            "Networking could not be inspected."
+        )
+
+        return false
+    end
+
+    return HolyDevUpdateCaptureNetworkingTable(
+        snapshot,
+        result,
+        "Networking",
+        0,
+        {}
+    )
+end
+
+function HolyDevUpdateDataModuleAllowed(module)
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        return false
+    end
+
+    local lower =
+        module.Name:lower()
+
+    if lower == "networking" then
+        return false
+    end
+
+    if HOLY_DEV_UPDATE_SAFE_DATA_MODULES[lower] == true then
+        return true
+    end
+
+    local parentName =
+        module.Parent
+        and module.Parent.Name:lower()
+        or ""
+
+    if parentName == "flags"
+    or parentName == "mutationdata" then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyDevUpdateRequireWithTimeout(module, timeout)
+
+    local finished =
+        false
+
+    local success =
+        false
+
+    local result =
+        nil
+
+    local thread =
+        task.spawn(function()
+
+            success,
+                result =
+                pcall(
+                    require,
+                    module
+                )
+
+            finished =
+                true
+        end)
+
+    local deadline =
+        os.clock()
+        + (
+            tonumber(timeout)
+            or 0.75
+        )
+
+    while finished ~= true
+    and os.clock() < deadline do
+
+        task.wait()
+    end
+
+    if finished ~= true then
+
+        pcall(function()
+
+            task.cancel(
+                thread
+            )
+        end)
+
+        return false,
+            "timeout",
+            true
+    end
+
+    return success,
+        result,
+        false
+end
+
+function HolyDevUpdateCaptureDataModules(
+    snapshot,
+    sharedModules
+)
+
+    if typeof(sharedModules) ~= "Instance" then
+        return false
+    end
+
+    local modules =
+        {}
+
+    for _, object in ipairs(
+        sharedModules:GetDescendants()
+    ) do
+
+        if HolyDevUpdateDataModuleAllowed(object) == true then
+
+            modules[#modules + 1] =
+                object
+        end
+    end
+
+    table.sort(modules, function(a, b)
+
+        return HolyDevUpdateRelativePath(
+            a,
+            sharedModules,
+            "SharedModules"
+        ):lower()
+            < HolyDevUpdateRelativePath(
+                b,
+                sharedModules,
+                "SharedModules"
+            ):lower()
+    end)
+
+    for _, module in ipairs(modules) do
+
+        local modulePath =
+            HolyDevUpdateRelativePath(
+                module,
+                sharedModules,
+                "SharedModules"
+            )
+
+        snapshot.Stats.DataModulesAttempted +=
+            1
+
+        local success,
+            result,
+            timedOut =
+            HolyDevUpdateRequireWithTimeout(
+                module,
+                0.75
+            )
+
+        if success == true then
+
+            snapshot.Stats.DataModulesCaptured +=
+                1
+
+            HolyDevUpdateAdd(
+                snapshot,
+                "Data."
+                    .. modulePath
+                    .. ".Present",
+                true
+            )
+
+            HolyDevUpdateFlattenData(
+                snapshot,
+                result,
+                "Data." .. modulePath,
+                0,
+                {}
+            )
+
+        else
+
+            snapshot.Stats.DataModulesFailed +=
+                1
+
+            if timedOut == true then
+
+                snapshot.Stats.DataModulesTimedOut +=
+                    1
+            end
+
+            if snapshot.Stats.DataModulesFailed <= 8 then
+
+                HolyDevUpdateWarn(
+                    snapshot,
+                    "Skipped "
+                        .. modulePath
+                        .. " ("
+                        .. tostring(result)
+                        .. ")."
+                )
+            end
+        end
+
+        if snapshot.EntryLimitHit == true then
+            break
+        end
+    end
+
+    return true
+end
+
+function HolyDevUpdateCaptureCatalogValues(
+    snapshot,
+    sharedModules
+)
+
+    if typeof(sharedModules) ~= "Instance" then
+        return false
+    end
+
+    for _, object in ipairs(
+        HolyDevUpdateSortedDescendants(
+            sharedModules,
+            "SharedModules"
+        )
+    ) do
+
+        if object:IsA("ValueBase") then
+
+            local path =
+                HolyDevUpdateRelativePath(
+                    object,
+                    sharedModules,
+                    "SharedModules"
+                )
+
+            HolyDevUpdateAdd(
+                snapshot,
+                "Catalogs."
+                    .. path
+                    .. ".Class",
+                object.ClassName
+            )
+
+            pcall(function()
+
+                HolyDevUpdateAdd(
+                    snapshot,
+                    "Catalogs."
+                        .. path
+                        .. ".Value",
+                    object.Value
+                )
+            end)
+        end
+
+        if snapshot.EntryLimitHit == true then
+            break
+        end
+    end
+
+    return true
+end
+
+function HolyDevUpdateNewPass(scope)
+
+    local placeVersion =
+        nil
 
     pcall(function()
 
-        snapshot.PlaceVersion =
+        placeVersion =
             game.PlaceVersion
     end)
 
-    local values =
-        snapshot.Values
+    return {
+        Schema =
+            "HOLY_DEV_STABLE_UPDATE_SNAPSHOT_V2",
 
-    local function captureTree(root, prefix)
+        SnapshotVersion =
+            2,
 
-        if typeof(root) ~= "Instance" then
-            return
-        end
+        PlaceId =
+            game.PlaceId,
 
-        values[prefix] =
-            root.ClassName
+        PlaceVersion =
+            placeVersion,
 
-        for _, object in ipairs(
-            root:GetDescendants()
-        ) do
+        JobId =
+            game.JobId,
 
-            values[
-                "Instance."
-                    .. HolyDevGetFullName(object)
-            ] =
-                object.ClassName
-        end
-    end
+        Scope =
+            HolyDevUpdateScope(scope),
+
+        CapturedAt =
+            os.time(),
+
+        Complete =
+            true,
+
+        EntryLimit =
+            75000,
+
+        EntryLimitHit =
+            false,
+
+        Values =
+            {},
+
+        Warnings =
+            {},
+
+        Capabilities = {
+            BytecodeHashing = false,
+        },
+
+        Stats = {
+            UnsupportedValues = 0,
+            RuntimeKeysIgnored = 0,
+            RuntimeValuesIgnored = 0,
+            CyclesIgnored = 0,
+            DepthLimited = 0,
+            BytecodeAttempted = 0,
+            BytecodeHashed = 0,
+            BytecodeFailed = 0,
+            DataModulesAttempted = 0,
+            DataModulesCaptured = 0,
+            DataModulesFailed = 0,
+            DataModulesTimedOut = 0,
+        },
+
+        _EntryCount =
+            0,
+
+        _WarningMap =
+            {},
+    }
+end
+
+function HolyDevCaptureUpdatePass(scope)
+
+    local snapshot =
+        HolyDevUpdateNewPass(
+            scope
+        )
 
     local sharedModules =
         ReplicatedStorage:FindFirstChild(
@@ -88494,202 +89960,1220 @@ function HolyDevSnapshotUpdateState()
             "ClientModules"
         )
 
-    captureTree(
-        sharedModules,
-        "Root.SharedModules"
-    )
-
-    captureTree(
-        clientModules,
-        "Root.ClientModules"
-    )
-
-    local dataModules = {
-        "ItemCatalog",
-        "GearShopData",
-        "WateringcanData",
-        "SprinklerData",
-        "Networking",
-    }
-
-    for _, moduleName in ipairs(dataModules) do
-
-        local module =
-            sharedModules
-            and sharedModules:FindFirstChild(
-                moduleName
-            )
-
-        if module
-        and module:IsA("ModuleScript") then
-
-            local success,
-                result =
-                pcall(
-                    require,
-                    module
-                )
-
-            if success == true then
-
-                HolyDevFlatten(
-                    result,
-                    "Module." .. moduleName,
-                    values,
-                    0,
-                    {}
-                )
-
-            else
-
-                values[
-                    "Module."
-                        .. moduleName
-                        .. ".RequireError"
-                ] =
-                    tostring(result)
-            end
-        end
-    end
-
-    local gearImages =
-        sharedModules
-        and sharedModules:FindFirstChild(
-            "GearImages"
+    local playerScripts =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild(
+            "PlayerScripts"
         )
 
-    if gearImages then
+    local playerGui =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild(
+            "PlayerGui"
+        )
 
-        for _, child in ipairs(
-            gearImages:GetChildren()
-        ) do
+    local roots = {
+        {
+            Root = sharedModules,
+            Prefix = "ReplicatedStorage.SharedModules",
+        },
+        {
+            Root = clientModules,
+            Prefix = "ReplicatedStorage.ClientModules",
+        },
+        {
+            Root = playerScripts,
+            Prefix = "PlayerScripts",
+        },
+        {
+            Root = playerGui,
+            Prefix = "PlayerGui",
+        },
+    }
 
-            values[
-                "GearCatalog."
-                    .. child.Name
-            ] =
-                child.ClassName
+    if HolyDevUpdateWants(
+        scope,
+        "Structure"
+    ) then
+
+        for _, rootRecord in ipairs(roots) do
+
+            HolyDevUpdateCaptureStructure(
+                snapshot,
+                rootRecord.Root,
+                rootRecord.Prefix
+            )
         end
     end
+
+    if HolyDevUpdateWants(
+        scope,
+        "Scripts & Controllers"
+    ) then
+
+        HolyDevUpdateCaptureScripts(
+            snapshot,
+            roots
+        )
+    end
+
+    if HolyDevUpdateWants(
+        scope,
+        "Networking"
+    ) then
+
+        HolyDevUpdateCaptureNetworking(
+            snapshot,
+            sharedModules
+        )
+    end
+
+    if HolyDevUpdateWants(
+        scope,
+        "Catalogs & Data"
+    ) then
+
+        HolyDevUpdateCaptureCatalogValues(
+            snapshot,
+            sharedModules
+        )
+
+        HolyDevUpdateCaptureDataModules(
+            snapshot,
+            sharedModules
+        )
+    end
+
+    snapshot.ValueCount =
+        snapshot._EntryCount
+
+    snapshot._EntryCount =
+        nil
+
+    snapshot._WarningMap =
+        nil
 
     return snapshot
 end
 
-function HolyDevSaveUpdateBaseline()
+function HolyDevUpdateCategory(path)
 
-    local snapshot =
-        HolyDevSnapshotUpdateState()
-
-    local success =
-        HolyDevWriteJson(
-            DEV_UPDATE_BASELINE_FILE,
-            snapshot
+    path =
+        tostring(
+            path
+            or ""
         )
 
-    if success == true then
+    if path:sub(1, 8) == "Scripts." then
+        return "Scripts"
+    end
 
-        HolyDevSetStatus(
-            "UpdateStatusLabel",
-            "Baseline saved • v"
-                .. tostring(
-                    snapshot.PlaceVersion
-                    or "?"
+    if path:sub(1, 11) == "Networking." then
+        return "Networking"
+    end
+
+    if path:sub(1, 9) == "Catalogs."
+    or path:sub(1, 5) == "Data." then
+
+        return "Catalogs & Data"
+    end
+
+    if path:sub(1, 10) == "Structure." then
+        return "Structure"
+    end
+
+    return "Other"
+end
+
+function HolyDevUpdateCountCategories(values)
+
+    local counts = {
+        Scripts = 0,
+        Networking = 0,
+        ["Catalogs & Data"] = 0,
+        Structure = 0,
+        Other = 0,
+    }
+
+    for path in pairs(
+        values
+        or {}
+    ) do
+
+        local category =
+            HolyDevUpdateCategory(path)
+
+        counts[category] =
+            (counts[category] or 0)
+            + 1
+    end
+
+    return counts
+end
+
+function HolyDevStabilizeUpdatePasses(first, second)
+
+    local stable = {
+        Schema =
+            "HOLY_DEV_STABLE_UPDATE_SNAPSHOT_V2",
+
+        SnapshotVersion =
+            2,
+
+        PlaceId =
+            second.PlaceId,
+
+        PlaceVersion =
+            second.PlaceVersion,
+
+        Scope =
+            second.Scope,
+
+        CapturedAt =
+            second.CapturedAt,
+
+        FirstCapturedAt =
+            first.CapturedAt,
+
+        Complete =
+            first.Complete == true
+            and second.Complete == true,
+
+        Values =
+            {},
+
+        Warnings =
+            {},
+
+        VolatileExamples =
+            {},
+
+        VolatileIgnored =
+            0,
+
+        Capabilities =
+            second.Capabilities,
+
+        PassStats = {
+            First = first.Stats,
+            Second = second.Stats,
+        },
+    }
+
+    local warningMap =
+        {}
+
+    for _, source in ipairs({
+        first.Warnings,
+        second.Warnings,
+    }) do
+
+        for _, warning in ipairs(
+            source
+            or {}
+        ) do
+
+            if warningMap[warning] ~= true then
+
+                warningMap[warning] =
+                    true
+
+                stable.Warnings[#stable.Warnings + 1] =
+                    warning
+            end
+        end
+    end
+
+    local allPaths =
+        {}
+
+    for path in pairs(
+        first.Values
+        or {}
+    ) do
+
+        allPaths[path] =
+            true
+    end
+
+    for path in pairs(
+        second.Values
+        or {}
+    ) do
+
+        allPaths[path] =
+            true
+    end
+
+    local sortedPaths =
+        HolyDevUpdateSortedKeys(
+            allPaths
+        )
+
+    for _, path in ipairs(sortedPaths) do
+
+        local beforeValue =
+            first.Values[path]
+
+        local afterValue =
+            second.Values[path]
+
+        if beforeValue ~= nil
+        and afterValue ~= nil
+        and beforeValue == afterValue then
+
+            stable.Values[path] =
+                afterValue
+
+        else
+
+            stable.VolatileIgnored +=
+                1
+
+            if #stable.VolatileExamples < 75 then
+
+                stable.VolatileExamples[
+                    #stable.VolatileExamples + 1
+                ] = {
+                    Path = path,
+                    First = beforeValue,
+                    Second = afterValue,
+                }
+            end
+        end
+    end
+
+    stable.ValueCount =
+        0
+
+    for _ in pairs(stable.Values) do
+
+        stable.ValueCount +=
+            1
+    end
+
+    stable.CategoryCounts =
+        HolyDevUpdateCountCategories(
+            stable.Values
+        )
+
+    if stable.ValueCount <= 0 then
+
+        stable.Complete =
+            false
+
+        stable.Warnings[#stable.Warnings + 1] =
+            "No stable values were captured."
+    end
+
+    return stable
+end
+
+function HolyDevCaptureStableUpdateSnapshot(scope)
+
+    scope =
+        HolyDevUpdateScope(
+            scope
+        )
+
+    HolyDevSetStatus(
+        "UpdateStatusLabel",
+        "Scanning "
+            .. scope
+            .. " · pass 1/2..."
+    )
+
+    local first =
+        HolyDevCaptureUpdatePass(
+            scope
+        )
+
+    task.wait(
+        0.75
+    )
+
+    HolyDevSetStatus(
+        "UpdateStatusLabel",
+        "Scanning "
+            .. scope
+            .. " · pass 2/2..."
+    )
+
+    local second =
+        HolyDevCaptureUpdatePass(
+            scope
+        )
+
+    return HolyDevStabilizeUpdatePasses(
+        first,
+        second
+    )
+end
+
+function HolyDevValidateUpdateSnapshot(snapshot)
+
+    if type(snapshot) ~= "table" then
+        return false,
+            "snapshot is missing"
+    end
+
+    if snapshot.Schema
+    ~= "HOLY_DEV_STABLE_UPDATE_SNAPSHOT_V2"
+    or tonumber(snapshot.SnapshotVersion) ~= 2 then
+
+        return false,
+            "old or unsupported baseline format"
+    end
+
+    if tostring(snapshot.PlaceId)
+    ~= tostring(game.PlaceId) then
+
+        return false,
+            "baseline belongs to another place"
+    end
+
+    if snapshot.Complete ~= true then
+        return false,
+            "snapshot is incomplete"
+    end
+
+    if type(snapshot.Values) ~= "table"
+    or tonumber(snapshot.ValueCount) == nil
+    or tonumber(snapshot.ValueCount) <= 0 then
+
+        return false,
+            "snapshot contains no stable values"
+    end
+
+    if snapshot.Values.__Truncated ~= nil
+    or snapshot.Values.__CapturedEntries ~= nil
+    or snapshot.Values.__TotalEntries ~= nil then
+
+        return false,
+            "snapshot was truncated"
+    end
+
+    return true
+end
+
+function HolyDevUpdateDiffCategoryCounts(diff)
+
+    local output = {
+        Scripts = {
+            Added = 0,
+            Removed = 0,
+            Changed = 0,
+        },
+        Networking = {
+            Added = 0,
+            Removed = 0,
+            Changed = 0,
+        },
+        ["Catalogs & Data"] = {
+            Added = 0,
+            Removed = 0,
+            Changed = 0,
+        },
+        Structure = {
+            Added = 0,
+            Removed = 0,
+            Changed = 0,
+        },
+        Other = {
+            Added = 0,
+            Removed = 0,
+            Changed = 0,
+        },
+    }
+
+    for _, operation in ipairs({
+        "Added",
+        "Removed",
+        "Changed",
+    }) do
+
+        for _, row in ipairs(
+            diff[operation]
+            or {}
+        ) do
+
+            local category =
+                HolyDevUpdateCategory(
+                    row.Path
                 )
-        )
 
-        HolyNotify(
-            "HOLY Dev",
-            "Update baseline saved.",
-            4
-        )
+            output[category][operation] +=
+                1
+        end
+    end
+
+    return output
+end
+
+function HolyDevUpdateSummaryValue(value)
+
+    if value == nil then
+        return "nil"
+    end
+
+    local text =
+        tostring(value)
+
+    if #text > 100 then
+
+        text =
+            text:sub(1, 97)
+            .. "..."
+    end
+
+    return text
+end
+
+function HolyDevBuildUpdateSummary(report)
+
+    local diff =
+        report.Diff
+        or {}
+
+    local categoryCounts =
+        report.CategoryCounts
+        or {}
+
+    local lines = {
+        "HOLY GAME UPDATE REPORT V2",
+        "PlaceId=" .. tostring(report.PlaceId or "?"),
+        "BaselineVersion=" .. tostring(report.BaselinePlaceVersion or "?"),
+        "CurrentVersion=" .. tostring(report.CurrentPlaceVersion or "?"),
+        "Scope=" .. tostring(report.Scope or "Everything"),
+        "CaptureStatus=" .. tostring(report.CaptureStatus or "Unknown"),
+        "Confidence=" .. tostring(report.Confidence or "Unknown"),
+        "StableValues=" .. tostring(report.StableValueCount or 0),
+        "RuntimeNoiseIgnored=" .. tostring(report.VolatileIgnored or 0),
+        "",
+        "CHANGE TOTALS",
+        "  Added=" .. tostring(diff.AddedCount or 0),
+        "  Removed=" .. tostring(diff.RemovedCount or 0),
+        "  Changed=" .. tostring(diff.ChangedCount or 0),
+        "",
+        "CATEGORY SUMMARY",
+    }
+
+    local categoryOrder = {
+        "Scripts",
+        "Networking",
+        "Catalogs & Data",
+        "Structure",
+        "Other",
+    }
+
+    for _, category in ipairs(categoryOrder) do
+
+        local counts =
+            categoryCounts[category]
+            or {}
+
+        lines[#lines + 1] =
+            "  "
+            .. category
+            .. ": +"
+            .. tostring(counts.Added or 0)
+            .. " -"
+            .. tostring(counts.Removed or 0)
+            .. " ~"
+            .. tostring(counts.Changed or 0)
+    end
+
+    local totalChanges =
+        (diff.AddedCount or 0)
+        + (diff.RemovedCount or 0)
+        + (diff.ChangedCount or 0)
+
+    lines[#lines + 1] =
+        ""
+
+    if totalChanges <= 0 then
+
+        lines[#lines + 1] =
+            "MEANINGFUL CHANGES"
+
+        lines[#lines + 1] =
+            "  None found."
 
     else
 
-        HolyDevSetStatus(
-            "UpdateStatusLabel",
-            "Could not save baseline."
+        lines[#lines + 1] =
+            "MEANINGFUL CHANGES"
+
+        local included =
+            0
+
+        local maximum =
+            60
+
+        for _, category in ipairs(categoryOrder) do
+
+            for _, operation in ipairs({
+                "Changed",
+                "Added",
+                "Removed",
+            }) do
+
+                for _, row in ipairs(
+                    diff[operation]
+                    or {}
+                ) do
+
+                    if included >= maximum then
+                        break
+                    end
+
+                    if HolyDevUpdateCategory(row.Path)
+                    == category then
+
+                        local line =
+                            "  ["
+                            .. operation:upper()
+                            .. "]["
+                            .. category
+                            .. "] "
+                            .. tostring(row.Path)
+
+                        if operation == "Changed" then
+
+                            line =
+                                line
+                                .. " | "
+                                .. HolyDevUpdateSummaryValue(row.Before)
+                                .. " -> "
+                                .. HolyDevUpdateSummaryValue(row.After)
+
+                        else
+
+                            line =
+                                line
+                                .. " | "
+                                .. HolyDevUpdateSummaryValue(row.Value)
+                        end
+
+                        lines[#lines + 1] =
+                            line
+
+                        included +=
+                            1
+                    end
+                end
+            end
+        end
+
+        if totalChanges > maximum then
+
+            lines[#lines + 1] =
+                "  ... "
+                .. tostring(totalChanges - maximum)
+                .. " more changes are available in Copy Full Report."
+        end
+    end
+
+    if type(report.Warnings) == "table"
+    and #report.Warnings > 0 then
+
+        lines[#lines + 1] =
+            ""
+
+        lines[#lines + 1] =
+            "WARNINGS"
+
+        for index = 1, math.min(
+            #report.Warnings,
+            12
+        ) do
+
+            lines[#lines + 1] =
+                "  "
+                .. tostring(report.Warnings[index])
+        end
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function HolyDevCopyUpdateSummary()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local summary =
+        runtime.LastUpdateSummary
+
+    if type(summary) ~= "string"
+    or summary == "" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Run Scan Current first.",
+            4
+        )
+
+        return false
+    end
+
+    local copied =
+        HolyCopyText(
+            summary
+        )
+
+    if copied == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Update summary copied.",
+            4
         )
     end
 
-    return success
+    return copied
+end
+
+function HolyDevCopyUpdateFull()
+
+    local report =
+        HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff
+
+    if type(report) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Run Scan Current first.",
+            4
+        )
+
+        return false
+    end
+
+    local encoded =
+        HolyDevUpdateEncodeExact(
+            report
+        )
+
+    if type(encoded) ~= "string" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Could not encode the full report.",
+            4
+        )
+
+        return false
+    end
+
+    local copied =
+        HolyCopyText(
+            encoded
+        )
+
+    if copied == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Full update report copied.",
+            4
+        )
+    end
+
+    return copied
+end
+
+function HolyDevSaveUpdateBaseline()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.UpdateScanning == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "An update capture is already running.",
+            4
+        )
+
+        return false
+    end
+
+    runtime.UpdateScanning =
+        true
+
+    local scope =
+        HolyDevUpdateScope(
+            HOLY_DEV_SUITE_STATE.UpdateScope
+        )
+
+    task.spawn(function()
+
+        local success,
+            result =
+            xpcall(function()
+
+                local snapshot =
+                    HolyDevCaptureStableUpdateSnapshot(
+                        scope
+                    )
+
+                local valid,
+                    reason =
+                    HolyDevValidateUpdateSnapshot(
+                        snapshot
+                    )
+
+                if valid ~= true then
+                    error(reason, 0)
+                end
+
+                if HolyDevUpdateWriteExact(
+                    DEV_UPDATE_BASELINE_FILE,
+                    snapshot
+                ) ~= true then
+
+                    error(
+                        "could not write baseline",
+                        0
+                    )
+                end
+
+                HolyDevUpdateWriteExact(
+                    HolyDevUpdateHistoryFile(
+                        snapshot.PlaceVersion
+                    ),
+                    snapshot
+                )
+
+                runtime.PendingUpdateSnapshot =
+                    nil
+
+                runtime.LastUpdateDiff =
+                    nil
+
+                runtime.LastUpdateSummary =
+                    nil
+
+                if type(delfile) == "function" then
+
+                    pcall(function()
+
+                        if isfile(
+                            DEV_UPDATE_PENDING_FILE
+                        ) then
+
+                            delfile(
+                                DEV_UPDATE_PENDING_FILE
+                            )
+                        end
+                    end)
+                end
+
+                HolyDevSetStatus(
+                    "UpdateStatusLabel",
+                    "Baseline ready · v"
+                        .. tostring(snapshot.PlaceVersion or "?")
+                        .. " · "
+                        .. tostring(snapshot.ValueCount or 0)
+                        .. " stable values"
+                )
+
+                HolyNotify(
+                    "HOLY Dev",
+                    "Stable V2 baseline saved.",
+                    4
+                )
+
+                return true
+            end, debug.traceback)
+
+        runtime.UpdateScanning =
+            false
+
+        if success ~= true then
+
+            HolyDevSetStatus(
+                "UpdateStatusLabel",
+                "Baseline failed · "
+                    .. HolyCleanText(result)
+            )
+
+            HolyNotify(
+                "HOLY Dev",
+                "Baseline failed: "
+                    .. HolyCleanText(result),
+                6
+            )
+        end
+    end)
+
+    return true
 end
 
 function HolyDevScanUpdateChanges(copyResult)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.UpdateScanning == true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "An update capture is already running.",
+            4
+        )
+
+        return false
+    end
 
     local baseline =
         HolyDevReadJson(
             DEV_UPDATE_BASELINE_FILE
         )
 
-    if type(baseline) ~= "table"
-    or type(baseline.Values) ~= "table" then
+    local baselineValid,
+        baselineReason =
+        HolyDevValidateUpdateSnapshot(
+            baseline
+        )
+
+    if baselineValid ~= true then
 
         HolyDevSetStatus(
             "UpdateStatusLabel",
-            "No baseline — save one first."
+            "Capture a new V2 baseline · "
+                .. tostring(baselineReason)
         )
 
         return false
     end
 
-    local current =
-        HolyDevSnapshotUpdateState()
+    runtime.UpdateScanning =
+        true
 
-    local diff =
-        HolyDevDiffMaps(
-            baseline.Values,
-            current.Values
+    task.spawn(function()
+
+        local success,
+            result =
+            xpcall(function()
+
+                local current =
+                    HolyDevCaptureStableUpdateSnapshot(
+                        baseline.Scope
+                    )
+
+                local currentValid,
+                    currentReason =
+                    HolyDevValidateUpdateSnapshot(
+                        current
+                    )
+
+                if currentValid ~= true then
+                    error(currentReason, 0)
+                end
+
+                local diff =
+                    HolyDevDiffMaps(
+                        baseline.Values,
+                        current.Values
+                    )
+
+                local categoryCounts =
+                    HolyDevUpdateDiffCategoryCounts(
+                        diff
+                    )
+
+                local warnings =
+                    {}
+
+                for _, warning in ipairs(
+                    current.Warnings
+                    or {}
+                ) do
+
+                    warnings[#warnings + 1] =
+                        warning
+                end
+
+                if type(baseline.Capabilities) == "table"
+                and type(current.Capabilities) == "table"
+                and baseline.Capabilities.BytecodeHashing
+                ~= current.Capabilities.BytecodeHashing then
+
+                    warnings[#warnings + 1] =
+                        "Bytecode capability changed since the baseline; script hash removals may be capability-related."
+                end
+
+                local confidence =
+                    #warnings <= 0
+                    and "High"
+                    or "High with warnings"
+
+                local report = {
+                    Version =
+                        "HOLY_DEV_UPDATE_DIFF_V2",
+
+                    PlaceId =
+                        game.PlaceId,
+
+                    BaselinePlaceVersion =
+                        baseline.PlaceVersion,
+
+                    CurrentPlaceVersion =
+                        current.PlaceVersion,
+
+                    Scope =
+                        current.Scope,
+
+                    ScannedAt =
+                        os.time(),
+
+                    CaptureStatus =
+                        "Complete",
+
+                    Confidence =
+                        confidence,
+
+                    StableValueCount =
+                        current.ValueCount,
+
+                    VolatileIgnored =
+                        current.VolatileIgnored,
+
+                    VolatileExamples =
+                        current.VolatileExamples,
+
+                    CategoryCounts =
+                        categoryCounts,
+
+                    Warnings =
+                        warnings,
+
+                    Capabilities =
+                        current.Capabilities,
+
+                    Diff =
+                        diff,
+                }
+
+                report.Summary =
+                    HolyDevBuildUpdateSummary(
+                        report
+                    )
+
+                runtime.PendingUpdateSnapshot =
+                    current
+
+                runtime.LastUpdateDiff =
+                    report
+
+                runtime.LastUpdateSummary =
+                    report.Summary
+
+                HolyDevUpdateWriteExact(
+                    DEV_UPDATE_PENDING_FILE,
+                    current
+                )
+
+                HolyDevSetStatus(
+                    "UpdateStatusLabel",
+                    "v"
+                        .. tostring(baseline.PlaceVersion or "?")
+                        .. " → v"
+                        .. tostring(current.PlaceVersion or "?")
+                        .. "  +"
+                        .. tostring(diff.AddedCount)
+                        .. " -"
+                        .. tostring(diff.RemovedCount)
+                        .. " ~"
+                        .. tostring(diff.ChangedCount)
+                        .. " · noise "
+                        .. tostring(current.VolatileIgnored or 0)
+                )
+
+                if copyResult == true then
+
+                    HolyCopyText(
+                        report.Summary
+                    )
+                end
+
+                HolyNotify(
+                    "HOLY Dev",
+                    "Stable update scan finished.",
+                    4
+                )
+
+                return true
+            end, debug.traceback)
+
+        runtime.UpdateScanning =
+            false
+
+        if success ~= true then
+
+            HolyDevSetStatus(
+                "UpdateStatusLabel",
+                "Scan failed · "
+                    .. HolyCleanText(result)
+            )
+
+            HolyNotify(
+                "HOLY Dev",
+                "Update scan failed: "
+                    .. HolyCleanText(result),
+                6
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyDevAcceptCurrentUpdateBaseline()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.UpdateScanning == true then
+        return false
+    end
+
+    local current =
+        runtime.PendingUpdateSnapshot
+        or HolyDevReadJson(
+            DEV_UPDATE_PENDING_FILE
         )
 
-    local report = {
-        Version =
-            "HOLY_DEV_UPDATE_DIFF_V1",
+    local valid,
+        reason =
+        HolyDevValidateUpdateSnapshot(
+            current
+        )
 
-        PlaceId =
-            game.PlaceId,
+    if valid ~= true then
 
-        BaselinePlaceVersion =
-            baseline.PlaceVersion,
+        HolyNotify(
+            "HOLY Dev",
+            "No valid pending scan: "
+                .. tostring(reason),
+            5
+        )
 
-        CurrentPlaceVersion =
-            current.PlaceVersion,
+        return false
+    end
 
-        ScannedAt =
-            os.time(),
+    local oldBaseline =
+        HolyDevReadJson(
+            DEV_UPDATE_BASELINE_FILE
+        )
 
-        Diff =
-            diff,
-    }
+    if type(oldBaseline) == "table"
+    and oldBaseline.PlaceVersion ~= nil then
 
-    HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff =
-        report
+        HolyDevUpdateWriteExact(
+            HolyDevUpdateHistoryFile(
+                oldBaseline.PlaceVersion
+            ),
+            oldBaseline
+        )
+    end
+
+    if HolyDevUpdateWriteExact(
+        DEV_UPDATE_BASELINE_FILE,
+        current
+    ) ~= true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Could not promote the pending baseline.",
+            5
+        )
+
+        return false
+    end
+
+    HolyDevUpdateWriteExact(
+        HolyDevUpdateHistoryFile(
+            current.PlaceVersion
+        ),
+        current
+    )
+
+    runtime.PendingUpdateSnapshot =
+        nil
+
+    HOLY_DEV_SUITE_STATE.UpdateScope =
+        current.Scope
+
+    if type(delfile) == "function" then
+
+        pcall(function()
+
+            if isfile(
+                DEV_UPDATE_PENDING_FILE
+            ) then
+
+                delfile(
+                    DEV_UPDATE_PENDING_FILE
+                )
+            end
+        end)
+    end
 
     HolyDevSetStatus(
         "UpdateStatusLabel",
-        "v"
-            .. tostring(
-                baseline.PlaceVersion
-                or "?"
-            )
-            .. " → v"
-            .. tostring(
-                current.PlaceVersion
-                or "?"
-            )
-            .. "  +"
-            .. tostring(diff.AddedCount)
-            .. " -"
-            .. tostring(diff.RemovedCount)
-            .. " ~"
-            .. tostring(diff.ChangedCount)
+        "Baseline accepted · v"
+            .. tostring(current.PlaceVersion or "?")
     )
 
-    if copyResult == true then
+    HolyNotify(
+        "HOLY Dev",
+        "Current scan accepted as the new baseline.",
+        4
+    )
 
-        HolyDevCopyReport(
-            report
-        )
+    return true
+end
+
+function HolyDevClearPendingUpdate()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.UpdateScanning == true then
+        return false
     end
+
+    runtime.PendingUpdateSnapshot =
+        nil
+
+    runtime.LastUpdateDiff =
+        nil
+
+    runtime.LastUpdateSummary =
+        nil
+
+    if type(delfile) == "function" then
+
+        pcall(function()
+
+            if isfile(
+                DEV_UPDATE_PENDING_FILE
+            ) then
+
+                delfile(
+                    DEV_UPDATE_PENDING_FILE
+                )
+            end
+        end)
+    end
+
+    HolyDevAutoCheckUpdate()
 
     return true
 end
@@ -90511,11 +92995,18 @@ function HolyDevAutoCheckUpdate()
             DEV_UPDATE_BASELINE_FILE
         )
 
-    if type(baseline) ~= "table" then
+    local valid,
+        reason =
+        HolyDevValidateUpdateSnapshot(
+            baseline
+        )
+
+    if valid ~= true then
 
         HolyDevSetStatus(
             "UpdateStatusLabel",
-            "No baseline saved."
+            "Capture a V2 baseline · "
+                .. tostring(reason)
         )
 
         return false
@@ -90533,18 +93024,25 @@ function HolyDevAutoCheckUpdate()
     if tostring(currentVersion)
     ~= tostring(baseline.PlaceVersion) then
 
-        return HolyDevScanUpdateChanges(
-            false
+        HolyDevSetStatus(
+            "UpdateStatusLabel",
+            "Update found · v"
+                .. tostring(baseline.PlaceVersion or "?")
+                .. " → v"
+                .. tostring(currentVersion or "?")
+                .. " · press Scan Current"
         )
+
+        return true
     end
 
     HolyDevSetStatus(
         "UpdateStatusLabel",
-        "No version change • v"
-            .. tostring(
-                currentVersion
-                or "?"
-            )
+        "Baseline ready · v"
+            .. tostring(currentVersion or "?")
+            .. " · "
+            .. tostring(baseline.ValueCount or 0)
+            .. " stable values"
     )
 
     return true
@@ -115326,75 +117824,190 @@ end
 
 if DevUpdateBox then
 
+    HOLY_DEV_SUITE_RUNTIME.UI.UpdateScopeDropdown =
+        DevUpdateBox:AddDropdown(
+            "HolyDevUpdateScope",
+            {
+                Text =
+                    "Scan Scope",
+
+                Values = {
+                    "Everything",
+                    "Scripts & Controllers",
+                    "Networking",
+                    "Catalogs & Data",
+                    "Structure",
+                },
+
+                Default =
+                    HolyDevUpdateScope(
+                        HOLY_DEV_SUITE_STATE.UpdateScope
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                AllowNull =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    5,
+
+                Tooltip =
+                    "Chooses which game systems are checked for changes.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.UpdateScopeDropdown:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.UpdateScope =
+            HolyDevUpdateScope(
+                value
+            )
+    end)
+
     HOLY_DEV_SUITE_RUNTIME.UI.UpdateStatusLabel =
         HolySniperAddLabel(
             DevUpdateBox,
-            "Checking saved baseline..."
+            "Checking V2 baseline..."
         )
 
-    DevUpdateBox:AddButton({
-        Text =
-            "Save Current Baseline",
+    DevUpdateBox:AddActionRow(
+        "HolyDevUpdateCaptureActions",
+        {
+            Height =
+                21,
 
-        Tooltip =
-            "Saves the current modules, networking table, catalog, and important data values as the known-good baseline.",
+            Buttons = {
+                {
+                    Id =
+                        "Baseline",
 
-        Func =
-            function()
+                    Text =
+                        "Capture Baseline",
 
-                HolyDevSaveUpdateBaseline()
-            end,
-    })
+                    Tooltip =
+                        "Saves the current game state for future comparisons.",
 
-    DevUpdateBox:AddButton({
-        Text =
-            "Scan Update Changes",
+                    Callback =
+                        function()
 
-        Tooltip =
-            "Compares the current game against the saved baseline.",
+                            HolyDevSaveUpdateBaseline()
+                        end,
+                },
 
-        Func =
-            function()
+                {
+                    Id =
+                        "Scan",
 
-                HolyDevScanUpdateChanges(
-                    false
-                )
-            end,
-    })
+                    Text =
+                        "Scan Current",
 
-    DevUpdateBox:AddButton({
-        Text =
-            "Copy Update Diff",
+                    Tooltip =
+                        "Checks the current game against the saved baseline.",
 
-        Tooltip =
-            "Copies the latest added, removed, and changed data report.",
+                    Callback =
+                        function()
 
-        Func =
-            function()
+                            HolyDevScanUpdateChanges(
+                                false
+                            )
+                        end,
+                },
+            },
+        }
+    )
 
-                local report =
-                    HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff
+    DevUpdateBox:AddActionRow(
+        "HolyDevUpdateCopyActions",
+        {
+            Height =
+                21,
 
-                if type(report) ~= "table" then
+            Buttons = {
+                {
+                    Id =
+                        "Summary",
 
-                    if HolyDevScanUpdateChanges(false) ~= true then
-                        return
-                    end
+                    Text =
+                        "Copy Summary",
 
-                    report =
-                        HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff
-                end
+                    Tooltip =
+                        "Copies a simple summary of the important changes.",
 
-                if HolyDevCopyReport(report) == true then
+                    Callback =
+                        function()
 
-                    HolyNotify(
-                        "HOLY Dev",
-                        "Update diff copied.",
-                        4
-                    )
-                end
-            end,
-    })
+                            HolyDevCopyUpdateSummary()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Full",
+
+                    Text =
+                        "Copy Full",
+
+                    Tooltip =
+                        "Copies the complete update report.",
+
+                    Callback =
+                        function()
+
+                            HolyDevCopyUpdateFull()
+                        end,
+                },
+            },
+        }
+    )
+
+    DevUpdateBox:AddActionRow(
+        "HolyDevUpdateBaselineActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Accept",
+
+                    Text =
+                        "Accept Current",
+
+                    Tooltip =
+                        "Uses the current scan as the new baseline.",
+
+                    Callback =
+                        function()
+
+                            HolyDevAcceptCurrentUpdateBaseline()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Clear",
+
+                    Text =
+                        "Clear Pending",
+
+                    Tooltip =
+                        "Clears the current scan without changing the baseline.",
+
+                    Callback =
+                        function()
+
+                            HolyDevClearPendingUpdate()
+                        end,
+                },
+            },
+        }
+    )
 end
 
 if DevPersistenceBox then
