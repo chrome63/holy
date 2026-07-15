@@ -3193,6 +3193,12 @@ if type(HOLY_MERGE_AUTOMATION_RUNTIME) == "table" then
 
     HOLY_MERGE_AUTOMATION_RUNTIME.RunOnceRequested =
         false
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.ManualPotRequested =
+        false
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.ManualPickupRequested =
+        false
 end
 
 HOLY_MERGE_AUTOMATION_STATE = {
@@ -3206,6 +3212,15 @@ HOLY_MERGE_AUTOMATION_STATE = {
     WateringCan = "Super Watering Can",
     WateringDelay = 3,
 
+    AutoPotPlants = false,
+    SelectedPotPlants = {},
+    OnlyPotFullyGrown = true,
+
+    AutoPickupPottedPlants = false,
+    SelectedPickupPlants = {},
+
+    PottedActionDelay = 3,
+
     AutoEclipseLoop = false,
     LoopDelay = 3,
 }
@@ -3213,7 +3228,10 @@ HOLY_MERGE_AUTOMATION_STATE = {
 HOLY_MERGE_AUTOMATION_RUNTIME = {
     Running = false,
     Token = nil,
+
     RunOnceRequested = false,
+    ManualPotRequested = false,
+    ManualPickupRequested = false,
 
     Status = "Disabled",
     Detail = "",
@@ -3227,15 +3245,31 @@ HOLY_MERGE_AUTOMATION_RUNTIME = {
     UpdatingRecipes = false,
     RangeStuds = 30,
 
+    PotDisplayToPlant = {},
+    PotPlantToDisplay = {},
+
+    PickupDisplayToPlant = {},
+    PickupPlantToDisplay = {},
+
+    UpdatingPlantLists = false,
+    PlantListSignature = nil,
+
     EclipseTargetId = nil,
     Recovery = nil,
 
     Merges = 0,
     WaterUses = 0,
+    Potted = 0,
+    PickedUp = 0,
     Cycles = 0,
 }
 
 HOLY_MERGE_AUTOMATION_UI = {
+    Tabbox = nil,
+    MergeTab = nil,
+    PotsTab = nil,
+    EclipseTab = nil,
+
     AutoMergeToggle = nil,
     RecipesDropdown = nil,
 
@@ -3243,12 +3277,28 @@ HOLY_MERGE_AUTOMATION_UI = {
     WateringCanDropdown = nil,
     WateringDelayInput = nil,
 
+    AutoPotToggle = nil,
+    PotPlantsDropdown = nil,
+    OnlyFullyGrownToggle = nil,
+
+    AutoPickupToggle = nil,
+    PickupPlantsDropdown = nil,
+    PottedActionDelayInput = nil,
+    PottedActions = nil,
+
     AutoEclipseLoopToggle = nil,
     LoopDelayInput = nil,
     LoopActions = nil,
 
-    StatusLabel = nil,
-    StatsLabel = nil,
+    MergeStatusLabel = nil,
+    MergeStatsLabel = nil,
+
+    PotsStatusLabel = nil,
+    PotsStatsLabel = nil,
+
+    EclipseTargetLabel = nil,
+    EclipseStatusLabel = nil,
+    EclipseStatsLabel = nil,
 }
 
 HOLY_FARM_PAGE_STATE = {
@@ -75942,6 +75992,30 @@ function HolyMergeAutomationGetSettingsData()
                 state.WateringDelay
             ),
 
+        AutoPotPlants =
+            state.AutoPotPlants == true,
+
+        SelectedPotPlants =
+            HolyMergeAutomationSelectionArray(
+                state.SelectedPotPlants
+            ),
+
+        OnlyPotFullyGrown =
+            state.OnlyPotFullyGrown ~= false,
+
+        AutoPickupPottedPlants =
+            state.AutoPickupPottedPlants == true,
+
+        SelectedPickupPlants =
+            HolyMergeAutomationSelectionArray(
+                state.SelectedPickupPlants
+            ),
+
+        PottedActionDelay =
+            HolyMergeAutomationReadDelay(
+                state.PottedActionDelay
+            ),
+
         AutoEclipseLoop =
             state.AutoEclipseLoop == true,
 
@@ -75983,6 +76057,39 @@ function HolyMergeAutomationLoadSettingsData(data)
     state.WateringDelay =
         HolyMergeAutomationReadDelay(
             data.WateringDelay
+        )
+
+    state.AutoPotPlants =
+        data.AutoPotPlants == true
+
+    state.SelectedPotPlants =
+        HolyMergeAutomationSelectionArray(
+            data.SelectedPotPlants
+            or {}
+        )
+
+    if type(data.OnlyPotFullyGrown) == "boolean" then
+
+        state.OnlyPotFullyGrown =
+            data.OnlyPotFullyGrown
+    else
+
+        state.OnlyPotFullyGrown =
+            true
+    end
+
+    state.AutoPickupPottedPlants =
+        data.AutoPickupPottedPlants == true
+
+    state.SelectedPickupPlants =
+        HolyMergeAutomationSelectionArray(
+            data.SelectedPickupPlants
+            or {}
+        )
+
+    state.PottedActionDelay =
+        HolyMergeAutomationReadDelay(
+            data.PottedActionDelay
         )
 
     state.AutoEclipseLoop =
@@ -76354,52 +76461,279 @@ function HolyMergeAutomationRefreshRecipes(notifyPlayer)
     return values
 end
 
+function HolyMergeAutomationEscapeRichText(value)
+
+    return tostring(value or "")
+        :gsub("&", "&amp;")
+        :gsub("<", "&lt;")
+        :gsub(">", "&gt;")
+        :gsub('"', "&quot;")
+        :gsub("'", "&apos;")
+end
+
+function HolyMergeAutomationStatusColor(status)
+
+    local lower =
+        tostring(status or "")
+            :lower()
+
+    if lower:find(
+        "disabled",
+        1,
+        true
+    ) then
+
+        return "154, 147, 168"
+    end
+
+    if lower:find(
+        "complete",
+        1,
+        true
+    )
+    or lower:find(
+        "ready",
+        1,
+        true
+    )
+    or lower == "plant potted"
+    or lower == "potted plant picked up"
+    or lower:find(
+        "growth complete",
+        1,
+        true
+    ) then
+
+        return "73, 230, 133"
+    end
+
+    if lower:find(
+        "waiting",
+        1,
+        true
+    )
+    or lower:find(
+        "paused",
+        1,
+        true
+    ) then
+
+        return "255, 190, 85"
+    end
+
+    if lower:find(
+        "failed",
+        1,
+        true
+    )
+    or lower:find(
+        "error",
+        1,
+        true
+    )
+    or lower:find(
+        "missing",
+        1,
+        true
+    )
+    or lower:find(
+        "rejected",
+        1,
+        true
+    ) then
+
+        return "255, 98, 109"
+    end
+
+    return "85, 215, 255"
+end
+
 function HolyMergeAutomationBuildStatusText()
 
     local runtime =
         HOLY_MERGE_AUTOMATION_RUNTIME
 
-    local text =
-        "Status: "
-        .. tostring(
+    local status =
+        HolyMergeAutomationEscapeRichText(
             runtime.Status
             or "Disabled"
         )
+
+    local color =
+        HolyMergeAutomationStatusColor(
+            runtime.Status
+        )
+
+    local text =
+        'Status: <font color="rgb('
+        .. color
+        .. ')"><b>'
+        .. status
+        .. "</b></font>"
 
     if tostring(runtime.Detail or "") ~= "" then
 
         text =
             text
-            .. "\n"
-            .. tostring(runtime.Detail)
+            .. '\n<font color="rgb(190, 185, 205)">'
+            .. HolyMergeAutomationEscapeRichText(
+                runtime.Detail
+            )
+            .. "</font>"
     end
 
     return text
 end
 
-function HolyMergeAutomationBuildStatsText()
+function HolyMergeAutomationColoredCount(value)
+
+    return '<font color="rgb(181, 108, 255)"><b>'
+        .. tostring(
+            tonumber(value)
+            or 0
+        )
+        .. "</b></font>"
+end
+
+function HolyMergeAutomationBuildMergeStatsText()
 
     local runtime =
         HOLY_MERGE_AUTOMATION_RUNTIME
 
     return "Merged: "
-        .. tostring(runtime.Merges or 0)
+        .. HolyMergeAutomationColoredCount(
+            runtime.Merges
+        )
         .. "  •  Water uses: "
-        .. tostring(runtime.WaterUses or 0)
+        .. HolyMergeAutomationColoredCount(
+            runtime.WaterUses
+        )
+end
+
+function HolyMergeAutomationBuildPotsStatsText()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    return "Potted: "
+        .. HolyMergeAutomationColoredCount(
+            runtime.Potted
+        )
+        .. "  •  Picked up: "
+        .. HolyMergeAutomationColoredCount(
+            runtime.PickedUp
+        )
+end
+
+function HolyMergeAutomationBuildEclipseStatsText()
+
+    return "Eclipse cycles: "
+        .. HolyMergeAutomationColoredCount(
+            HOLY_MERGE_AUTOMATION_RUNTIME.Cycles
+        )
+end
+
+function HolyMergeAutomationBuildStatsText()
+
+    return HolyMergeAutomationBuildMergeStatsText()
+        .. "\n"
+        .. HolyMergeAutomationBuildPotsStatsText()
         .. "  •  Eclipse cycles: "
-        .. tostring(runtime.Cycles or 0)
+        .. HolyMergeAutomationColoredCount(
+            HOLY_MERGE_AUTOMATION_RUNTIME.Cycles
+        )
+end
+
+function HolyMergeAutomationBuildEclipseTargetText()
+
+    local target =
+        HolyMergeAutomationFindPlantById(
+            HOLY_MERGE_AUTOMATION_RUNTIME.EclipseTargetId
+        )
+
+    if not target then
+
+        return 'Target: <font color="rgb(154, 147, 168)"><b>None selected</b></font>'
+    end
+
+    local ready =
+        HolyFarmInstanceReady(
+            target
+        ) == true
+
+    local potted =
+        HolyMergeAutomationIsPotted(
+            target
+        ) == true
+
+    local color =
+        ready == true
+        and "73, 230, 133"
+        or "255, 190, 85"
+
+    return 'Target: <font color="rgb(181, 108, 255)"><b>'
+        .. HolyMergeAutomationEscapeRichText(
+            HolyMergeAutomationPlantName(
+                target
+            )
+        )
+        .. '</b></font>\n<font color="rgb('
+        .. color
+        .. ')">'
+        .. (
+            ready == true
+            and "Fully grown"
+            or "Still growing"
+        )
+        .. "</font>  •  "
+        .. (
+            potted == true
+            and "Potted"
+            or "Unpotted"
+        )
 end
 
 function HolyMergeAutomationRefreshUI()
 
-    HolySniperSetLabel(
-        HOLY_MERGE_AUTOMATION_UI.StatusLabel,
+    local ui =
+        HOLY_MERGE_AUTOMATION_UI
+
+    local statusText =
         HolyMergeAutomationBuildStatusText()
+
+    HolySniperSetLabel(
+        ui.MergeStatusLabel,
+        statusText
     )
 
     HolySniperSetLabel(
-        HOLY_MERGE_AUTOMATION_UI.StatsLabel,
-        HolyMergeAutomationBuildStatsText()
+        ui.PotsStatusLabel,
+        statusText
+    )
+
+    HolySniperSetLabel(
+        ui.EclipseStatusLabel,
+        statusText
+    )
+
+    HolySniperSetLabel(
+        ui.MergeStatsLabel,
+        HolyMergeAutomationBuildMergeStatsText()
+    )
+
+    HolySniperSetLabel(
+        ui.PotsStatsLabel,
+        HolyMergeAutomationBuildPotsStatsText()
+    )
+
+    HolySniperSetLabel(
+        ui.EclipseStatsLabel,
+        HolyMergeAutomationBuildEclipseStatsText()
+    )
+
+    HolySniperSetLabel(
+        ui.EclipseTargetLabel,
+        HolyMergeAutomationBuildEclipseTargetText()
     )
 
     return true
@@ -77919,6 +78253,950 @@ function HolyMergeAutomationRunEclipseCycle(token)
         placedPlantOrReason
 end
 
+function HolyMergeAutomationPlantSelectionMap(selection)
+
+    local map =
+        {}
+
+    for _, plantName in ipairs(selection or {}) do
+
+        plantName =
+            HolyCleanText(
+                plantName
+            )
+
+        if plantName ~= "" then
+
+            map[plantName] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyMergeAutomationNormalizePlantSelection(
+    value,
+    displayToPlant,
+    allValue
+)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, selectedValue in ipairs(
+        HolyMergeAutomationSelectionArray(
+            value
+        )
+    ) do
+
+        local plantName =
+            type(displayToPlant) == "table"
+            and displayToPlant[selectedValue]
+            or nil
+
+        plantName =
+            HolyCleanText(
+                plantName
+                or selectedValue:gsub(
+                    "%s+%([^)]*%)$",
+                    ""
+                )
+            )
+
+        if plantName == allValue then
+
+            return {
+                allValue,
+            }
+        end
+
+        if plantName ~= ""
+        and seen[plantName] ~= true then
+
+            seen[plantName] =
+                true
+
+            table.insert(
+                output,
+                plantName
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyMergeAutomationSelectionAllows(
+    selection,
+    plantName,
+    allValue
+)
+
+    local map =
+        HolyMergeAutomationPlantSelectionMap(
+            selection
+        )
+
+    if map[allValue] == true then
+        return true
+    end
+
+    return map[
+        HolyCleanText(
+            plantName
+        )
+    ] == true
+end
+
+function HolyMergeAutomationGetOwnedPlantsSorted()
+
+    local plantsFolder =
+        HolyMergeAutomationGetPlantsFolder()
+
+    local plants =
+        {}
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return plants
+    end
+
+    for _, plant in ipairs(
+        plantsFolder:GetChildren()
+    ) do
+
+        if HolyAutoTrowelOwnsPlant(
+            plant,
+            plantsFolder
+        ) == true then
+
+            table.insert(
+                plants,
+                plant
+            )
+        end
+    end
+
+    table.sort(plants, function(a, b)
+
+        local aName =
+            HolyMergeAutomationPlantName(
+                a
+            )
+
+        local bName =
+            HolyMergeAutomationPlantName(
+                b
+            )
+
+        if aName ~= bName then
+
+            return tostring(aName):lower()
+                < tostring(bName):lower()
+        end
+
+        return tostring(
+            HolyFarmReadPlantId(a)
+        ) < tostring(
+            HolyFarmReadPlantId(b)
+        )
+    end)
+
+    return plants
+end
+
+function HolyMergeAutomationBuildPlantDropdownValues()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local counts =
+        {}
+
+    local function ensureRow(plantName)
+
+        plantName =
+            HolyCleanText(
+                plantName
+            )
+
+        if plantName == ""
+        or plantName == "Unknown"
+        or plantName == "All Plants"
+        or plantName == "All Potted Plants" then
+
+            return nil
+        end
+
+        counts[plantName] =
+            counts[plantName]
+            or {
+                Ready = 0,
+                Unpotted = 0,
+                Potted = 0,
+            }
+
+        return counts[plantName]
+    end
+
+    for _, plant in ipairs(
+        HolyMergeAutomationGetOwnedPlantsSorted()
+    ) do
+
+        local plantName =
+            HolyMergeAutomationPlantName(
+                plant
+            )
+
+        local row =
+            ensureRow(
+                plantName
+            )
+
+        if row then
+
+            if HolyMergeAutomationIsPotted(
+                plant
+            ) == true then
+
+                row.Potted =
+                    row.Potted + 1
+            else
+
+                row.Unpotted =
+                    row.Unpotted + 1
+
+                if HolyFarmInstanceReady(
+                    plant
+                ) == true then
+
+                    row.Ready =
+                        row.Ready + 1
+                end
+            end
+        end
+    end
+
+    for _, plantName in ipairs(
+        HOLY_MERGE_AUTOMATION_STATE.SelectedPotPlants
+        or {}
+    ) do
+
+        ensureRow(
+            plantName
+        )
+    end
+
+    for _, plantName in ipairs(
+        HOLY_MERGE_AUTOMATION_STATE.SelectedPickupPlants
+        or {}
+    ) do
+
+        ensureRow(
+            plantName
+        )
+    end
+
+    local names =
+        {}
+
+    for plantName in pairs(counts) do
+
+        table.insert(
+            names,
+            plantName
+        )
+    end
+
+    table.sort(names, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    runtime.PotDisplayToPlant = {
+        ["All Plants"] =
+            "All Plants",
+    }
+
+    runtime.PotPlantToDisplay = {
+        ["All Plants"] =
+            "All Plants",
+    }
+
+    runtime.PickupDisplayToPlant = {
+        ["All Potted Plants"] =
+            "All Potted Plants",
+    }
+
+    runtime.PickupPlantToDisplay = {
+        ["All Potted Plants"] =
+            "All Potted Plants",
+    }
+
+    local potValues = {
+        "All Plants",
+    }
+
+    local pickupValues = {
+        "All Potted Plants",
+    }
+
+    for _, plantName in ipairs(names) do
+
+        local row =
+            counts[plantName]
+
+        local potDisplay =
+            plantName
+            .. " ("
+            .. tostring(row.Ready)
+            .. " ready / "
+            .. tostring(row.Unpotted)
+            .. ")"
+
+        local pickupDisplay =
+            plantName
+            .. " ("
+            .. tostring(row.Potted)
+            .. " potted)"
+
+        runtime.PotDisplayToPlant[potDisplay] =
+            plantName
+
+        runtime.PotPlantToDisplay[plantName] =
+            potDisplay
+
+        runtime.PickupDisplayToPlant[pickupDisplay] =
+            plantName
+
+        runtime.PickupPlantToDisplay[plantName] =
+            pickupDisplay
+
+        table.insert(
+            potValues,
+            potDisplay
+        )
+
+        table.insert(
+            pickupValues,
+            pickupDisplay
+        )
+    end
+
+    return potValues,
+        pickupValues
+end
+
+function HolyMergeAutomationGetSelectedPlantDisplays(
+    selection,
+    plantToDisplay
+)
+
+    local output =
+        {}
+
+    for _, plantName in ipairs(selection or {}) do
+
+        local display =
+            type(plantToDisplay) == "table"
+            and plantToDisplay[plantName]
+            or nil
+
+        if display then
+
+            table.insert(
+                output,
+                display
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyMergeAutomationRefreshPlantDropdowns(forceRefresh)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local ui =
+        HOLY_MERGE_AUTOMATION_UI
+
+    local potValues,
+        pickupValues =
+        HolyMergeAutomationBuildPlantDropdownValues()
+
+    local potSelected =
+        HolyMergeAutomationGetSelectedPlantDisplays(
+            HOLY_MERGE_AUTOMATION_STATE.SelectedPotPlants,
+            runtime.PotPlantToDisplay
+        )
+
+    local pickupSelected =
+        HolyMergeAutomationGetSelectedPlantDisplays(
+            HOLY_MERGE_AUTOMATION_STATE.SelectedPickupPlants,
+            runtime.PickupPlantToDisplay
+        )
+
+    local signature =
+        table.concat(
+            potValues,
+            "\31"
+        )
+        .. "\30"
+        .. table.concat(
+            pickupValues,
+            "\31"
+        )
+        .. "\30"
+        .. table.concat(
+            potSelected,
+            "\31"
+        )
+        .. "\30"
+        .. table.concat(
+            pickupSelected,
+            "\31"
+        )
+
+    if forceRefresh ~= true
+    and signature == runtime.PlantListSignature then
+
+        return false
+    end
+
+    runtime.PlantListSignature =
+        signature
+
+    runtime.UpdatingPlantLists =
+        true
+
+    local function refreshDropdown(
+        dropdown,
+        values,
+        selected
+    )
+
+        if type(dropdown) ~= "table" then
+            return
+        end
+
+        pcall(function()
+
+            if type(dropdown.SetValues) == "function" then
+
+                dropdown:SetValues(
+                    values
+                )
+
+            elseif type(dropdown.SetItems) == "function" then
+
+                dropdown:SetItems(
+                    values
+                )
+            end
+        end)
+
+        pcall(function()
+
+            if type(dropdown.SetValue) == "function" then
+
+                dropdown:SetValue(
+                    selected
+                )
+            end
+        end)
+    end
+
+    refreshDropdown(
+        ui.PotPlantsDropdown,
+        potValues,
+        potSelected
+    )
+
+    refreshDropdown(
+        ui.PickupPlantsDropdown,
+        pickupValues,
+        pickupSelected
+    )
+
+    runtime.UpdatingPlantLists =
+        false
+
+    return true
+end
+
+function HolyMergeAutomationSetSelectedPotPlants(value)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    HOLY_MERGE_AUTOMATION_STATE.SelectedPotPlants =
+        HolyMergeAutomationNormalizePlantSelection(
+            value,
+            runtime.PotDisplayToPlant,
+            "All Plants"
+        )
+
+    runtime.PlantListSignature =
+        nil
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationRefreshPlantDropdowns(true)
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.SelectedPotPlants
+end
+
+function HolyMergeAutomationSetSelectedPickupPlants(value)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    HOLY_MERGE_AUTOMATION_STATE.SelectedPickupPlants =
+        HolyMergeAutomationNormalizePlantSelection(
+            value,
+            runtime.PickupDisplayToPlant,
+            "All Potted Plants"
+        )
+
+    runtime.PlantListSignature =
+        nil
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationRefreshPlantDropdowns(true)
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.SelectedPickupPlants
+end
+
+function HolyMergeAutomationReservedMergePlantIds()
+
+    local reserved =
+        {}
+
+    if HOLY_MERGE_AUTOMATION_STATE.AutoMergePlants ~= true then
+        return reserved
+    end
+
+    local ingredientNames =
+        {}
+
+    for _, recipe in ipairs(
+        HolyMergeAutomationGetSelectedRecipes()
+    ) do
+
+        if HolyMergeAutomationOutputExists(
+            recipe.Result
+        ) ~= true then
+
+            ingredientNames[
+                HolyFarmPlantKey(
+                    recipe.Left
+                )
+            ] =
+                true
+
+            ingredientNames[
+                HolyFarmPlantKey(
+                    recipe.Right
+                )
+            ] =
+                true
+        end
+    end
+
+    for _, plant in ipairs(
+        HolyMergeAutomationGetOwnedPlantsSorted()
+    ) do
+
+        if ingredientNames[
+            HolyFarmPlantKey(
+                HolyMergeAutomationPlantName(
+                    plant
+                )
+            )
+        ] == true then
+
+            reserved[
+                HolyFarmReadPlantId(
+                    plant
+                )
+            ] =
+                true
+        end
+    end
+
+    return reserved
+end
+
+function HolyMergeAutomationFindPotCandidate()
+
+    local selection =
+        HOLY_MERGE_AUTOMATION_STATE.SelectedPotPlants
+        or {}
+
+    if #selection <= 0 then
+
+        return nil,
+            "Select at least one plant type to pot."
+    end
+
+    local reserved =
+        HolyMergeAutomationReservedMergePlantIds()
+
+    for _, plant in ipairs(
+        HolyMergeAutomationGetOwnedPlantsSorted()
+    ) do
+
+        local plantName =
+            HolyMergeAutomationPlantName(
+                plant
+            )
+
+        local plantId =
+            HolyFarmReadPlantId(
+                plant
+            )
+
+        if HolyMergeAutomationIsPotted(
+            plant
+        ) ~= true
+        and HolyMergeAutomationSelectionAllows(
+            selection,
+            plantName,
+            "All Plants"
+        ) == true
+        and reserved[plantId] ~= true
+        and (
+            HOLY_MERGE_AUTOMATION_STATE.OnlyPotFullyGrown ~= true
+            or HolyFarmInstanceReady(plant) == true
+        ) then
+
+            return plant
+        end
+    end
+
+    if HOLY_MERGE_AUTOMATION_STATE.OnlyPotFullyGrown == true then
+
+        return nil,
+            "No matching fully grown unpotted plants are ready."
+    end
+
+    return nil,
+        "No matching unpotted plants are ready."
+end
+
+function HolyMergeAutomationEclipseOwnsPlant(plant)
+
+    if HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop ~= true
+    and HOLY_MERGE_AUTOMATION_RUNTIME.RunOnceRequested ~= true then
+
+        return false
+    end
+
+    local target =
+        HolyMergeAutomationResolveEclipseTarget()
+
+    if not target then
+        return false
+    end
+
+    return HolyFarmReadPlantId(
+        target
+    ) == HolyFarmReadPlantId(
+        plant
+    )
+end
+
+function HolyMergeAutomationFindPickupCandidate()
+
+    local selection =
+        HOLY_MERGE_AUTOMATION_STATE.SelectedPickupPlants
+        or {}
+
+    if #selection <= 0 then
+
+        return nil,
+            "Select at least one potted plant type to pick up."
+    end
+
+    for _, plant in ipairs(
+        HolyMergeAutomationGetOwnedPlantsSorted()
+    ) do
+
+        local plantName =
+            HolyMergeAutomationPlantName(
+                plant
+            )
+
+        if HolyMergeAutomationIsPotted(
+            plant
+        ) == true
+        and HolyMergeAutomationSelectionAllows(
+            selection,
+            plantName,
+            "All Potted Plants"
+        ) == true
+        and HolyMergeAutomationEclipseOwnsPlant(
+            plant
+        ) ~= true then
+
+            return plant
+        end
+    end
+
+    return nil,
+        "No matching potted plants are ready to pick up."
+end
+
+function HolyMergeAutomationProcessPickupAction(token, manual)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local plant,
+        reason =
+        HolyMergeAutomationFindPickupCandidate()
+
+    if not plant then
+
+        if manual == true then
+
+            runtime.ManualPickupRequested =
+                false
+
+            HolyMergeAutomationSetStatus(
+                "Pickup waiting",
+                reason
+            )
+        end
+
+        return false,
+            false
+    end
+
+    local plantName =
+        HolyMergeAutomationPlantName(
+            plant
+        )
+
+    HolyMergeAutomationSetStatus(
+        "Picking up potted plant",
+        plantName
+    )
+
+    local pickedUp,
+        pickupReason =
+        HolyMergeAutomationPickUpPlant(
+            plant
+        )
+
+    if pickedUp == true then
+
+        runtime.PickedUp =
+            (
+                runtime.PickedUp
+                or 0
+            )
+            + 1
+
+        runtime.PlantListSignature =
+            nil
+
+        HolyMergeAutomationSetStatus(
+            "Potted plant picked up",
+            plantName
+                .. " was moved to your backpack."
+        )
+
+        HolyMergeAutomationRefreshPlantDropdowns(
+            true
+        )
+    else
+
+        if manual == true then
+
+            runtime.ManualPickupRequested =
+                false
+        end
+
+        HolyMergeAutomationSetStatus(
+            "Pickup failed",
+            pickupReason
+        )
+    end
+
+    HolyMergeAutomationWaitDelay(
+        token,
+        HOLY_MERGE_AUTOMATION_STATE.PottedActionDelay
+    )
+
+    return true,
+        pickedUp == true
+end
+
+function HolyMergeAutomationProcessPotAction(token, manual)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local plant,
+        reason =
+        HolyMergeAutomationFindPotCandidate()
+
+    if not plant then
+
+        if manual == true then
+
+            runtime.ManualPotRequested =
+                false
+
+            HolyMergeAutomationSetStatus(
+                "Potting waiting",
+                reason
+            )
+        end
+
+        return false,
+            false
+    end
+
+    local plantName =
+        HolyMergeAutomationPlantName(
+            plant
+        )
+
+    HolyMergeAutomationSetStatus(
+        "Potting plant",
+        plantName
+    )
+
+    local potted,
+        pottedPlantOrReason =
+        HolyMergeAutomationPotPlant(
+            plant
+        )
+
+    if potted == true then
+
+        runtime.Potted =
+            (
+                runtime.Potted
+                or 0
+            )
+            + 1
+
+        runtime.PlantListSignature =
+            nil
+
+        HolyMergeAutomationSetStatus(
+            "Plant potted",
+            plantName
+                .. " is ready for pickup or placement."
+        )
+
+        HolyMergeAutomationRefreshPlantDropdowns(
+            true
+        )
+    else
+
+        if manual == true then
+
+            runtime.ManualPotRequested =
+                false
+        end
+
+        HolyMergeAutomationSetStatus(
+            "Potting failed",
+            pottedPlantOrReason
+        )
+    end
+
+    HolyMergeAutomationWaitDelay(
+        token,
+        HOLY_MERGE_AUTOMATION_STATE.PottedActionDelay
+    )
+
+    return true,
+        potted == true
+end
+
+function HolyMergeAutomationSetAutoPotPlants(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.AutoPotPlants =
+        value == true
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.AutoPotPlants
+end
+
+function HolyMergeAutomationSetOnlyPotFullyGrown(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.OnlyPotFullyGrown =
+        value == true
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.OnlyPotFullyGrown
+end
+
+function HolyMergeAutomationSetAutoPickupPottedPlants(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.AutoPickupPottedPlants =
+        value == true
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.AutoPickupPottedPlants
+end
+
+function HolyMergeAutomationSetPottedActionDelay(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.PottedActionDelay =
+        HolyMergeAutomationReadDelay(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_MERGE_AUTOMATION_STATE.PottedActionDelay
+end
+
+function HolyMergeAutomationRunPotSelected()
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.ManualPotRequested =
+        true
+
+    HolyMergeAutomationWake()
+
+    return true
+end
+
+function HolyMergeAutomationRunPickupSelected()
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.ManualPickupRequested =
+        true
+
+    HolyMergeAutomationWake()
+
+    return true
+end
+
 function HolyMergeAutomationShouldRun()
 
     local state =
@@ -77929,8 +79207,12 @@ function HolyMergeAutomationShouldRun()
 
     return state.AutoMergePlants == true
         or state.AutoWatering == true
+        or state.AutoPotPlants == true
+        or state.AutoPickupPottedPlants == true
         or state.AutoEclipseLoop == true
         or runtime.RunOnceRequested == true
+        or runtime.ManualPotRequested == true
+        or runtime.ManualPickupRequested == true
 end
 
 function HolyMergeAutomationStop(status)
@@ -77959,12 +79241,14 @@ function HolyMergeAutomationWorker(token)
     local runtime =
         HOLY_MERGE_AUTOMATION_RUNTIME
 
-    local startedForRunOnce =
+    local startedForOneShot =
         runtime.RunOnceRequested == true
+        or runtime.ManualPotRequested == true
+        or runtime.ManualPickupRequested == true
 
     HolyMergeAutomationSetStatus(
         "Starting",
-        "Checking your garden and selected recipes."
+        "Checking your garden and selected automation."
     )
 
     while runtime.Token == token
@@ -77972,6 +79256,9 @@ function HolyMergeAutomationWorker(token)
 
         local didWork =
             false
+
+        local eclipseNextAt =
+            nil
 
         local selectedRecipes =
             HolyMergeAutomationGetSelectedRecipes()
@@ -77984,7 +79271,6 @@ function HolyMergeAutomationWorker(token)
                     "Waiting",
                     "Select at least one merge recipe."
                 )
-
             else
 
                 for _, recipe in ipairs(selectedRecipes) do
@@ -78031,7 +79317,9 @@ function HolyMergeAutomationWorker(token)
                     )
 
                 if plant
-                and HolyFarmInstanceReady(plant) ~= true then
+                and HolyFarmInstanceReady(
+                    plant
+                ) ~= true then
 
                     local grown,
                         growReason =
@@ -78090,16 +79378,13 @@ function HolyMergeAutomationWorker(token)
                     "Eclipse loop waiting",
                     cycleReason
                 )
-
             elseif HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop == true then
 
-                if HolyMergeAutomationWaitDelay(
-                    token,
-                    HOLY_MERGE_AUTOMATION_STATE.LoopDelay
-                ) ~= true then
-
-                    break
-                end
+                eclipseNextAt =
+                    os.clock()
+                    + HolyMergeAutomationReadDelay(
+                        HOLY_MERGE_AUTOMATION_STATE.LoopDelay
+                    )
             end
         end
 
@@ -78107,7 +79392,77 @@ function HolyMergeAutomationWorker(token)
             break
         end
 
-        if didWork ~= true then
+        local pottedActionAttempted =
+            false
+
+        local wantsPickup =
+            HOLY_MERGE_AUTOMATION_STATE.AutoPickupPottedPlants == true
+            or runtime.ManualPickupRequested == true
+
+        if wantsPickup == true then
+
+            local attempted,
+                completed =
+                HolyMergeAutomationProcessPickupAction(
+                    token,
+                    runtime.ManualPickupRequested == true
+                )
+
+            pottedActionAttempted =
+                attempted == true
+
+            didWork =
+                didWork
+                or completed == true
+        end
+
+        if runtime.Token ~= token then
+            break
+        end
+
+        local wantsPot =
+            HOLY_MERGE_AUTOMATION_STATE.AutoPotPlants == true
+            or runtime.ManualPotRequested == true
+
+        if pottedActionAttempted ~= true
+        and wantsPot == true then
+
+            local attempted,
+                completed =
+                HolyMergeAutomationProcessPotAction(
+                    token,
+                    runtime.ManualPotRequested == true
+                )
+
+            pottedActionAttempted =
+                attempted == true
+
+            didWork =
+                didWork
+                or completed == true
+        end
+
+        if runtime.Token ~= token then
+            break
+        end
+
+        if eclipseNextAt ~= nil then
+
+            local remaining =
+                math.max(
+                    0,
+                    eclipseNextAt - os.clock()
+                )
+
+            if HolyMergeAutomationWaitDelay(
+                token,
+                remaining
+            ) ~= true then
+
+                break
+            end
+        elseif didWork ~= true
+        and pottedActionAttempted ~= true then
 
             if HolyMergeAutomationWaitDelay(
                 token,
@@ -78127,7 +79482,7 @@ function HolyMergeAutomationWorker(token)
         runtime.Running =
             false
 
-        if startedForRunOnce ~= true then
+        if startedForOneShot ~= true then
 
             HolyMergeAutomationSetStatus(
                 "Disabled"
@@ -91507,12 +92862,12 @@ local FarmFruitAutomationBox =
         "target"
     )
 
-local FarmExtraExperimentalBox =
+local FarmPlantAutomationBox =
     HolyAddRightGroupbox(
         Tabs.Farm,
         "Farm.Experimental",
-        "Experimental",
-        "flask-conical"
+        "Plant Automation",
+        "flower-2"
     )
 
 local SHOW_PATCHED_VULN_TOOLS =
@@ -91822,7 +93177,7 @@ function HolyFarmRefreshPage()
     )
 
     HolySetGroupboxVisible(
-        FarmExtraExperimentalBox,
+        FarmPlantAutomationBox,
         isExtra
     )
 
@@ -103779,13 +105134,38 @@ HolyFarmAddPageNote(
     "Farm middle, safety, and maintenance options will go here."
 )
 
-HolySniperAddLabel(
-    FarmExtraExperimentalBox,
-    "Plant Merging"
-)
+HOLY_MERGE_AUTOMATION_UI.Tabbox =
+    FarmPlantAutomationBox:AddTabbox()
+
+HOLY_MERGE_AUTOMATION_UI.MergeTab =
+    HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
+        "Merge",
+        "combine"
+    )
+
+HOLY_MERGE_AUTOMATION_UI.PotsTab =
+    HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
+        "Pots",
+        "package-open"
+    )
+
+HOLY_MERGE_AUTOMATION_UI.EclipseTab =
+    HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
+        "Eclipse",
+        "eclipse"
+    )
+
+local FarmPlantMergeTab =
+    HOLY_MERGE_AUTOMATION_UI.MergeTab
+
+local FarmPlantPotsTab =
+    HOLY_MERGE_AUTOMATION_UI.PotsTab
+
+local FarmPlantEclipseTab =
+    HOLY_MERGE_AUTOMATION_UI.EclipseTab
 
 HOLY_MERGE_AUTOMATION_UI.AutoMergeToggle =
-    FarmExtraExperimentalBox:AddToggle(
+    FarmPlantMergeTab:AddToggle(
         "HolyMergeAutomationAutoMerge",
         {
             Text =
@@ -103807,7 +105187,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoMergeToggle:OnChanged(function(value)
 end)
 
 HOLY_MERGE_AUTOMATION_UI.RecipesDropdown =
-    FarmExtraExperimentalBox:AddDropdown(
+    FarmPlantMergeTab:AddDropdown(
         "HolyMergeAutomationRecipes",
         {
             Text =
@@ -103846,7 +105226,7 @@ HOLY_MERGE_AUTOMATION_UI.RecipesDropdown:OnChanged(function(value)
     end
 end)
 
-FarmExtraExperimentalBox:AddButton({
+FarmPlantMergeTab:AddButton({
     Text =
         "Refresh Merge Recipes",
 
@@ -103862,13 +105242,19 @@ FarmExtraExperimentalBox:AddButton({
         end,
 })
 
-HolySniperAddLabel(
-    FarmExtraExperimentalBox,
-    "Merged Plant Growth"
-)
+FarmPlantMergeTab:AddDivider({
+    Text =
+        "Merged Growth",
+
+    MarginTop =
+        6,
+
+    MarginBottom =
+        6,
+})
 
 HOLY_MERGE_AUTOMATION_UI.AutoWateringToggle =
-    FarmExtraExperimentalBox:AddToggle(
+    FarmPlantMergeTab:AddToggle(
         "HolyMergeAutomationAutoWatering",
         {
             Text =
@@ -103878,7 +105264,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoWateringToggle =
                 HOLY_MERGE_AUTOMATION_STATE.AutoWatering == true,
 
             Tooltip =
-                "Uses the selected real watering can until each selected merged result reaches MaxAge.",
+                "Uses the selected real watering can until each selected merged result is fully grown.",
         }
     )
 
@@ -103890,7 +105276,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoWateringToggle:OnChanged(function(value)
 end)
 
 HOLY_MERGE_AUTOMATION_UI.WateringCanDropdown =
-    FarmExtraExperimentalBox:AddDropdown(
+    FarmPlantMergeTab:AddDropdown(
         "HolyMergeAutomationWateringCan",
         {
             Text =
@@ -103928,7 +105314,7 @@ HOLY_MERGE_AUTOMATION_UI.WateringCanDropdown:OnChanged(function(value)
 end)
 
 HOLY_MERGE_AUTOMATION_UI.WateringDelayInput =
-    FarmExtraExperimentalBox:AddInput(
+    FarmPlantMergeTab:AddInput(
         "HolyMergeAutomationWateringDelay",
         {
             Text =
@@ -103962,13 +105348,303 @@ HOLY_MERGE_AUTOMATION_UI.WateringDelayInput:OnChanged(function(value)
     )
 end)
 
-HolySniperAddLabel(
-    FarmExtraExperimentalBox,
-    "Eclipse Weather Loop"
-)
+HOLY_MERGE_AUTOMATION_UI.MergeStatusLabel =
+    HolySniperAddLabel(
+        FarmPlantMergeTab,
+        HolyMergeAutomationBuildStatusText()
+    )
+
+HOLY_MERGE_AUTOMATION_UI.MergeStatsLabel =
+    HolySniperAddLabel(
+        FarmPlantMergeTab,
+        HolyMergeAutomationBuildMergeStatsText()
+    )
+
+local initialPotValues,
+    initialPickupValues =
+    HolyMergeAutomationBuildPlantDropdownValues()
+
+FarmPlantPotsTab:AddDivider({
+    Text =
+        "Auto Pot",
+
+    MarginBottom =
+        6,
+})
+
+HOLY_MERGE_AUTOMATION_UI.AutoPotToggle =
+    FarmPlantPotsTab:AddToggle(
+        "HolyMergeAutomationAutoPotPlants",
+        {
+            Text =
+                "Auto Pot Plants",
+
+            Default =
+                HOLY_MERGE_AUTOMATION_STATE.AutoPotPlants == true,
+
+            Tooltip =
+                "Continuously pots matching owned plants. Ingredients reserved by Auto Merge are skipped.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.AutoPotToggle:OnChanged(function(value)
+
+    HolyMergeAutomationSetAutoPotPlants(
+        value == true
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.PotPlantsDropdown =
+    FarmPlantPotsTab:AddDropdown(
+        "HolyMergeAutomationPotPlants",
+        {
+            Text =
+                "Plants to Pot",
+
+            Values =
+                initialPotValues,
+
+            Default =
+                HolyMergeAutomationGetSelectedPlantDisplays(
+                    HOLY_MERGE_AUTOMATION_STATE.SelectedPotPlants,
+                    HOLY_MERGE_AUTOMATION_RUNTIME.PotPlantToDisplay
+                ),
+
+            Multi =
+                true,
+
+            Searchable =
+                true,
+
+            AllowNull =
+                true,
+
+            MaxVisibleDropdownItems =
+                10,
+
+            Tooltip =
+                "Select individual plant types or All Plants. Counts show ready unpotted plants versus every unpotted plant.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.PotPlantsDropdown:OnChanged(function(value)
+
+    if HOLY_MERGE_AUTOMATION_RUNTIME.UpdatingPlantLists ~= true then
+
+        HolyMergeAutomationSetSelectedPotPlants(
+            value
+        )
+    end
+end)
+
+HOLY_MERGE_AUTOMATION_UI.OnlyFullyGrownToggle =
+    FarmPlantPotsTab:AddToggle(
+        "HolyMergeAutomationOnlyPotFullyGrown",
+        {
+            Text =
+                "Only Pot Fully Grown Plants",
+
+            Default =
+                HOLY_MERGE_AUTOMATION_STATE.OnlyPotFullyGrown ~= false,
+
+            Tooltip =
+                "When enabled, Auto Pot requires Age to be at least MaxAge.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.OnlyFullyGrownToggle:OnChanged(function(value)
+
+    HolyMergeAutomationSetOnlyPotFullyGrown(
+        value == true
+    )
+end)
+
+FarmPlantPotsTab:AddDivider({
+    Text =
+        "Auto Pickup",
+
+    MarginTop =
+        6,
+
+    MarginBottom =
+        6,
+})
+
+HOLY_MERGE_AUTOMATION_UI.AutoPickupToggle =
+    FarmPlantPotsTab:AddToggle(
+        "HolyMergeAutomationAutoPickupPottedPlants",
+        {
+            Text =
+                "Auto Pick Up Potted Plants",
+
+            Default =
+                HOLY_MERGE_AUTOMATION_STATE.AutoPickupPottedPlants == true,
+
+            Tooltip =
+                "Moves matching potted plants into your backpack. The active Eclipse target is always protected.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.AutoPickupToggle:OnChanged(function(value)
+
+    HolyMergeAutomationSetAutoPickupPottedPlants(
+        value == true
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.PickupPlantsDropdown =
+    FarmPlantPotsTab:AddDropdown(
+        "HolyMergeAutomationPickupPlants",
+        {
+            Text =
+                "Potted Plants to Pick Up",
+
+            Values =
+                initialPickupValues,
+
+            Default =
+                HolyMergeAutomationGetSelectedPlantDisplays(
+                    HOLY_MERGE_AUTOMATION_STATE.SelectedPickupPlants,
+                    HOLY_MERGE_AUTOMATION_RUNTIME.PickupPlantToDisplay
+                ),
+
+            Multi =
+                true,
+
+            Searchable =
+                true,
+
+            AllowNull =
+                true,
+
+            MaxVisibleDropdownItems =
+                10,
+
+            Tooltip =
+                "Select individual plant types or All Potted Plants. Counts update after confirmed pot and pickup actions.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.PickupPlantsDropdown:OnChanged(function(value)
+
+    if HOLY_MERGE_AUTOMATION_RUNTIME.UpdatingPlantLists ~= true then
+
+        HolyMergeAutomationSetSelectedPickupPlants(
+            value
+        )
+    end
+end)
+
+HOLY_MERGE_AUTOMATION_UI.PottedActionDelayInput =
+    FarmPlantPotsTab:AddInput(
+        "HolyMergeAutomationPottedActionDelay",
+        {
+            Text =
+                "Potted Action Delay (Seconds)",
+
+            Default =
+                tostring(
+                    HolyMergeAutomationReadDelay(
+                        HOLY_MERGE_AUTOMATION_STATE.PottedActionDelay
+                    )
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Delay after each confirmed pot or pickup. Default is 3, minimum is 0, and there is no maximum.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.PottedActionDelayInput:OnChanged(function(value)
+
+    HolyMergeAutomationSetPottedActionDelay(
+        value
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.PottedActions =
+    FarmPlantPotsTab:AddActionRow(
+        "HolyMergeAutomationPottedActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "PotSelected",
+
+                    Text =
+                        "Pot Selected",
+
+                    Tooltip =
+                        "Runs one complete pass over the selected unpotted plants without enabling Auto Pot.",
+
+                    Callback =
+                        function()
+
+                            HolyMergeAutomationRunPotSelected()
+                        end,
+                },
+
+                {
+                    Id =
+                        "PickupSelected",
+
+                    Text =
+                        "Pick Up Now",
+
+                    Tooltip =
+                        "Runs one complete pass over the selected potted plants without enabling Auto Pickup.",
+
+                    Callback =
+                        function()
+
+                            HolyMergeAutomationRunPickupSelected()
+                        end,
+                },
+            },
+        }
+    )
+
+FarmPlantPotsTab:AddButton({
+    Text =
+        "Refresh Plant Lists",
+
+    Tooltip =
+        "Refreshes plant names and live ready, unpotted, and potted counts.",
+
+    Func =
+        function()
+
+            HolyMergeAutomationRefreshPlantDropdowns(
+                true
+            )
+        end,
+})
+
+HOLY_MERGE_AUTOMATION_UI.PotsStatusLabel =
+    HolySniperAddLabel(
+        FarmPlantPotsTab,
+        HolyMergeAutomationBuildStatusText()
+    )
+
+HOLY_MERGE_AUTOMATION_UI.PotsStatsLabel =
+    HolySniperAddLabel(
+        FarmPlantPotsTab,
+        HolyMergeAutomationBuildPotsStatsText()
+    )
 
 HOLY_MERGE_AUTOMATION_UI.AutoEclipseLoopToggle =
-    FarmExtraExperimentalBox:AddToggle(
+    FarmPlantEclipseTab:AddToggle(
         "HolyMergeAutomationAutoEclipseLoop",
         {
             Text =
@@ -103990,7 +105666,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoEclipseLoopToggle:OnChanged(function(value)
 end)
 
 HOLY_MERGE_AUTOMATION_UI.LoopDelayInput =
-    FarmExtraExperimentalBox:AddInput(
+    FarmPlantEclipseTab:AddInput(
         "HolyMergeAutomationLoopDelay",
         {
             Text =
@@ -104025,7 +105701,7 @@ HOLY_MERGE_AUTOMATION_UI.LoopDelayInput:OnChanged(function(value)
 end)
 
 HOLY_MERGE_AUTOMATION_UI.LoopActions =
-    FarmExtraExperimentalBox:AddActionRow(
+    FarmPlantEclipseTab:AddActionRow(
         "HolyMergeAutomationLoopActions",
         {
             Height =
@@ -104069,16 +105745,33 @@ HOLY_MERGE_AUTOMATION_UI.LoopActions =
         }
     )
 
-HOLY_MERGE_AUTOMATION_UI.StatusLabel =
+FarmPlantEclipseTab:AddDivider({
+    Text =
+        "Current Target",
+
+    MarginTop =
+        6,
+
+    MarginBottom =
+        6,
+})
+
+HOLY_MERGE_AUTOMATION_UI.EclipseTargetLabel =
     HolySniperAddLabel(
-        FarmExtraExperimentalBox,
+        FarmPlantEclipseTab,
+        HolyMergeAutomationBuildEclipseTargetText()
+    )
+
+HOLY_MERGE_AUTOMATION_UI.EclipseStatusLabel =
+    HolySniperAddLabel(
+        FarmPlantEclipseTab,
         HolyMergeAutomationBuildStatusText()
     )
 
-HOLY_MERGE_AUTOMATION_UI.StatsLabel =
+HOLY_MERGE_AUTOMATION_UI.EclipseStatsLabel =
     HolySniperAddLabel(
-        FarmExtraExperimentalBox,
-        HolyMergeAutomationBuildStatsText()
+        FarmPlantEclipseTab,
+        HolyMergeAutomationBuildEclipseStatsText()
     )
 
 task.defer(function()
@@ -104089,6 +105782,10 @@ task.defer(function()
 
     HolyMergeAutomationRefreshRecipes(
         false
+    )
+
+    HolyMergeAutomationRefreshPlantDropdowns(
+        true
     )
 
     if HolyMergeAutomationShouldRun() == true then
