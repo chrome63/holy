@@ -84298,6 +84298,7 @@ HOLY_MOON_PREDICTOR_STATE = {
     Page = 1,
 
     HudEnabled = false,
+    HudScale = 80,
     HudPosition = nil,
 
     SelectedMoons = {},
@@ -84424,6 +84425,39 @@ function HolyMoonReadAmount(value)
         1,
         500
     )
+end
+
+function HolyMoonReadHudScale(value)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("%d+")
+        )
+        or 80
+
+    number =
+        math.floor(
+            number / 10
+            + 0.5
+        )
+        * 10
+
+    return math.clamp(
+        number,
+        10,
+        120
+    )
+end
+
+function HolyMoonFormatHudScale(value)
+
+    return tostring(
+        HolyMoonReadHudScale(
+            value
+        )
+    )
+        .. "%"
 end
 
 function HolyMoonGetNow()
@@ -84641,6 +84675,11 @@ function HolyMoonSaveSettings()
         HudEnabled =
             HOLY_MOON_PREDICTOR_STATE.HudEnabled == true,
 
+        HudScale =
+            HolyMoonReadHudScale(
+                HOLY_MOON_PREDICTOR_STATE.HudScale
+            ),
+
         HudPosition =
             type(HOLY_MOON_PREDICTOR_STATE.HudPosition) == "table"
             and {
@@ -84743,6 +84782,11 @@ function HolyMoonLoadSettings()
 
     HOLY_MOON_PREDICTOR_STATE.HudEnabled =
         data.HudEnabled == true
+
+    HOLY_MOON_PREDICTOR_STATE.HudScale =
+        HolyMoonReadHudScale(
+            data.HudScale
+        )
 
     if type(data.HudPosition) == "table" then
 
@@ -86941,14 +86985,24 @@ function HolyMoonHudReadPosition()
     local viewport =
         HolyMoonHudGetViewport()
 
+    local scale =
+        HolyMoonReadHudScale(
+            HOLY_MOON_PREDICTOR_STATE.HudScale
+        )
+        / 100
+
     return UDim2.fromOffset(
         math.max(
             12,
-            viewport.X - 513
+            viewport.X
+            - 12
+            - (501 * scale)
         ),
         math.max(
             12,
-            viewport.Y - 165
+            viewport.Y
+            - 78
+            - (87 * scale)
         )
     )
 end
@@ -86965,19 +87019,17 @@ function HolyMoonHudClampHolder()
     local viewport =
         HolyMoonHudGetViewport()
 
+    local scale =
+        HolyMoonReadHudScale(
+            HOLY_MOON_PREDICTOR_STATE.HudScale
+        )
+        / 100
+
     local width =
-        holder.AbsoluteSize.X
+        501 * scale
 
     local height =
-        holder.AbsoluteSize.Y
-
-    if width <= 0 then
-        width = 501
-    end
-
-    if height <= 0 then
-        height = 87
-    end
+        87 * scale
 
     local x =
         math.clamp(
@@ -87565,6 +87617,23 @@ function HolyMoonHudCreate()
     holder.Parent =
         screenGui
 
+    local hudUIScale =
+        Instance.new(
+            "UIScale"
+        )
+
+    hudUIScale.Name =
+        "HolyMoonPredictorUIScale"
+
+    hudUIScale.Scale =
+        HolyMoonReadHudScale(
+            state.HudScale
+        )
+        / 100
+
+    hudUIScale.Parent =
+        holder
+
     local holderCorner =
         Instance.new(
             "UICorner"
@@ -88114,6 +88183,48 @@ function HolyMoonHudSetEnabled(value)
     return true
 end
 
+function HolyMoonHudSetScale(value)
+
+    local scale =
+        HolyMoonReadHudScale(
+            value
+        )
+
+    HOLY_MOON_PREDICTOR_STATE.HudScale =
+        scale
+
+    local holder =
+        HOLY_MOON_PREDICTOR_RUNTIME.HudHolder
+
+    local hudUIScale =
+        typeof(holder) == "Instance"
+        and holder:FindFirstChild(
+            "HolyMoonPredictorUIScale"
+        )
+        or nil
+
+    if typeof(hudUIScale) == "Instance"
+    and hudUIScale:IsA("UIScale") then
+
+        hudUIScale.Scale =
+            scale / 100
+    end
+
+    HolyMoonSaveSettings()
+
+    task.defer(function()
+
+        if typeof(holder) == "Instance"
+        and holder.Parent ~= nil then
+
+            HolyMoonHudClampHolder()
+
+            HolyMoonHudSavePosition()
+        end
+    end)
+
+    return scale
+end
 
 function HolyMoonBuildMainUI(groupbox)
 
@@ -88146,6 +88257,54 @@ function HolyMoonBuildMainUI(groupbox)
     hudToggle:OnChanged(function(value)
 
         HolyMoonHudSetEnabled(
+            value
+        )
+    end)
+
+    local hudScaleDropdown =
+        groupbox:AddDropdown(
+            "HolyMainMoonPredictorHudScale",
+            {
+                Text =
+                    "HUD Scale",
+
+                Values = {
+                    "10%",
+                    "20%",
+                    "30%",
+                    "40%",
+                    "50%",
+                    "60%",
+                    "70%",
+                    "80%",
+                    "90%",
+                    "100%",
+                    "110%",
+                    "120%",
+                },
+
+                Default =
+                    HolyMoonFormatHudScale(
+                        HOLY_MOON_PREDICTOR_STATE.HudScale
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    7,
+
+                Tooltip =
+                    "Changes the Moon Predictor HUD size.",
+            }
+        )
+
+    hudScaleDropdown:OnChanged(function(value)
+
+        HolyMoonHudSetScale(
             value
         )
     end)
