@@ -1609,7 +1609,7 @@ end
 --==================================================
 
 local REPO_URL =
-    "https://raw.githubusercontent.com/bencapalot041/goons/main/"
+    "https://raw.githubusercontent.com/chrome63/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
     "holy-premium-20260713-theme_studio_v1"
