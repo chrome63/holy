@@ -457,6 +457,7 @@ HOLY_DEV_UI_STATE = {
     AutoSkipLoading = true,
     AntiAfk = true,
     AntiKnockback = false,
+    AntiWheelbarrow = false,
     AutoFarmMiddle = true,
 
     LowEndMode = false,
@@ -1404,6 +1405,61 @@ HOLY_ANTI_KNOCKBACK_STATE = {
 
     LastRagdollAt =
         0,
+}
+
+if type(HOLY_ANTI_WHEELBARROW_STATE) == "table"
+and type(HOLY_ANTI_WHEELBARROW_STATE.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_ANTI_WHEELBARROW_STATE.Stop(
+            "restart"
+        )
+    end)
+end
+
+HOLY_ANTI_WHEELBARROW_STATE = {
+    Running =
+        false,
+
+    Token =
+        nil,
+
+    Character =
+        nil,
+
+    Humanoid =
+        nil,
+
+    Root =
+        nil,
+
+    Connections =
+        {},
+
+    CharacterConnections =
+        {},
+
+    DisabledSeats =
+        {},
+
+    SafeCFrame =
+        nil,
+
+    SafeCapturedAt =
+        0,
+
+    RecoveringUntil =
+        0,
+
+    CurrentEpisode =
+        0,
+
+    CurrentEpisodeUntil =
+        0,
+
+    ActiveSeat =
+        nil,
 }
 
 if type(HOLY_SHOP_STATE) == "table" then
@@ -2398,6 +2454,9 @@ function HolySaveUISettings()
         AntiKnockback =
             HOLY_DEV_UI_STATE.AntiKnockback == true,
 
+        AntiWheelbarrow =
+            HOLY_DEV_UI_STATE.AntiWheelbarrow == true,
+
         AutoFarmMiddle =
             HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
 
@@ -2597,6 +2656,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.AntiKnockback =
             data.AntiKnockback
+    end
+
+    if type(data.AntiWheelbarrow) == "boolean" then
+
+        HOLY_DEV_UI_STATE.AntiWheelbarrow =
+            data.AntiWheelbarrow
     end
 
     if type(data.AutoFarmMiddle) == "boolean" then
@@ -43083,6 +43148,1071 @@ end
 HOLY_ANTI_KNOCKBACK_STATE.Stop =
     HolyAntiKnockbackStop
 
+--==================================================
+-- ANTI WHEELBARROW
+--==================================================
+
+function HolyAntiWheelbarrowDisconnectList(list)
+
+    for _, connection in ipairs(
+        list
+        or {}
+    ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    if type(list) == "table" then
+
+        table.clear(
+            list
+        )
+    end
+end
+
+function HolyAntiWheelbarrowGetCharacter()
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    local character =
+        runtime.Character
+
+    local humanoid =
+        runtime.Humanoid
+
+    local root =
+        runtime.Root
+
+    if typeof(character) ~= "Instance"
+    or character.Parent == nil
+    or LocalPlayer.Character ~= character then
+
+        return nil,
+            nil,
+            nil
+    end
+
+    if typeof(humanoid) ~= "Instance"
+    or humanoid.Parent ~= character then
+
+        return character,
+            nil,
+            nil
+    end
+
+    if typeof(root) ~= "Instance"
+    or root.Parent ~= character
+    or root:IsA("BasePart") ~= true then
+
+        return character,
+            humanoid,
+            nil
+    end
+
+    return character,
+        humanoid,
+        root
+end
+
+function HolyAntiWheelbarrowIsCharacterPart(instance)
+
+    local character =
+        HOLY_ANTI_WHEELBARROW_STATE.Character
+
+    return typeof(character) == "Instance"
+        and typeof(instance) == "Instance"
+        and instance:IsDescendantOf(
+            character
+        )
+end
+
+function HolyAntiWheelbarrowFindAncestor(instance)
+
+    local current =
+        instance
+
+    for _ =
+        1,
+        12
+    do
+
+        if typeof(current) ~= "Instance" then
+            break
+        end
+
+        local name =
+            string.lower(
+                tostring(current.Name)
+            )
+
+        local wheelbarrowAttribute =
+            nil
+
+        pcall(function()
+
+            wheelbarrowAttribute =
+                current:GetAttribute(
+                    "Wheelbarrow"
+                )
+        end)
+
+        if wheelbarrowAttribute ~= nil then
+
+            return current
+        end
+
+        if name:find(
+            "wheelbarrow",
+            1,
+            true
+        ) then
+
+            return current
+        end
+
+        current =
+            current.Parent
+    end
+
+    return nil
+end
+
+function HolyAntiWheelbarrowIsSeat(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("BasePart") ~= true then
+
+        return false,
+            nil
+    end
+
+    local wheelbarrow =
+        HolyAntiWheelbarrowFindAncestor(
+            instance
+        )
+
+    return wheelbarrow ~= nil,
+        wheelbarrow
+end
+
+function HolyAntiWheelbarrowWeldConnectsCharacter(
+    weld,
+    expectedSeat
+)
+
+    if typeof(weld) ~= "Instance"
+    or weld:IsA("Weld") ~= true then
+
+        return false
+    end
+
+    local part0 =
+        weld.Part0
+
+    local part1 =
+        weld.Part1
+
+    if typeof(part0) ~= "Instance"
+    or typeof(part1) ~= "Instance" then
+
+        return false
+    end
+
+    local part0IsCharacter =
+        HolyAntiWheelbarrowIsCharacterPart(
+            part0
+        )
+
+    local part1IsCharacter =
+        HolyAntiWheelbarrowIsCharacterPart(
+            part1
+        )
+
+    if part0IsCharacter == part1IsCharacter then
+
+        return false
+    end
+
+    local outsidePart =
+        part0IsCharacter
+        and part1
+        or part0
+
+    if expectedSeat ~= nil
+    and outsidePart ~= expectedSeat then
+
+        return false
+    end
+
+    return HolyAntiWheelbarrowIsSeat(
+        outsidePart
+    ) == true
+end
+
+function HolyAntiWheelbarrowHasSeatWeld(seat)
+
+    if typeof(seat) ~= "Instance"
+    or seat.Parent == nil then
+
+        return false
+    end
+
+    for _, descendant in ipairs(
+        seat:GetDescendants()
+    ) do
+
+        if descendant:IsA("Weld")
+        and string.lower(
+            descendant.Name
+        ) == "seatweld"
+        and HolyAntiWheelbarrowWeldConnectsCharacter(
+            descendant,
+            seat
+        ) == true then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyAntiWheelbarrowRemoveSeatWelds(seat)
+
+    if typeof(seat) ~= "Instance"
+    or seat.Parent == nil then
+
+        return 0
+    end
+
+    local removed =
+        0
+
+    for _, descendant in ipairs(
+        seat:GetDescendants()
+    ) do
+
+        if descendant:IsA("Weld")
+        and string.lower(
+            descendant.Name
+        ) == "seatweld"
+        and HolyAntiWheelbarrowWeldConnectsCharacter(
+            descendant,
+            seat
+        ) == true then
+
+            local destroyed =
+                pcall(function()
+
+                    descendant:Destroy()
+                end)
+
+            if destroyed == true then
+
+                removed +=
+                    1
+            end
+        end
+    end
+
+    return removed
+end
+
+function HolyAntiWheelbarrowDisableSeat(seat)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    if typeof(seat) ~= "Instance"
+    or seat:IsA("Seat") ~= true
+    or runtime.DisabledSeats[seat] ~= nil then
+
+        return false
+    end
+
+    local originalDisabled =
+        seat.Disabled
+
+    runtime.DisabledSeats[seat] =
+        originalDisabled
+
+    local disabled =
+        pcall(function()
+
+            seat.Disabled =
+                true
+        end)
+
+    if disabled ~= true then
+
+        runtime.DisabledSeats[seat] =
+            nil
+
+        return false
+    end
+
+    return true
+end
+
+function HolyAntiWheelbarrowRestoreSeats()
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    for seat,
+        originalDisabled in pairs(
+        runtime.DisabledSeats
+        or {}
+    ) do
+
+        if typeof(seat) == "Instance"
+        and seat.Parent ~= nil then
+
+            pcall(function()
+
+                seat.Disabled =
+                    originalDisabled
+            end)
+        end
+    end
+
+    runtime.DisabledSeats =
+        {}
+
+    return true
+end
+
+function HolyAntiWheelbarrowForceUnseat()
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiWheelbarrowGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root
+    or humanoid.Health <= 0 then
+
+        return false
+    end
+
+    pcall(function()
+
+        humanoid.Sit =
+            false
+    end)
+
+    pcall(function()
+
+        humanoid:ChangeState(
+            Enum.HumanoidStateType.GettingUp
+        )
+    end)
+
+    pcall(function()
+
+        root.AssemblyLinearVelocity =
+            Vector3.zero
+
+        root.AssemblyAngularVelocity =
+            Vector3.zero
+    end)
+
+    return true
+end
+
+function HolyAntiWheelbarrowCaptureSafePosition(
+    ignoreRecovery
+)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    if runtime.Running ~= true then
+        return false
+    end
+
+    if ignoreRecovery ~= true
+    and os.clock() <= (
+        tonumber(runtime.RecoveringUntil)
+        or 0
+    ) then
+
+        return false
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiWheelbarrowGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root
+    or humanoid.Health <= 0
+    or humanoid.Sit == true
+    or humanoid.FloorMaterial
+        == Enum.Material.Air then
+
+        return false
+    end
+
+    local state =
+        humanoid:GetState()
+
+    if state == Enum.HumanoidStateType.Seated
+    or state == Enum.HumanoidStateType.Dead
+    or state == Enum.HumanoidStateType.Ragdoll
+    or state == Enum.HumanoidStateType.FallingDown
+    or state == Enum.HumanoidStateType.PlatformStanding then
+
+        return false
+    end
+
+    local activeSeat =
+        runtime.ActiveSeat
+
+    if typeof(activeSeat) == "Instance"
+    and HolyAntiWheelbarrowHasSeatWeld(
+        activeSeat
+    ) == true then
+
+        return false
+    end
+
+    if root.AssemblyLinearVelocity.Magnitude > 24
+    or root.AssemblyAngularVelocity.Magnitude > 12 then
+
+        return false
+    end
+
+    runtime.SafeCFrame =
+        root.CFrame
+
+    runtime.SafeCapturedAt =
+        os.clock()
+
+    return true
+end
+
+function HolyAntiWheelbarrowResumeSampling(
+    expectedEpisode
+)
+
+    task.spawn(function()
+
+        local runtime =
+            HOLY_ANTI_WHEELBARROW_STATE
+
+        for _ =
+            1,
+            12
+        do
+
+            if runtime.Running ~= true
+            or runtime.CurrentEpisode
+                ~= expectedEpisode then
+
+                return
+            end
+
+            local _,
+                humanoid =
+                HolyAntiWheelbarrowGetCharacter()
+
+            if humanoid then
+
+                pcall(function()
+
+                    humanoid.Sit =
+                        false
+                end)
+            end
+
+            if HolyAntiWheelbarrowCaptureSafePosition(
+                true
+            ) == true then
+
+                runtime.RecoveringUntil =
+                    0
+
+                return
+            end
+
+            task.wait(
+                0.1
+            )
+        end
+    end)
+end
+
+function HolyAntiWheelbarrowRecoveryPass(
+    expectedEpisode,
+    passIndex,
+    seat,
+    recoveryCFrame
+)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    if runtime.Running ~= true
+    or runtime.CurrentEpisode
+        ~= expectedEpisode then
+
+        return false
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiWheelbarrowGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root
+    or humanoid.Health <= 0 then
+
+        return false
+    end
+
+    local stillAttached =
+        humanoid.Sit == true
+        or humanoid.SeatPart == seat
+        or HolyAntiWheelbarrowHasSeatWeld(
+            seat
+        ) == true
+
+    HolyAntiWheelbarrowRemoveSeatWelds(
+        seat
+    )
+
+    HolyAntiWheelbarrowForceUnseat()
+
+    local shouldRestore =
+        typeof(recoveryCFrame) == "CFrame"
+        and (
+            passIndex == 1
+            or (
+                passIndex == 3
+                and stillAttached == true
+            )
+        )
+
+    if shouldRestore == true then
+
+        pcall(function()
+
+            root.CFrame =
+                recoveryCFrame
+        end)
+    end
+
+    if passIndex == 3 then
+
+        task.delay(
+            0.2,
+            function()
+
+                HolyAntiWheelbarrowResumeSampling(
+                    expectedEpisode
+                )
+            end
+        )
+    end
+
+    return true
+end
+
+function HolyAntiWheelbarrowTrigger(
+    reason,
+    seat
+)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    if runtime.Running ~= true then
+        return false
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyAntiWheelbarrowGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root
+    or humanoid.Health <= 0 then
+
+        return false
+    end
+
+    seat =
+        seat
+        or humanoid.SeatPart
+
+    local verified =
+        HolyAntiWheelbarrowIsSeat(
+            seat
+        )
+
+    if verified ~= true then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local duplicate =
+        seat == runtime.ActiveSeat
+        and now <= (
+            tonumber(
+                runtime.CurrentEpisodeUntil
+            )
+            or 0
+        )
+
+    if duplicate == true then
+
+        HolyAntiWheelbarrowRemoveSeatWelds(
+            seat
+        )
+
+        pcall(function()
+
+            humanoid.Sit =
+                false
+        end)
+
+        return true
+    end
+
+    runtime.CurrentEpisode +=
+        1
+
+    local expectedEpisode =
+        runtime.CurrentEpisode
+
+    runtime.ActiveSeat =
+        seat
+
+    runtime.CurrentEpisodeUntil =
+        now + 1
+
+    runtime.RecoveringUntil =
+        now + 1.25
+
+    local recoveryCFrame =
+        runtime.SafeCFrame
+
+    if typeof(recoveryCFrame) ~= "CFrame" then
+
+        recoveryCFrame =
+            root.CFrame
+    end
+
+    HolyAntiWheelbarrowDisableSeat(
+        seat
+    )
+
+    local recoveryDelays = {
+        0,
+        0.05,
+        0.14,
+    }
+
+    for passIndex,
+        delayTime in ipairs(
+            recoveryDelays
+        )
+    do
+
+        local capturedPassIndex =
+            passIndex
+
+        task.delay(
+            delayTime,
+            function()
+
+                HolyAntiWheelbarrowRecoveryPass(
+                    expectedEpisode,
+                    capturedPassIndex,
+                    seat,
+                    recoveryCFrame
+                )
+            end
+        )
+    end
+
+    return true
+end
+
+function HolyAntiWheelbarrowInspectSeatWeld(weld)
+
+    if typeof(weld) ~= "Instance"
+    or weld:IsA("Weld") ~= true
+    or string.lower(
+        weld.Name
+    ) ~= "seatweld"
+    or HolyAntiWheelbarrowWeldConnectsCharacter(
+        weld,
+        nil
+    ) ~= true then
+
+        return false
+    end
+
+    local part0 =
+        weld.Part0
+
+    local part1 =
+        weld.Part1
+
+    local seat =
+        HolyAntiWheelbarrowIsCharacterPart(
+            part0
+        )
+        and part1
+        or part0
+
+    return HolyAntiWheelbarrowTrigger(
+        "seat weld",
+        seat
+    )
+end
+
+function HolyAntiWheelbarrowBindCharacter(character)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    HolyAntiWheelbarrowDisconnectList(
+        runtime.CharacterConnections
+    )
+
+    runtime.Character =
+        character
+
+    runtime.Humanoid =
+        nil
+
+    runtime.Root =
+        nil
+
+    runtime.SafeCFrame =
+        nil
+
+    runtime.SafeCapturedAt =
+        0
+
+    runtime.RecoveringUntil =
+        0
+
+    runtime.CurrentEpisodeUntil =
+        0
+
+    runtime.ActiveSeat =
+        nil
+
+    if typeof(character) ~= "Instance" then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+        or character:WaitForChild(
+            "Humanoid",
+            8
+        )
+
+    local root =
+        character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+        or character:WaitForChild(
+            "HumanoidRootPart",
+            8
+        )
+
+    if typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    runtime.Humanoid =
+        humanoid
+
+    runtime.Root =
+        root
+
+    runtime.SafeCFrame =
+        root.CFrame
+
+    runtime.SafeCapturedAt =
+        os.clock()
+
+    table.insert(
+        runtime.CharacterConnections,
+        humanoid:GetPropertyChangedSignal(
+            "SeatPart"
+        ):Connect(function()
+
+            local seat =
+                humanoid.SeatPart
+
+            if seat ~= nil then
+
+                HolyAntiWheelbarrowTrigger(
+                    "seat part",
+                    seat
+                )
+            end
+        end)
+    )
+
+    table.insert(
+        runtime.CharacterConnections,
+        humanoid:GetPropertyChangedSignal(
+            "Sit"
+        ):Connect(function()
+
+            if humanoid.Sit == true
+            and humanoid.SeatPart ~= nil then
+
+                HolyAntiWheelbarrowTrigger(
+                    "sit",
+                    humanoid.SeatPart
+                )
+            end
+        end)
+    )
+
+    table.insert(
+        runtime.CharacterConnections,
+        humanoid.Seated:Connect(function(
+            active,
+            seat
+        )
+
+            if active == true
+            and seat ~= nil then
+
+                HolyAntiWheelbarrowTrigger(
+                    "seated",
+                    seat
+                )
+            end
+        end)
+    )
+
+    table.insert(
+        runtime.CharacterConnections,
+        humanoid.StateChanged:Connect(function(
+            _,
+            newState
+        )
+
+            if newState
+                == Enum.HumanoidStateType.Seated
+            and humanoid.SeatPart ~= nil then
+
+                HolyAntiWheelbarrowTrigger(
+                    "seated state",
+                    humanoid.SeatPart
+                )
+            end
+        end)
+    )
+
+    if humanoid.SeatPart ~= nil then
+
+        HolyAntiWheelbarrowTrigger(
+            "character bind",
+            humanoid.SeatPart
+        )
+    end
+
+    return true
+end
+
+function HolyAntiWheelbarrowStop(reason)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    if type(runtime) ~= "table" then
+        return false
+    end
+
+    runtime.Running =
+        false
+
+    runtime.Token =
+        nil
+
+    HolyAntiWheelbarrowDisconnectList(
+        runtime.CharacterConnections
+    )
+
+    HolyAntiWheelbarrowDisconnectList(
+        runtime.Connections
+    )
+
+    HolyAntiWheelbarrowRestoreSeats()
+
+    runtime.Character =
+        nil
+
+    runtime.Humanoid =
+        nil
+
+    runtime.Root =
+        nil
+
+    runtime.SafeCFrame =
+        nil
+
+    runtime.SafeCapturedAt =
+        0
+
+    runtime.RecoveringUntil =
+        0
+
+    runtime.CurrentEpisode =
+        0
+
+    runtime.CurrentEpisodeUntil =
+        0
+
+    runtime.ActiveSeat =
+        nil
+
+    return true
+end
+
+function HolyAntiWheelbarrowStart(reason)
+
+    local runtime =
+        HOLY_ANTI_WHEELBARROW_STATE
+
+    if runtime.Running == true then
+        return false
+    end
+
+    runtime.Running =
+        true
+
+    runtime.Token =
+        {}
+
+    local token =
+        runtime.Token
+
+    runtime.Connections =
+        {}
+
+    runtime.CharacterConnections =
+        {}
+
+    runtime.DisabledSeats =
+        {}
+
+    table.insert(
+        runtime.Connections,
+        LocalPlayer.CharacterAdded:Connect(function(
+            character
+        )
+
+            task.defer(function()
+
+                if runtime.Running == true
+                and runtime.Token == token then
+
+                    HolyAntiWheelbarrowBindCharacter(
+                        character
+                    )
+                end
+            end)
+        end)
+    )
+
+    table.insert(
+        runtime.Connections,
+        workspace.DescendantAdded:Connect(function(
+            descendant
+        )
+
+            if runtime.Running ~= true
+            or runtime.Token ~= token
+            or descendant:IsA("Weld") ~= true
+            or string.lower(
+                descendant.Name
+            ) ~= "seatweld" then
+
+                return
+            end
+
+            task.defer(function()
+
+                HolyAntiWheelbarrowInspectSeatWeld(
+                    descendant
+                )
+            end)
+
+            task.delay(
+                0.03,
+                function()
+
+                    if runtime.Running == true
+                    and runtime.Token == token
+                    and descendant.Parent ~= nil then
+
+                        HolyAntiWheelbarrowInspectSeatWeld(
+                            descendant
+                        )
+                    end
+                end
+            )
+        end)
+    )
+
+    HolyAntiWheelbarrowBindCharacter(
+        LocalPlayer.Character
+        or LocalPlayer.CharacterAdded:Wait()
+    )
+
+    task.spawn(function()
+
+        while runtime.Running == true
+        and runtime.Token == token do
+
+            HolyAntiWheelbarrowCaptureSafePosition(
+                false
+            )
+
+            task.wait(
+                0.15
+            )
+        end
+    end)
+
+    return true
+end
+
+HOLY_ANTI_WHEELBARROW_STATE.Stop =
+    HolyAntiWheelbarrowStop
+
 function HolySetGroupboxVisible(groupbox, visible)
 
     if type(groupbox) ~= "table" then
@@ -73283,6 +74413,13 @@ end
 if HOLY_DEV_UI_STATE.AntiKnockback == true then
 
     HolyAntiKnockbackStart(
+        "startup"
+    )
+end
+
+if HOLY_DEV_UI_STATE.AntiWheelbarrow == true then
+
+    HolyAntiWheelbarrowStart(
         "startup"
     )
 end
@@ -103590,6 +104727,39 @@ SettingsProtectionBox:AddToggle(
     else
 
         HolyAntiKnockbackStop(
+            "toggle off"
+        )
+    end
+end)
+
+SettingsProtectionBox:AddToggle(
+    "HolyAntiWheelbarrow",
+    {
+        Text =
+            "Anti Wheelbarrow",
+
+        Default =
+            HOLY_DEV_UI_STATE.AntiWheelbarrow == true,
+
+        Tooltip =
+            "Prevents wheelbarrows from carrying you.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.AntiWheelbarrow =
+        value == true
+
+    HolySaveUISettings()
+
+    if HOLY_DEV_UI_STATE.AntiWheelbarrow == true then
+
+        HolyAntiWheelbarrowStart(
+            "toggle on"
+        )
+
+    else
+
+        HolyAntiWheelbarrowStop(
             "toggle off"
         )
     end
