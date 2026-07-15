@@ -92810,9 +92810,28 @@ local FarmFruitAutomationBox =
         "target"
     )
 
-local FarmPlantAutomationBox =
-    Tabs.Farm:AddRightTabbox(
-        "Plant Automation"
+local FarmPlantMergeBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.PlantMerging",
+        "Plant Merging",
+        "combine"
+    )
+
+local FarmPlantPotsBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.PotAutomation",
+        "Pot Automation",
+        "package-open"
+    )
+
+local FarmPlantEclipseBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.EclipseLoop",
+        "Eclipse Loop",
+        "eclipse"
     )
 
 local SHOW_PATCHED_VULN_TOOLS =
@@ -93122,7 +93141,17 @@ function HolyFarmRefreshPage()
     )
 
     HolySetGroupboxVisible(
-        FarmPlantAutomationBox,
+        FarmPlantMergeBox,
+        isExtra
+    )
+
+    HolySetGroupboxVisible(
+        FarmPlantPotsBox,
+        isExtra
+    )
+
+    HolySetGroupboxVisible(
+        FarmPlantEclipseBox,
         isExtra
     )
 
@@ -105080,34 +105109,25 @@ HolyFarmAddPageNote(
 )
 
 HOLY_MERGE_AUTOMATION_UI.Tabbox =
-    FarmPlantAutomationBox
+    nil
 
 HOLY_MERGE_AUTOMATION_UI.MergeTab =
-    HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
-        "Merge",
-        "combine"
-    )
+    FarmPlantMergeBox
 
 HOLY_MERGE_AUTOMATION_UI.PotsTab =
-    HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
-        "Pots",
-        "package-open"
-    )
+    FarmPlantPotsBox
 
 HOLY_MERGE_AUTOMATION_UI.EclipseTab =
-    HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
-        "Eclipse",
-        "eclipse"
-    )
+    FarmPlantEclipseBox
 
 local FarmPlantMergeTab =
-    HOLY_MERGE_AUTOMATION_UI.MergeTab
+    FarmPlantMergeBox
 
 local FarmPlantPotsTab =
-    HOLY_MERGE_AUTOMATION_UI.PotsTab
+    FarmPlantPotsBox
 
 local FarmPlantEclipseTab =
-    HOLY_MERGE_AUTOMATION_UI.EclipseTab
+    FarmPlantEclipseBox
 
 HOLY_MERGE_AUTOMATION_UI.AutoMergeToggle =
     FarmPlantMergeTab:AddToggle(
