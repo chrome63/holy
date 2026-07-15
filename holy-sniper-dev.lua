@@ -34,16 +34,6 @@ local LocalPlayer =
     Players.LocalPlayer
     or Players.PlayerAdded:Wait()
 
-if not game:IsLoaded() then
-
-    game.Loaded:Wait()
-end
-
-print(
-    "[HOLY DATA]",
-    "Game loaded."
-)
-
 --==================================================
 -- [0.5] LOADER AUTH GATE
 --==================================================
@@ -65,6 +55,1328 @@ or tostring(HOLY_AUTH.SessionId or "") == "" then
         0
     )
 end
+
+--==================================================
+-- [0.6] EARLY FAST LOADER
+--==================================================
+
+do
+
+    local env =
+        (
+            type(getgenv) == "function"
+            and getgenv()
+        )
+        or _G
+
+    local settingsFile =
+        "HolyGAG2/HolyDevUISettings.json"
+
+    local bootstrapSource = [==[
+local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
+
+local env =
+    (
+        type(getgenv) == "function"
+        and getgenv()
+    )
+    or _G
+
+local VERSION =
+    "HOLY_FAST_LOADER_PRODUCTION_V1"
+
+local SETTINGS_FILE =
+    "HolyGAG2/HolyDevUISettings.json"
+
+local function readEnabled()
+
+    if env.HOLY_FAST_LOADER_FORCE_ENABLED == true then
+        return true
+    end
+
+    if type(readfile) ~= "function"
+    or type(isfile) ~= "function" then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local ok,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                readfile(
+                    SETTINGS_FILE
+                )
+            )
+        end)
+
+    if ok ~= true
+    or type(data) ~= "table" then
+        return false
+    end
+
+    if type(data.UnloadOtherGardens) == "boolean" then
+        return data.UnloadOtherGardens
+    end
+
+    return data.DeleteOtherGardens == true
+end
+
+if readEnabled() ~= true then
+    return
+end
+
+local player =
+    Players.LocalPlayer
+
+while not player do
+
+    Players:GetPropertyChangedSignal(
+        "LocalPlayer"
+    ):Wait()
+
+    player =
+        Players.LocalPlayer
+end
+
+local existing =
+    env.HOLY_FAST_LOADER_RUNTIME
+
+if type(existing) == "table"
+and existing.JobId == game.JobId
+and existing.Version == VERSION then
+
+    existing.Active =
+        true
+
+    return
+end
+
+local runtime = {
+    Version = VERSION,
+    JobId = game.JobId,
+    PlaceId = game.PlaceId,
+    Active = true,
+    StartedAt = os.clock(),
+    Connections = {},
+    WatchedPetFolders = setmetatable({}, { __mode = "k" }),
+    WatchedPetParts = setmetatable({}, { __mode = "k" }),
+    WatchedPlots = setmetatable({}, { __mode = "k" }),
+    WatchedContainers = setmetatable({}, { __mode = "k" }),
+    GardenEntriesSkipped = 0,
+    GardenEntitiesSkipped = 0,
+    DirectPlantSpawnsSkipped = 0,
+    OtherPetPartsSuppressed = 0,
+    FallbackRootsDetached = 0,
+    ControllerWindowMissed = false,
+    ReleasePatches = 0,
+    NPCPatchInstalled = false,
+    GardenSyncPatchInstalled = false,
+    PlantPatchInstalled = false,
+    PetPatchInstalled = false,
+    Errors = {},
+}
+
+env.HOLY_FAST_LOADER_RUNTIME =
+    runtime
+
+local function addError(name, message)
+
+    table.insert(
+        runtime.Errors,
+        tostring(name)
+            .. ": "
+            .. tostring(message)
+    )
+end
+
+local function addConnection(connection)
+
+    if connection then
+
+        table.insert(
+            runtime.Connections,
+            connection
+        )
+    end
+
+    return connection
+end
+
+function runtime.Stop()
+
+    runtime.Active =
+        false
+
+    for _, connection in ipairs(runtime.Connections) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    table.clear(
+        runtime.Connections
+    )
+
+    return true
+end
+
+local function getLocalPlotName()
+
+    local plotId =
+        player:GetAttribute(
+            "PlotId"
+        )
+
+    if plotId == nil then
+        return nil
+    end
+
+    return "Plot"
+        .. tostring(plotId)
+end
+
+local function isOtherPlot(plot)
+
+    if typeof(plot) ~= "Instance" then
+        return false
+    end
+
+    local localPlotName =
+        getLocalPlotName()
+
+    if localPlotName then
+        return plot.Name ~= localPlotName
+    end
+
+    local ownerUserId =
+        tonumber(
+            plot:GetAttribute(
+                "OwnerUserId"
+            )
+        )
+
+    if ownerUserId then
+        return ownerUserId ~= player.UserId
+    end
+
+    local ownerName =
+        tostring(
+            plot:GetAttribute(
+                "Owner"
+            )
+            or ""
+        )
+
+    if ownerName ~= "" then
+        return ownerName ~= player.Name
+    end
+
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+
+        if otherPlayer ~= player then
+
+            local otherPlotId =
+                otherPlayer:GetAttribute(
+                    "PlotId"
+                )
+
+            if otherPlotId ~= nil
+            and plot.Name == "Plot" .. tostring(otherPlotId) then
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function isPetPart(instance)
+
+    return typeof(instance) == "Instance"
+        and instance:IsA("BasePart")
+        and instance.Name:match(
+            "^PetPart%d+$"
+        ) ~= nil
+end
+
+local function suppressPetPart(part)
+
+    if runtime.Active ~= true
+    or isPetPart(part) ~= true
+    or runtime.WatchedPetParts[part] then
+
+        return false
+    end
+
+    runtime.WatchedPetParts[part] =
+        true
+
+    pcall(function()
+
+        part:SetAttribute(
+            "PetSpecies",
+            ""
+        )
+    end)
+
+    pcall(function()
+
+        part.Parent =
+            nil
+    end)
+
+    if part.Parent == nil then
+
+        runtime.OtherPetPartsSuppressed +=
+            1
+
+        return true
+    end
+
+    return false
+end
+
+local function watchPetFolder(folder)
+
+    if runtime.Active ~= true
+    or typeof(folder) ~= "Instance"
+    or folder:IsA("Folder") ~= true
+    or runtime.WatchedPetFolders[folder] then
+
+        return
+    end
+
+    runtime.WatchedPetFolders[folder] =
+        true
+
+    local localFolder =
+        folder.Name == player.Name
+
+    addConnection(
+        folder.ChildAdded:Connect(function(child)
+
+            if localFolder ~= true then
+
+                suppressPetPart(
+                    child
+                )
+            end
+        end)
+    )
+
+    if localFolder ~= true then
+
+        for _, child in ipairs(folder:GetChildren()) do
+
+            suppressPetPart(
+                child
+            )
+        end
+    end
+end
+
+local function installPetFilter(root)
+
+    if runtime.Active ~= true
+    or typeof(root) ~= "Instance" then
+
+        return false
+    end
+
+    runtime.PetRoot =
+        root
+
+    if runtime.WatchedPetRoot ~= root then
+
+        runtime.WatchedPetRoot =
+            root
+
+        addConnection(
+            root.ChildAdded:Connect(
+                watchPetFolder
+            )
+        )
+    end
+
+    for _, folder in ipairs(root:GetChildren()) do
+
+        watchPetFolder(
+            folder
+        )
+    end
+
+    return true
+end
+
+local petRoot =
+    workspace:FindFirstChild(
+        "PlayerPetReferences"
+    )
+
+if petRoot then
+
+    installPetFilter(
+        petRoot
+    )
+end
+
+addConnection(
+    workspace.ChildAdded:Connect(function(child)
+
+        if runtime.Active == true
+        and child.Name == "PlayerPetReferences" then
+
+            installPetFilter(
+                child
+            )
+        end
+    end)
+)
+
+local contentContainers = {
+    Plants = true,
+    Sprinklers = true,
+    Props = true,
+}
+
+local function detachOtherRoot(child, container, plot)
+
+    if runtime.Active ~= true
+    or typeof(child) ~= "Instance"
+    or child.Parent ~= container
+    or isOtherPlot(plot) ~= true then
+
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            child.Parent =
+                nil
+        end)
+
+    if ok == true
+    and child.Parent == nil then
+
+        runtime.FallbackRootsDetached +=
+            1
+
+        return true
+    end
+
+    return false
+end
+
+local function watchContainer(container, plot)
+
+    if runtime.Active ~= true
+    or runtime.WatchedContainers[container]
+    or contentContainers[container.Name] ~= true then
+
+        return
+    end
+
+    runtime.WatchedContainers[container] =
+        true
+
+    addConnection(
+        container.ChildAdded:Connect(function(child)
+
+            task.defer(function()
+
+                detachOtherRoot(
+                    child,
+                    container,
+                    plot
+                )
+            end)
+        end)
+    )
+
+    if isOtherPlot(plot) == true then
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            detachOtherRoot(
+                child,
+                container,
+                plot
+            )
+        end
+    end
+end
+
+local function scanPlot(plot)
+
+    if runtime.Active ~= true
+    or typeof(plot) ~= "Instance"
+    or (
+        plot:IsA("Model") ~= true
+        and plot:IsA("Folder") ~= true
+    ) then
+
+        return
+    end
+
+    if runtime.WatchedPlots[plot] ~= true then
+
+        runtime.WatchedPlots[plot] =
+            true
+
+        addConnection(
+            plot.ChildAdded:Connect(function(child)
+
+                if contentContainers[child.Name] == true then
+
+                    watchContainer(
+                        child,
+                        plot
+                    )
+                end
+            end)
+        )
+
+        addConnection(
+            plot:GetAttributeChangedSignal(
+                "OwnerUserId"
+            ):Connect(function()
+
+                if isOtherPlot(plot) == true then
+
+                    for containerName in pairs(contentContainers) do
+
+                        local container =
+                            plot:FindFirstChild(
+                                containerName
+                            )
+
+                        if container then
+
+                            for _, child in ipairs(container:GetChildren()) do
+
+                                detachOtherRoot(
+                                    child,
+                                    container,
+                                    plot
+                                )
+                            end
+                        end
+                    end
+                end
+            end)
+        )
+    end
+
+    for containerName in pairs(contentContainers) do
+
+        local container =
+            plot:FindFirstChild(
+                containerName
+            )
+
+        if container then
+
+            watchContainer(
+                container,
+                plot
+            )
+        end
+    end
+end
+
+local function installGardenFilter(gardens)
+
+    if runtime.Active ~= true
+    or typeof(gardens) ~= "Instance" then
+
+        return false
+    end
+
+    runtime.Gardens =
+        gardens
+
+    if runtime.WatchedGardens ~= gardens then
+
+        runtime.WatchedGardens =
+            gardens
+
+        addConnection(
+            gardens.ChildAdded:Connect(
+                scanPlot
+            )
+        )
+    end
+
+    for _, plot in ipairs(gardens:GetChildren()) do
+
+        scanPlot(
+            plot
+        )
+    end
+
+    return true
+end
+
+local gardens =
+    workspace:FindFirstChild(
+        "Gardens"
+    )
+
+if gardens then
+
+    installGardenFilter(
+        gardens
+    )
+end
+
+addConnection(
+    workspace.ChildAdded:Connect(function(child)
+
+        if runtime.Active == true
+        and child.Name == "Gardens" then
+
+            installGardenFilter(
+                child
+            )
+        end
+    end)
+)
+
+addConnection(
+    player:GetAttributeChangedSignal(
+        "PlotId"
+    ):Connect(function()
+
+        local activeGardens =
+            runtime.Gardens
+
+        if typeof(activeGardens) == "Instance" then
+
+            for _, plot in ipairs(activeGardens:GetChildren()) do
+
+                scanPlot(
+                    plot
+                )
+
+                if isOtherPlot(plot) == true then
+
+                    for containerName in pairs(contentContainers) do
+
+                        local container =
+                            plot:FindFirstChild(
+                                containerName
+                            )
+
+                        if container then
+
+                            for _, child in ipairs(container:GetChildren()) do
+
+                                detachOtherRoot(
+                                    child,
+                                    container,
+                                    plot
+                                )
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+)
+
+local playerScripts =
+    player:WaitForChild(
+        "PlayerScripts",
+        30
+    )
+
+local controllers =
+    playerScripts
+    and playerScripts:WaitForChild(
+        "Controllers",
+        30
+    )
+
+if not controllers then
+
+    addError(
+        "Controllers",
+        "folder missing"
+    )
+
+    return
+end
+
+local function requireController(name)
+
+    local moduleScript =
+        controllers:FindFirstChild(
+            name
+        )
+
+    if not moduleScript then
+
+        addError(
+            name,
+            "ModuleScript missing"
+        )
+
+        return nil
+    end
+
+    local ok,
+        module =
+        pcall(
+            require,
+            moduleScript
+        )
+
+    if ok ~= true
+    or type(module) ~= "table" then
+
+        addError(
+            name,
+            ok and "unexpected module API" or module
+        )
+
+        return nil
+    end
+
+    return module
+end
+
+local controllerWindowOpen =
+    CollectionService:HasTag(
+        player,
+        "ControllersStarted"
+    ) ~= true
+
+runtime.ControllerWindowMissed =
+    controllerWindowOpen ~= true
+
+local function patchReleaseController(name)
+
+    if controllerWindowOpen ~= true then
+        return false
+    end
+
+    local module =
+        requireController(
+            name
+        )
+
+    if type(module) ~= "table"
+    or type(module.Init) ~= "function" then
+
+        return false
+    end
+
+    local originalInit =
+        module.Init
+
+    local originalStart =
+        type(module.Start) == "function"
+        and module.Start
+        or nil
+
+    local initRequested =
+        false
+
+    local initFinished =
+        false
+
+    local initSucceeded =
+        false
+
+    local startRequested =
+        false
+
+    local startRunning =
+        false
+
+    local startSelf =
+        nil
+
+    local startArgs =
+        nil
+
+    local function runStart()
+
+        if originalStart == nil
+        or startRequested ~= true
+        or initFinished ~= true
+        or initSucceeded ~= true
+        or startRunning == true then
+
+            return
+        end
+
+        startRunning =
+            true
+
+        task.spawn(function()
+
+            local packed =
+                startArgs
+                or table.pack()
+
+            local ok,
+                message =
+                pcall(
+                    originalStart,
+                    startSelf or module,
+                    table.unpack(
+                        packed,
+                        1,
+                        packed.n
+                    )
+                )
+
+            if ok ~= true then
+
+                addError(
+                    name .. ".Start",
+                    message
+                )
+            end
+        end)
+    end
+
+    module.Init = function(self, ...)
+
+        if initRequested == true then
+            return nil
+        end
+
+        initRequested =
+            true
+
+        local packed =
+            table.pack(...)
+
+        task.spawn(function()
+
+            local ok,
+                message =
+                pcall(
+                    originalInit,
+                    self or module,
+                    table.unpack(
+                        packed,
+                        1,
+                        packed.n
+                    )
+                )
+
+            initSucceeded =
+                ok
+
+            initFinished =
+                true
+
+            if ok ~= true then
+
+                addError(
+                    name .. ".Init",
+                    message
+                )
+            end
+
+            runStart()
+        end)
+
+        return nil
+    end
+
+    if originalStart then
+
+        module.Start = function(self, ...)
+
+            if initRequested ~= true then
+
+                return originalStart(
+                    self,
+                    ...
+                )
+            end
+
+            startRequested =
+                true
+
+            startSelf =
+                self
+
+            startArgs =
+                table.pack(...)
+
+            runStart()
+
+            return nil
+        end
+    end
+
+    runtime.ReleasePatches +=
+        1
+
+    return true
+end
+
+local function patchNPCController()
+
+    if controllerWindowOpen ~= true then
+        return false
+    end
+
+    local module =
+        requireController(
+            "NPCController"
+        )
+
+    if type(module) ~= "table"
+    or type(module.Start) ~= "function" then
+
+        return false
+    end
+
+    local originalStart =
+        module.Start
+
+    local started =
+        false
+
+    module.Start = function(self, ...)
+
+        if started == true then
+            return nil
+        end
+
+        started =
+            true
+
+        local packed =
+            table.pack(...)
+
+        task.spawn(function()
+
+            local ok,
+                message =
+                pcall(
+                    originalStart,
+                    self or module,
+                    table.unpack(
+                        packed,
+                        1,
+                        packed.n
+                    )
+                )
+
+            if ok ~= true then
+
+                addError(
+                    "NPCController.Start",
+                    message
+                )
+            end
+        end)
+
+        return nil
+    end
+
+    runtime.NPCPatchInstalled =
+        true
+
+    return true
+end
+
+patchReleaseController(
+    "ReleaseCountdownController"
+)
+
+patchReleaseController(
+    "ReleaseChangelogController"
+)
+
+patchNPCController()
+
+do
+
+    local module =
+        requireController(
+            "GardenSyncController"
+        )
+
+    if type(module) == "table"
+    and type(module.EnqueueSpawnEntries) == "function" then
+
+        local original =
+            module.EnqueueSpawnEntries
+
+        module.EnqueueSpawnEntries = function(self, entries, total)
+
+            if runtime.Active ~= true then
+
+                return original(
+                    self,
+                    entries,
+                    total
+                )
+            end
+
+            local localEntries =
+                {}
+
+            local localEntityTotal =
+                0
+
+            for _, entry in ipairs(
+                type(entries) == "table"
+                and entries
+                or {}
+            ) do
+
+                if tonumber(entry.userId) == player.UserId then
+
+                    table.insert(
+                        localEntries,
+                        entry
+                    )
+
+                    localEntityTotal +=
+                        tonumber(entry.entityCount)
+                        or 0
+
+                else
+
+                    runtime.GardenEntriesSkipped +=
+                        1
+
+                    runtime.GardenEntitiesSkipped +=
+                        tonumber(entry.entityCount)
+                        or 0
+                end
+            end
+
+            return original(
+                self,
+                localEntries,
+                localEntityTotal
+            )
+        end
+
+        runtime.GardenSyncPatchInstalled =
+            true
+    end
+end
+
+do
+
+    local module =
+        requireController(
+            "PlantVisualizerController"
+        )
+
+    if type(module) == "table"
+    and type(module.SpawnPlantFromData) == "function" then
+
+        local original =
+            module.SpawnPlantFromData
+
+        module.SpawnPlantFromData = function(self, userId, ...)
+
+            if runtime.Active == true
+            and tonumber(userId) ~= player.UserId then
+
+                runtime.DirectPlantSpawnsSkipped +=
+                    1
+
+                return nil
+            end
+
+            return original(
+                self,
+                userId,
+                ...
+            )
+        end
+
+        runtime.PlantPatchInstalled =
+            true
+    end
+end
+
+do
+
+    local module =
+        requireController(
+            "PetVisualController"
+        )
+
+    if controllerWindowOpen == true
+    and type(module) == "table"
+    and type(module.Start) == "function" then
+
+        local original =
+            module.Start
+
+        module.Start = function(self, ...)
+
+            if runtime.Active == true then
+
+                local root =
+                    workspace:FindFirstChild(
+                        "PlayerPetReferences"
+                    )
+                    or workspace:WaitForChild(
+                        "PlayerPetReferences",
+                        30
+                    )
+
+                if root then
+
+                    installPetFilter(
+                        root
+                    )
+                end
+            end
+
+            return original(
+                self,
+                ...
+            )
+        end
+
+        runtime.PetPatchInstalled =
+            true
+    end
+end
+
+runtime.FinishedAt =
+    os.clock()
+]==]
+
+    local function readEnabled()
+
+        if env.HOLY_FAST_LOADER_FORCE_ENABLED == true then
+            return true
+        end
+
+        if type(readfile) ~= "function"
+        or type(isfile) ~= "function" then
+            return false
+        end
+
+        local exists =
+            false
+
+        pcall(function()
+
+            exists =
+                isfile(
+                    settingsFile
+                )
+        end)
+
+        if exists ~= true then
+            return false
+        end
+
+        local ok,
+            data =
+            pcall(function()
+
+                return HttpService:JSONDecode(
+                    readfile(
+                        settingsFile
+                    )
+                )
+            end)
+
+        if ok ~= true
+        or type(data) ~= "table" then
+            return false
+        end
+
+        if type(data.UnloadOtherGardens) == "boolean" then
+            return data.UnloadOtherGardens
+        end
+
+        return data.DeleteOtherGardens == true
+    end
+
+    local function findQueueFunction()
+
+        if type(queue_on_teleport) == "function" then
+            return queue_on_teleport
+        end
+
+        if type(queueonteleport) == "function" then
+            return queueonteleport
+        end
+
+        if type(syn) == "table"
+        and type(syn.queue_on_teleport) == "function" then
+
+            return syn.queue_on_teleport
+        end
+
+        if type(fluxus) == "table"
+        and type(fluxus.queue_on_teleport) == "function" then
+
+            return fluxus.queue_on_teleport
+        end
+
+        return nil
+    end
+
+    local function queueBootstrap()
+
+        if readEnabled() ~= true then
+            return false
+        end
+
+        if env.HOLY_FAST_LOADER_QUEUED_FROM_JOB == game.JobId then
+            return true
+        end
+
+        local queueFunction =
+            findQueueFunction()
+
+        if type(queueFunction) ~= "function" then
+            return false
+        end
+
+        local ok =
+            pcall(
+                queueFunction,
+                bootstrapSource
+            )
+
+        if ok == true then
+
+            env.HOLY_FAST_LOADER_QUEUED_FROM_JOB =
+                game.JobId
+        end
+
+        return ok
+    end
+
+    local function runBootstrap()
+
+        if readEnabled() ~= true then
+            return false
+        end
+
+        local existing =
+            env.HOLY_FAST_LOADER_RUNTIME
+
+        if type(existing) == "table"
+        and existing.JobId == game.JobId then
+
+            existing.Active =
+                true
+
+            return true
+        end
+
+        local compiler =
+            loadstring
+            or load
+
+        if type(compiler) ~= "function" then
+            return false
+        end
+
+        local compileOk,
+            chunk =
+            pcall(
+                compiler,
+                bootstrapSource
+            )
+
+        if compileOk ~= true
+        or type(chunk) ~= "function" then
+            return false
+        end
+
+        local runOk =
+            pcall(
+                chunk
+            )
+
+        return runOk == true
+    end
+
+    local function stopBootstrap()
+
+        env.HOLY_FAST_LOADER_FORCE_ENABLED =
+            false
+
+        local runtime =
+            env.HOLY_FAST_LOADER_RUNTIME
+
+        if type(runtime) == "table"
+        and runtime.JobId == game.JobId
+        and type(runtime.Stop) == "function" then
+
+            pcall(
+                runtime.Stop
+            )
+        end
+
+        return true
+    end
+
+    env.HOLY_FAST_LOADER_SOURCE =
+        bootstrapSource
+
+    env.HOLY_FAST_LOADER_QUEUE =
+        queueBootstrap
+
+    env.HOLY_FAST_LOADER_RUN =
+        runBootstrap
+
+    env.HOLY_FAST_LOADER_STOP =
+        stopBootstrap
+
+    if readEnabled() == true then
+
+        queueBootstrap()
+        runBootstrap()
+    end
+end
+
+if not game:IsLoaded() then
+
+    game.Loaded:Wait()
+end
+
+print(
+    "[HOLY DATA]",
+    "Game loaded."
+)
 
 function HolyAuthGet()
 
@@ -68902,7 +70214,9 @@ function HolyPerformanceShouldProcessPlot(plot, ownPlot)
         return HOLY_DEV_UI_STATE.UnloadOwnGarden == true
     end
 
-    return HOLY_DEV_UI_STATE.UnloadOtherGardens == true
+    -- Other plots are handled by the early fast loader. Keeping the legacy
+    -- cleaner away from them prevents it from detaching Visual and containers.
+    return false
 end
 
 function HolyPerformanceShouldRemoveChild(child)
@@ -68914,7 +70228,6 @@ function HolyPerformanceShouldRemoveChild(child)
     local removeNames = {
         Plants = true,
         Sprinklers = true,
-        Visual = true,
         Props = true,
     }
 
@@ -69995,10 +71308,38 @@ function HolyPerformanceStartUnloadOtherGardens(reason)
     HOLY_PERFORMANCE_STATE.Active =
         true
 
-    return HolyPerformanceStartApply(
-        reason
-        or "performance"
+    HolySaveUISettings()
+
+    local env =
+        (
+            type(getgenv) == "function"
+            and getgenv()
+        )
+        or _G
+
+    env.HOLY_FAST_LOADER_FORCE_ENABLED =
+        true
+
+    local queued =
+        type(env.HOLY_FAST_LOADER_QUEUE) == "function"
+        and env.HOLY_FAST_LOADER_QUEUE() == true
+
+    local started =
+        type(env.HOLY_FAST_LOADER_RUN) == "function"
+        and env.HOLY_FAST_LOADER_RUN() == true
+
+    HolyPerformanceSetStatus(
+        started == true
+        and (
+            queued == true
+            and "Fast loader active and queued for the next server."
+            or "Fast loader active. Rejoin for the earliest startup patch."
+        )
+        or "Fast loader saved. Rejoin to apply it."
     )
+
+    return started == true
+        or queued == true
 end
 
 function HolyPerformanceStopUnloadOtherGardens(reason)
@@ -70007,6 +71348,23 @@ function HolyPerformanceStopUnloadOtherGardens(reason)
         false
 
     HolySaveUISettings()
+
+    local env =
+        (
+            type(getgenv) == "function"
+            and getgenv()
+        )
+        or _G
+
+    env.HOLY_FAST_LOADER_FORCE_ENABLED =
+        false
+
+    if type(env.HOLY_FAST_LOADER_STOP) == "function" then
+
+        pcall(
+            env.HOLY_FAST_LOADER_STOP
+        )
+    end
 
     if HolyPerformanceAnyUnloadEnabled() == true then
 
@@ -70027,7 +71385,7 @@ function HolyPerformanceStopUnloadOtherGardens(reason)
     HolyPerformanceDisconnectConnections()
 
     HolyPerformanceSetStatus(
-        "Off."
+        "Fast loader off. Rejoin to restore suppressed visuals."
     )
 
     return true
@@ -104453,13 +105811,13 @@ SettingsPerformanceBox:AddToggle(
     "HolyPerformanceMode",
     {
         Text =
-            "Delete Other Gardens",
+            "Fast Load Other Gardens & Pets",
 
         Default =
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
 
         Tooltip =
-            "Improves client performance.",
+            "Helps you load into servers faster by hiding other players' gardens and pets. Rejoin after changing this setting.",
     }
 ):OnChanged(function(value)
 
