@@ -59238,6 +59238,1295 @@ function HolyDailyDealLiveStopWorker(reason)
     return true
 end
 
+--==================================================
+-- [2.60.1] FRUIT MULTIPLIER WEBHOOKS
+--==================================================
+
+local WEBHOOK_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumWebhookSettings.json"
+
+if type(HOLY_WEBHOOK_RUNTIME) == "table" then
+
+    HOLY_WEBHOOK_RUNTIME.Token = nil
+    HOLY_WEBHOOK_RUNTIME.Sending = false
+end
+
+HOLY_WEBHOOK_STATE = {
+    Enabled = false,
+    Url = "",
+    Filters = {},
+    SelectedFilterKey = "",
+    LastNotifiedRestockKey = "",
+}
+
+HOLY_WEBHOOK_RUNTIME = {
+    Token = {},
+    Queue = {},
+    Sending = false,
+    UpdatingUI = false,
+    DraftFruit = "",
+    DraftMinimum = "2",
+    LastStockResult = nil,
+    PendingRestockKeys = {},
+}
+
+HOLY_WEBHOOK_UI = {}
+
+function HolyWebhookReadMultiplier(value)
+
+    local number = nil
+
+    if type(value) == "number" then
+
+        number = value
+
+    else
+
+        local text =
+            HolyCleanText(value)
+                :lower()
+                :gsub("%s+", "")
+                :gsub(",", ".")
+                :gsub("^x", "")
+
+        number = tonumber(text)
+    end
+
+    if number == nil
+    or number <= 0
+    or number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        return nil
+    end
+
+    return math.floor(
+        math.clamp(number, 0.01, 100) * 100
+        + 0.5
+    ) / 100
+end
+
+function HolyWebhookFormatMultiplier(value)
+
+    return string.format(
+        "%.2f",
+        HolyWebhookReadMultiplier(value) or 0
+    )
+end
+
+function HolyWebhookFilterKey(value)
+
+    return HolyDailyDealNameKey(value)
+end
+
+function HolyWebhookNormalizeFilters(value)
+
+    local byKey = {}
+
+    if type(value) == "table" then
+
+        for key, row in pairs(value) do
+
+            local name = ""
+            local minimum = nil
+
+            if type(row) == "table" then
+
+                name = HolyCleanText(
+                    row.Name
+                    or row.Fruit
+                    or row.FruitName
+                    or (
+                        type(key) == "string"
+                        and key
+                        or ""
+                    )
+                )
+
+                minimum = HolyWebhookReadMultiplier(
+                    row.Minimum
+                    or row.MinMultiplier
+                    or row.Multiplier
+                    or row.Value
+                )
+
+            elseif type(key) == "string" then
+
+                name = HolyCleanText(key)
+                minimum = HolyWebhookReadMultiplier(row)
+            end
+
+            local normalizedKey =
+                HolyWebhookFilterKey(name)
+
+            if normalizedKey ~= ""
+            and normalizedKey ~= "all"
+            and minimum ~= nil then
+
+                byKey[normalizedKey] = {
+                    Name = name,
+                    Minimum = minimum,
+                }
+            end
+        end
+    end
+
+    local output = {}
+
+    for _, entry in pairs(byKey) do
+
+        output[#output + 1] = entry
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a.Name):lower()
+            < tostring(b.Name):lower()
+    end)
+
+    return output
+end
+
+function HolyWebhookEnsureState()
+
+    HOLY_WEBHOOK_STATE =
+        type(HOLY_WEBHOOK_STATE) == "table"
+        and HOLY_WEBHOOK_STATE
+        or {}
+
+    HOLY_WEBHOOK_RUNTIME =
+        type(HOLY_WEBHOOK_RUNTIME) == "table"
+        and HOLY_WEBHOOK_RUNTIME
+        or {}
+
+    HOLY_WEBHOOK_UI =
+        type(HOLY_WEBHOOK_UI) == "table"
+        and HOLY_WEBHOOK_UI
+        or {}
+
+    HOLY_WEBHOOK_STATE.Enabled =
+        HOLY_WEBHOOK_STATE.Enabled == true
+
+    HOLY_WEBHOOK_STATE.Url =
+        HolyCleanText(HOLY_WEBHOOK_STATE.Url)
+
+    HOLY_WEBHOOK_STATE.Filters =
+        HolyWebhookNormalizeFilters(
+            HOLY_WEBHOOK_STATE.Filters
+        )
+
+    HOLY_WEBHOOK_STATE.SelectedFilterKey =
+        tostring(
+            HOLY_WEBHOOK_STATE.SelectedFilterKey
+            or ""
+        )
+
+    HOLY_WEBHOOK_STATE.LastNotifiedRestockKey =
+        tostring(
+            HOLY_WEBHOOK_STATE.LastNotifiedRestockKey
+            or ""
+        )
+
+    HOLY_WEBHOOK_RUNTIME.Queue =
+        type(HOLY_WEBHOOK_RUNTIME.Queue) == "table"
+        and HOLY_WEBHOOK_RUNTIME.Queue
+        or {}
+
+    HOLY_WEBHOOK_RUNTIME.PendingRestockKeys =
+        type(HOLY_WEBHOOK_RUNTIME.PendingRestockKeys) == "table"
+        and HOLY_WEBHOOK_RUNTIME.PendingRestockKeys
+        or {}
+
+    HOLY_WEBHOOK_RUNTIME.DraftFruit =
+        tostring(
+            HOLY_WEBHOOK_RUNTIME.DraftFruit
+            or ""
+        )
+
+    HOLY_WEBHOOK_RUNTIME.DraftMinimum =
+        tostring(
+            HOLY_WEBHOOK_RUNTIME.DraftMinimum
+            or "2"
+        )
+
+    return HOLY_WEBHOOK_STATE
+end
+
+function HolyWebhookValidateUrl(value)
+
+    local url = HolyCleanText(value)
+    local lower = url:lower()
+
+    local prefixes = {
+        "https://discord.com/api/webhooks/",
+        "https://canary.discord.com/api/webhooks/",
+        "https://ptb.discord.com/api/webhooks/",
+        "https://discordapp.com/api/webhooks/",
+    }
+
+    for _, prefix in ipairs(prefixes) do
+
+        if lower:sub(1, #prefix) == prefix then
+
+            local tail = url:sub(#prefix + 1)
+
+            if tail:match("^%d+/.+") then
+
+                return true, url
+            end
+        end
+    end
+
+    return false,
+        "Enter a valid Discord webhook URL."
+end
+
+function HolySaveWebhookSettings()
+
+    HolyWebhookEnsureState()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local payload = {
+        Enabled = HOLY_WEBHOOK_STATE.Enabled == true,
+        Url = tostring(HOLY_WEBHOOK_STATE.Url or ""),
+
+        Filters = HolyWebhookNormalizeFilters(
+            HOLY_WEBHOOK_STATE.Filters
+        ),
+
+        LastNotifiedRestockKey = tostring(
+            HOLY_WEBHOOK_STATE.LastNotifiedRestockKey
+            or ""
+        ),
+    }
+
+    local encodeOk, encoded = pcall(function()
+
+        return HttpService:JSONEncode(payload)
+    end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk = pcall(function()
+
+        writefile(
+            WEBHOOK_SETTINGS_FILE,
+            encoded
+        )
+    end)
+
+    return writeOk == true
+end
+
+function HolyLoadWebhookSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists = false
+
+    pcall(function()
+
+        exists = isfile(
+            WEBHOOK_SETTINGS_FILE
+        )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk, raw = pcall(function()
+
+        return readfile(
+            WEBHOOK_SETTINGS_FILE
+        )
+    end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk, data = pcall(function()
+
+        return HttpService:JSONDecode(raw)
+    end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_WEBHOOK_STATE.Url = HolyCleanText(
+        data.Url
+        or data.WebhookUrl
+        or ""
+    )
+
+    HOLY_WEBHOOK_STATE.Filters =
+        HolyWebhookNormalizeFilters(
+            data.Filters
+            or data.FruitFilters
+        )
+
+    HOLY_WEBHOOK_STATE.LastNotifiedRestockKey =
+        tostring(
+            data.LastNotifiedRestockKey
+            or ""
+        )
+
+    local validUrl =
+        HolyWebhookValidateUrl(
+            HOLY_WEBHOOK_STATE.Url
+        )
+
+    HOLY_WEBHOOK_STATE.Enabled =
+        data.Enabled == true
+        and validUrl == true
+
+    HolyWebhookEnsureState()
+
+    return true
+end
+
+function HolyWebhookGetFruitDropdownValues()
+
+    HolyWebhookEnsureState()
+
+    local values = {}
+    local seen = {}
+
+    local function add(value)
+
+        local name = HolyCleanText(value)
+        local key = HolyWebhookFilterKey(name)
+
+        if name == ""
+        or key == ""
+        or key == "all"
+        or seen[key] == true then
+
+            return
+        end
+
+        seen[key] = true
+        values[#values + 1] = name
+    end
+
+    local ok, available = pcall(function()
+
+        return HolyDailyDealGetTriggerFruitDropdownValues()
+    end)
+
+    if ok == true
+    and type(available) == "table" then
+
+        for _, fruitName in ipairs(available) do
+
+            add(fruitName)
+        end
+    end
+
+    for _, entry in ipairs(
+        HOLY_WEBHOOK_STATE.Filters
+    ) do
+
+        add(entry.Name)
+    end
+
+    table.sort(values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    if #values <= 0 then
+
+        values[1] = "Mushroom"
+    end
+
+    return values
+end
+
+function HolyWebhookGetFilter(value)
+
+    HolyWebhookEnsureState()
+
+    local wantedKey =
+        HolyWebhookFilterKey(value)
+
+    for _, entry in ipairs(
+        HOLY_WEBHOOK_STATE.Filters
+    ) do
+
+        if HolyWebhookFilterKey(entry.Name)
+            == wantedKey then
+
+            return entry
+        end
+    end
+
+    return nil
+end
+
+function HolyWebhookFilterDisplay(entry)
+
+    return tostring(entry.Name)
+        .. " ≥ x"
+        .. HolyWebhookFormatMultiplier(
+            entry.Minimum
+        )
+end
+
+function HolyWebhookGetFilterDropdownValues()
+
+    HolyWebhookEnsureState()
+
+    local values = {}
+    local displayMap = {}
+
+    for _, entry in ipairs(
+        HOLY_WEBHOOK_STATE.Filters
+    ) do
+
+        local display =
+            HolyWebhookFilterDisplay(entry)
+
+        values[#values + 1] = display
+
+        displayMap[display] =
+            HolyWebhookFilterKey(entry.Name)
+    end
+
+    HOLY_WEBHOOK_RUNTIME.FilterDisplayMap =
+        displayMap
+
+    if #values <= 0 then
+
+        values[1] = "No filters added"
+    end
+
+    return values
+end
+
+function HolyWebhookReadSingleValue(value)
+
+    if type(value) ~= "table" then
+
+        return HolyCleanText(value)
+    end
+
+    for key, enabled in pairs(value) do
+
+        if enabled == true then
+
+            return HolyCleanText(key)
+        end
+    end
+
+    return HolyCleanText(value[1])
+end
+
+function HolyWebhookPopulateFilterEditor(entry)
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    HolyWebhookEnsureState()
+
+    HOLY_WEBHOOK_RUNTIME.DraftFruit =
+        tostring(entry.Name)
+
+    HOLY_WEBHOOK_RUNTIME.DraftMinimum =
+        HolyWebhookFormatMultiplier(
+            entry.Minimum
+        )
+
+    HOLY_WEBHOOK_RUNTIME.UpdatingUI = true
+
+    pcall(function()
+
+        local dropdown =
+            HOLY_WEBHOOK_UI.FruitDropdown
+
+        if type(dropdown) == "table"
+        and type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_WEBHOOK_RUNTIME.DraftFruit,
+                true
+            )
+        end
+    end)
+
+    pcall(function()
+
+        local input =
+            HOLY_WEBHOOK_UI.MinimumInput
+
+        if type(input) == "table"
+        and type(input.SetValue) == "function" then
+
+            input:SetValue(
+                HOLY_WEBHOOK_RUNTIME.DraftMinimum,
+                true
+            )
+        end
+    end)
+
+    task.defer(function()
+
+        HOLY_WEBHOOK_RUNTIME.UpdatingUI = false
+    end)
+
+    return true
+end
+
+function HolyWebhookRefreshFilterDropdown(selectKey)
+
+    HolyWebhookEnsureState()
+
+    local dropdown =
+        HOLY_WEBHOOK_UI.FilterDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        HolyWebhookGetFilterDropdownValues()
+
+    local selectedEntry = nil
+
+    local wantedKey = tostring(
+        selectKey
+        or HOLY_WEBHOOK_STATE.SelectedFilterKey
+        or ""
+    )
+
+    for _, entry in ipairs(
+        HOLY_WEBHOOK_STATE.Filters
+    ) do
+
+        if HolyWebhookFilterKey(entry.Name)
+            == wantedKey then
+
+            selectedEntry = entry
+            break
+        end
+    end
+
+    if selectedEntry == nil then
+
+        selectedEntry =
+            HOLY_WEBHOOK_STATE.Filters[1]
+    end
+
+    local selectedDisplay =
+        type(selectedEntry) == "table"
+        and HolyWebhookFilterDisplay(selectedEntry)
+        or "No filters added"
+
+    HOLY_WEBHOOK_STATE.SelectedFilterKey =
+        type(selectedEntry) == "table"
+        and HolyWebhookFilterKey(selectedEntry.Name)
+        or ""
+
+    HOLY_WEBHOOK_RUNTIME.UpdatingUI = true
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(values)
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(values)
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                selectedDisplay,
+                true
+            )
+        end
+    end)
+
+    task.defer(function()
+
+        HOLY_WEBHOOK_RUNTIME.UpdatingUI = false
+
+        if type(selectedEntry) == "table" then
+
+            HolyWebhookPopulateFilterEditor(
+                selectedEntry
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyWebhookUpsertFilter(fruitName, minimum)
+
+    HolyWebhookEnsureState()
+
+    fruitName = HolyCleanText(fruitName)
+
+    local key =
+        HolyWebhookFilterKey(fruitName)
+
+    local parsedMinimum =
+        HolyWebhookReadMultiplier(minimum)
+
+    if fruitName == ""
+    or key == ""
+    or key == "all" then
+
+        return false,
+            "Select a fruit first."
+    end
+
+    if parsedMinimum == nil then
+
+        return false,
+            "Enter a multiplier from 0.01 to 100."
+    end
+
+    local existing =
+        HolyWebhookGetFilter(fruitName)
+
+    local updated =
+        type(existing) == "table"
+
+    if updated == true then
+
+        existing.Name = fruitName
+        existing.Minimum = parsedMinimum
+
+    else
+
+        HOLY_WEBHOOK_STATE.Filters[
+            #HOLY_WEBHOOK_STATE.Filters + 1
+        ] = {
+            Name = fruitName,
+            Minimum = parsedMinimum,
+        }
+    end
+
+    HOLY_WEBHOOK_STATE.Filters =
+        HolyWebhookNormalizeFilters(
+            HOLY_WEBHOOK_STATE.Filters
+        )
+
+    HOLY_WEBHOOK_STATE.SelectedFilterKey = key
+    HOLY_WEBHOOK_STATE.LastNotifiedRestockKey = ""
+
+    HolySaveWebhookSettings()
+    HolyWebhookRefreshFilterDropdown(key)
+
+    if HOLY_WEBHOOK_STATE.Enabled == true
+    and type(
+        HOLY_WEBHOOK_RUNTIME.LastStockResult
+    ) == "table" then
+
+        task.defer(function()
+
+            HolyWebhookProcessFruitStock(
+                HOLY_WEBHOOK_RUNTIME.LastStockResult
+            )
+        end)
+    end
+
+    return true,
+        updated == true
+        and "Filter updated."
+        or "Filter added."
+end
+
+function HolyWebhookRemoveFilter(value)
+
+    HolyWebhookEnsureState()
+
+    local key = HolyWebhookFilterKey(
+        value
+        or HOLY_WEBHOOK_STATE.SelectedFilterKey
+    )
+
+    local removed = false
+
+    for index = #HOLY_WEBHOOK_STATE.Filters, 1, -1 do
+
+        local entry =
+            HOLY_WEBHOOK_STATE.Filters[index]
+
+        if HolyWebhookFilterKey(entry.Name)
+            == key then
+
+            table.remove(
+                HOLY_WEBHOOK_STATE.Filters,
+                index
+            )
+
+            removed = true
+            break
+        end
+    end
+
+    if removed ~= true then
+
+        return false,
+            "Select a filter first."
+    end
+
+    HOLY_WEBHOOK_STATE.SelectedFilterKey = ""
+
+    HolySaveWebhookSettings()
+    HolyWebhookRefreshFilterDropdown()
+
+    return true,
+        "Filter removed."
+end
+
+function HolyWebhookClearFilters()
+
+    HolyWebhookEnsureState()
+
+    HOLY_WEBHOOK_STATE.Filters = {}
+    HOLY_WEBHOOK_STATE.SelectedFilterKey = ""
+
+    HolySaveWebhookSettings()
+    HolyWebhookRefreshFilterDropdown()
+
+    return true
+end
+
+function HolyWebhookResponseStatus(response)
+
+    if type(response) ~= "table" then
+        return nil
+    end
+
+    return tonumber(
+        response.StatusCode
+        or response.status_code
+        or response.Status
+        or response.status
+    )
+end
+
+function HolyWebhookResponseBody(response)
+
+    if type(response) == "string" then
+        return response
+    end
+
+    if type(response) ~= "table" then
+        return ""
+    end
+
+    return tostring(
+        response.Body
+        or response.body
+        or response.ResponseBody
+        or response.responseBody
+        or ""
+    )
+end
+
+function HolyWebhookPerformRequest(item)
+
+    local valid, urlOrReason =
+        HolyWebhookValidateUrl(item.Url)
+
+    if valid ~= true then
+
+        return false,
+            tostring(urlOrReason),
+            0
+    end
+
+    local requestFunction =
+        HolyGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        return false,
+            "HTTP requests are unavailable.",
+            0
+    end
+
+    local encodeOk, encoded = pcall(function()
+
+        return HttpService:JSONEncode(
+            item.Payload
+        )
+    end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false,
+            "Could not encode the webhook.",
+            0
+    end
+
+    local requestOk, response = pcall(function()
+
+        return requestFunction({
+            Url = urlOrReason,
+            Method = "POST",
+
+            Headers = {
+                ["Content-Type"] =
+                    "application/json",
+            },
+
+            Body = encoded,
+        })
+    end)
+
+    if requestOk ~= true then
+
+        return false,
+            "Webhook request failed.",
+            0
+    end
+
+    local status =
+        HolyWebhookResponseStatus(response)
+
+    if status == 429 then
+
+        local decoded = nil
+
+        pcall(function()
+
+            decoded = HttpService:JSONDecode(
+                HolyWebhookResponseBody(response)
+            )
+        end)
+
+        local retryAfter =
+            type(decoded) == "table"
+            and tonumber(decoded.retry_after)
+            or 1
+
+        if retryAfter > 60 then
+
+            retryAfter /= 1000
+        end
+
+        return false,
+            "Discord rate limited the webhook.",
+            math.clamp(retryAfter, 0.5, 30)
+    end
+
+    if status ~= nil
+    and (
+        status < 200
+        or status >= 300
+    ) then
+
+        return false,
+            "Webhook returned HTTP "
+            .. tostring(status)
+            .. ".",
+            0
+    end
+
+    return true,
+        "sent",
+        0
+end
+
+function HolyWebhookStartQueue()
+
+    HolyWebhookEnsureState()
+
+    local runtime = HOLY_WEBHOOK_RUNTIME
+
+    if runtime.Sending == true then
+        return false
+    end
+
+    runtime.Sending = true
+
+    local token = runtime.Token
+
+    task.spawn(function()
+
+        while HOLY_WEBHOOK_RUNTIME.Token == token
+        and #runtime.Queue > 0 do
+
+            local item =
+                table.remove(runtime.Queue, 1)
+
+            item.Attempts =
+                tonumber(item.Attempts) or 0
+
+            local success, reason, retryAfter =
+                HolyWebhookPerformRequest(item)
+
+            if success ~= true
+            and item.Attempts < 2 then
+
+                item.Attempts += 1
+
+                task.wait(
+                    retryAfter > 0
+                    and retryAfter
+                    or 1.5
+                )
+
+                table.insert(
+                    runtime.Queue,
+                    1,
+                    item
+                )
+
+            else
+
+                if type(item.Callback) == "function" then
+
+                    pcall(
+                        item.Callback,
+                        success == true,
+                        tostring(reason)
+                    )
+                end
+
+                task.wait(0.4)
+            end
+        end
+
+        if HOLY_WEBHOOK_RUNTIME.Token == token then
+
+            runtime.Sending = false
+        end
+    end)
+
+    return true
+end
+
+function HolyWebhookEnqueue(payload, callback)
+
+    HolyWebhookEnsureState()
+
+    local valid, urlOrReason =
+        HolyWebhookValidateUrl(
+            HOLY_WEBHOOK_STATE.Url
+        )
+
+    if valid ~= true then
+
+        if type(callback) == "function" then
+
+            pcall(
+                callback,
+                false,
+                tostring(urlOrReason)
+            )
+        end
+
+        return false
+    end
+
+    local queue = HOLY_WEBHOOK_RUNTIME.Queue
+
+    while #queue >= 20 do
+
+        table.remove(queue, 1)
+    end
+
+    queue[#queue + 1] = {
+        Url = urlOrReason,
+        Payload = payload,
+        Callback = callback,
+        Attempts = 0,
+    }
+
+    HolyWebhookStartQueue()
+
+    return true
+end
+
+function HolyWebhookBuildFruitAlertPayload(
+    matches,
+    stockResult
+)
+
+    local lines = {}
+
+    for _, match in ipairs(matches) do
+
+        lines[#lines + 1] =
+            "• **"
+            .. tostring(match.Name)
+            .. "** — **x"
+            .. HolyWebhookFormatMultiplier(
+                match.Multiplier
+            )
+            .. "**\n  Required: x"
+            .. HolyWebhookFormatMultiplier(
+                match.Minimum
+            )
+    end
+
+    local nextRestockAt =
+        HolyDailyDealLiveResolveNextRestockAt(
+            stockResult
+        )
+
+    return {
+        username = "HOLY",
+
+        allowed_mentions = {
+            parse = {},
+        },
+
+        embeds = {
+            {
+                title =
+                    "🔥 Fruit Multiplier Alert",
+
+                description =
+                    table.concat(lines, "\n\n"),
+
+                color = 16753920,
+
+                fields = {
+                    {
+                        name = "Next Refresh",
+
+                        value =
+                            "<t:"
+                            .. tostring(
+                                math.floor(nextRestockAt)
+                            )
+                            .. ":R>",
+
+                        inline = false,
+                    },
+                },
+
+                footer = {
+                    text =
+                        "HOLY • Fruit Price Stock",
+                },
+
+                timestamp = os.date(
+                    "!%Y-%m-%dT%H:%M:%SZ"
+                ),
+            },
+        },
+    }
+end
+
+function HolyWebhookProcessFruitStock(stockResult)
+
+    HolyWebhookEnsureState()
+
+    HOLY_WEBHOOK_RUNTIME.LastStockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or nil
+
+    if HOLY_WEBHOOK_STATE.Enabled ~= true
+    or type(stockResult) ~= "table"
+    or type(stockResult.entries) ~= "table"
+    or #HOLY_WEBHOOK_STATE.Filters <= 0 then
+
+        return false
+    end
+
+    local validUrl =
+        HolyWebhookValidateUrl(
+            HOLY_WEBHOOK_STATE.Url
+        )
+
+    if validUrl ~= true then
+        return false
+    end
+
+    local restockKey = tostring(
+        HolyDailyDealLiveBuildRestockKey(
+            stockResult
+        )
+    )
+
+    if restockKey == ""
+    or HOLY_WEBHOOK_STATE.LastNotifiedRestockKey
+        == restockKey
+    or HOLY_WEBHOOK_RUNTIME
+        .PendingRestockKeys[restockKey] == true then
+
+        return false
+    end
+
+    local matches = {}
+
+    for _, filter in ipairs(
+        HOLY_WEBHOOK_STATE.Filters
+    ) do
+
+        local multiplier, stockName =
+            HolyDailyDealStockMultiplier(
+                stockResult.entries,
+                filter.Name
+            )
+
+        local minimum =
+            HolyWebhookReadMultiplier(
+                filter.Minimum
+            )
+
+        if stockName ~= ""
+        and minimum ~= nil
+        and tonumber(multiplier) ~= nil
+        and tonumber(multiplier) + 0.000001
+            >= minimum then
+
+            matches[#matches + 1] = {
+                Name = stockName,
+                Multiplier = tonumber(multiplier),
+                Minimum = minimum,
+            }
+        end
+    end
+
+    if #matches <= 0 then
+        return false
+    end
+
+    table.sort(matches, function(a, b)
+
+        if a.Multiplier ~= b.Multiplier then
+
+            return a.Multiplier > b.Multiplier
+        end
+
+        return tostring(a.Name):lower()
+            < tostring(b.Name):lower()
+    end)
+
+    HOLY_WEBHOOK_RUNTIME
+        .PendingRestockKeys[restockKey] = true
+
+    local payload =
+        HolyWebhookBuildFruitAlertPayload(
+            matches,
+            stockResult
+        )
+
+    return HolyWebhookEnqueue(
+        payload,
+        function(success, reason)
+
+            HOLY_WEBHOOK_RUNTIME
+                .PendingRestockKeys[restockKey] = nil
+
+            if success == true then
+
+                HOLY_WEBHOOK_STATE
+                    .LastNotifiedRestockKey = restockKey
+
+                HolySaveWebhookSettings()
+
+            else
+
+                warn(
+                    "[HOLY WEBHOOK] Fruit alert failed: "
+                    .. tostring(reason)
+                )
+            end
+        end
+    )
+end
+
+function HolyWebhookSendTest()
+
+    HolyWebhookEnsureState()
+
+    local valid, reason =
+        HolyWebhookValidateUrl(
+            HOLY_WEBHOOK_STATE.Url
+        )
+
+    if valid ~= true then
+
+        HolyNotify(
+            "Webhook",
+            tostring(reason),
+            4
+        )
+
+        return false
+    end
+
+    return HolyWebhookEnqueue(
+        {
+            username = "HOLY",
+
+            allowed_mentions = {
+                parse = {},
+            },
+
+            embeds = {
+                {
+                    title = "Webhook Connected",
+
+                    description =
+                        "Fruit multiplier alerts are ready.",
+
+                    color = 10181046,
+
+                    footer = {
+                        text =
+                            "HOLY • Webhook Test",
+                    },
+
+                    timestamp = os.date(
+                        "!%Y-%m-%dT%H:%M:%SZ"
+                    ),
+                },
+            },
+        },
+        function(success, sendReason)
+
+            HolyNotify(
+                "Webhook",
+                success == true
+                and "Test webhook sent."
+                or tostring(sendReason),
+                4
+            )
+        end
+    )
+end
+
 function HolyDailyDealLiveStartWorker(reason)
 
     local runtime =
@@ -59289,6 +60578,10 @@ function HolyDailyDealLiveStartWorker(reason)
                 HolyDailyDealSendLiveReportAsync(
                     stockResult,
                     "live"
+                )
+
+                HolyWebhookProcessFruitStock(
+                    stockResult
                 )
 
                 waitSeconds =
@@ -79633,6 +80926,7 @@ if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
 end
 
 HolyLoadShopSettings()
+HolyLoadWebhookSettings()
 HolyLoadFarmSettings()
 HolyLoadFruitAutomationSettings()
 HolyLoadSniperSettings()
@@ -92569,6 +93863,22 @@ local MainFarmDetailsBox =
         "sprout"
     )
 
+local WebhookSetupBox =
+    HolyAddLeftGroupbox(
+        Tabs.Webhook,
+        "Webhook.Setup",
+        "Webhook Setup",
+        "webhook"
+    )
+
+local WebhookFruitMultiplierBox =
+    HolyAddRightGroupbox(
+        Tabs.Webhook,
+        "Webhook.FruitMultiplierAlerts",
+        "Fruit Multiplier Alerts",
+        "bell-ring"
+    )
+
 local ServerControlsBox =
     HolyAddLeftGroupbox(
         Tabs.Server,
@@ -101983,6 +103293,360 @@ SniperModeControl =
                 )
             end,
     })
+
+HolyWebhookEnsureState()
+
+local HolyWebhookInitialEntry =
+    HOLY_WEBHOOK_STATE.Filters[1]
+
+local HolyWebhookFruitValues =
+    HolyWebhookGetFruitDropdownValues()
+
+if type(HolyWebhookInitialEntry) == "table" then
+
+    HOLY_WEBHOOK_STATE.SelectedFilterKey =
+        HolyWebhookFilterKey(
+            HolyWebhookInitialEntry.Name
+        )
+
+    HOLY_WEBHOOK_RUNTIME.DraftFruit =
+        tostring(HolyWebhookInitialEntry.Name)
+
+    HOLY_WEBHOOK_RUNTIME.DraftMinimum =
+        HolyWebhookFormatMultiplier(
+            HolyWebhookInitialEntry.Minimum
+        )
+
+else
+
+    HOLY_WEBHOOK_RUNTIME.DraftFruit = tostring(
+        HolyWebhookFruitValues[1]
+        or "Mushroom"
+    )
+
+    HOLY_WEBHOOK_RUNTIME.DraftMinimum = "2.00"
+end
+
+HOLY_WEBHOOK_UI.UrlInput =
+    WebhookSetupBox:AddInput(
+        "HolyWebhookUrl",
+        {
+            Text = "Webhook URL",
+            Default = HOLY_WEBHOOK_STATE.Url,
+
+            Placeholder =
+                "https://discord.com/api/webhooks/...",
+
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+
+            Tooltip =
+                "Discord webhook used for multiplier alerts.",
+        }
+    )
+
+HOLY_WEBHOOK_UI.UrlInput:OnChanged(function(value)
+
+    HOLY_WEBHOOK_STATE.Url =
+        HolyCleanText(value)
+
+    local valid = HolyWebhookValidateUrl(
+        HOLY_WEBHOOK_STATE.Url
+    )
+
+    if HOLY_WEBHOOK_STATE.Enabled == true
+    and valid ~= true then
+
+        HOLY_WEBHOOK_STATE.Enabled = false
+
+        local toggle =
+            HOLY_WEBHOOK_UI.EnabledToggle
+
+        if type(toggle) == "table"
+        and type(toggle.SetValue) == "function" then
+
+            task.defer(function()
+
+                pcall(function()
+
+                    toggle:SetValue(false, true)
+                end)
+            end)
+        end
+    end
+
+    HolySaveWebhookSettings()
+end)
+
+WebhookSetupBox:AddButton({
+    Text = "Test Webhook",
+
+    Tooltip =
+        "Sends one test message to the configured Discord webhook.",
+
+    Func = function()
+
+        HolyWebhookSendTest()
+    end,
+})
+
+HOLY_WEBHOOK_UI.EnabledToggle =
+    WebhookFruitMultiplierBox:AddToggle(
+        "HolyWebhookFruitMultiplierEnabled",
+        {
+            Text = "Enable Multiplier Alerts",
+
+            Default =
+                HOLY_WEBHOOK_STATE.Enabled == true,
+
+            Tooltip =
+                "Sends one alert per restock when a fruit meets its filter.",
+        }
+    )
+
+HOLY_WEBHOOK_UI.EnabledToggle:OnChanged(function(value)
+
+    if value == true then
+
+        local valid, reason =
+            HolyWebhookValidateUrl(
+                HOLY_WEBHOOK_STATE.Url
+            )
+
+        if valid ~= true then
+
+            HOLY_WEBHOOK_STATE.Enabled = false
+
+            HolySaveWebhookSettings()
+
+            HolyNotify(
+                "Webhook",
+                tostring(reason),
+                4
+            )
+
+            task.defer(function()
+
+                pcall(function()
+
+                    HOLY_WEBHOOK_UI.EnabledToggle
+                        :SetValue(false, true)
+                end)
+            end)
+
+            return
+        end
+    end
+
+    HOLY_WEBHOOK_STATE.Enabled =
+        value == true
+
+    HolySaveWebhookSettings()
+
+    if HOLY_WEBHOOK_STATE.Enabled == true
+    and type(
+        HOLY_WEBHOOK_RUNTIME.LastStockResult
+    ) == "table" then
+
+        task.defer(function()
+
+            HolyWebhookProcessFruitStock(
+                HOLY_WEBHOOK_RUNTIME.LastStockResult
+            )
+        end)
+    end
+end)
+
+HOLY_WEBHOOK_UI.FruitDropdown =
+    WebhookFruitMultiplierBox:AddDropdown(
+        "HolyWebhookFruitMultiplierFruit",
+        {
+            Text = "Fruit",
+            Values = HolyWebhookFruitValues,
+
+            Default =
+                HOLY_WEBHOOK_RUNTIME.DraftFruit,
+
+            Multi = false,
+            AllowNull = false,
+            Searchable = true,
+            MaxVisibleDropdownItems = 8,
+
+            Tooltip =
+                "Choose the fruit for this filter.",
+        }
+    )
+
+HOLY_WEBHOOK_UI.FruitDropdown:OnChanged(function(value)
+
+    if HOLY_WEBHOOK_RUNTIME.UpdatingUI == true then
+        return
+    end
+
+    local selected =
+        HolyWebhookReadSingleValue(value)
+
+    if selected ~= "" then
+
+        HOLY_WEBHOOK_RUNTIME.DraftFruit =
+            selected
+    end
+end)
+
+HOLY_WEBHOOK_UI.MinimumInput =
+    WebhookFruitMultiplierBox:AddInput(
+        "HolyWebhookFruitMultiplierMinimum",
+        {
+            Text = "Minimum Multiplier",
+
+            Default =
+                HOLY_WEBHOOK_RUNTIME.DraftMinimum,
+
+            Placeholder = "2.00",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+
+            Tooltip =
+                "Alert when this fruit reaches this multiplier or higher.",
+        }
+    )
+
+HOLY_WEBHOOK_UI.MinimumInput:OnChanged(function(value)
+
+    if HOLY_WEBHOOK_RUNTIME.UpdatingUI == true then
+        return
+    end
+
+    HOLY_WEBHOOK_RUNTIME.DraftMinimum =
+        tostring(value or "")
+end)
+
+WebhookFruitMultiplierBox:AddButton({
+    Text = "Save Filter",
+
+    Tooltip =
+        "Adds the fruit or updates its existing minimum multiplier.",
+
+    Func = function()
+
+        local success, reason =
+            HolyWebhookUpsertFilter(
+                HOLY_WEBHOOK_RUNTIME.DraftFruit,
+                HOLY_WEBHOOK_RUNTIME.DraftMinimum
+            )
+
+        HolyNotify(
+            "Fruit Multiplier Alerts",
+            tostring(reason),
+            success == true and 3 or 4
+        )
+    end,
+})
+
+HOLY_WEBHOOK_UI.FilterDropdown =
+    WebhookFruitMultiplierBox:AddDropdown(
+        "HolyWebhookFruitMultiplierFilters",
+        {
+            Text = "Active Filters",
+
+            Values =
+                HolyWebhookGetFilterDropdownValues(),
+
+            Default = 1,
+            Multi = false,
+            AllowNull = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 8,
+
+            Tooltip =
+                "Select a saved filter to edit or remove it.",
+        }
+    )
+
+HOLY_WEBHOOK_UI.FilterDropdown:OnChanged(function(value)
+
+    if HOLY_WEBHOOK_RUNTIME.UpdatingUI == true then
+        return
+    end
+
+    local display =
+        HolyWebhookReadSingleValue(value)
+
+    local key =
+        type(
+            HOLY_WEBHOOK_RUNTIME.FilterDisplayMap
+        ) == "table"
+        and HOLY_WEBHOOK_RUNTIME
+            .FilterDisplayMap[display]
+        or nil
+
+    if type(key) ~= "string"
+    or key == "" then
+
+        return
+    end
+
+    local entry =
+        HolyWebhookGetFilter(key)
+
+    if type(entry) ~= "table" then
+        return
+    end
+
+    HOLY_WEBHOOK_STATE.SelectedFilterKey = key
+
+    HolyWebhookPopulateFilterEditor(entry)
+end)
+
+local HolyWebhookFilterButtons =
+    WebhookFruitMultiplierBox:AddButton({
+        Text = "Remove Filter",
+
+        Tooltip =
+            "Removes the selected multiplier filter.",
+
+        Func = function()
+
+            local success, reason =
+                HolyWebhookRemoveFilter(
+                    HOLY_WEBHOOK_STATE
+                        .SelectedFilterKey
+                )
+
+            HolyNotify(
+                "Fruit Multiplier Alerts",
+                tostring(reason),
+                success == true and 3 or 4
+            )
+        end,
+    })
+
+HolyWebhookFilterButtons:AddButton({
+    Text = "Clear Filters",
+
+    Tooltip =
+        "Removes every saved fruit multiplier filter.",
+
+    Func = function()
+
+        HolyWebhookClearFilters()
+
+        HolyNotify(
+            "Fruit Multiplier Alerts",
+            "All filters cleared.",
+            3
+        )
+    end,
+})
+
+task.defer(function()
+
+    HolyWebhookRefreshFilterDropdown(
+        HOLY_WEBHOOK_STATE.SelectedFilterKey
+    )
+end)
 
 SniperEngineBox:AddToggle(
     "HolySniperActivate",
