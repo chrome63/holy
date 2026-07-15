@@ -92863,11 +92863,8 @@ local FarmFruitAutomationBox =
     )
 
 local FarmPlantAutomationBox =
-    HolyAddRightGroupbox(
-        Tabs.Farm,
-        "Farm.Experimental",
-        "Plant Automation",
-        "flower-2"
+    Tabs.Farm:AddRightTabbox(
+        "Plant Automation"
     )
 
 local SHOW_PATCHED_VULN_TOOLS =
@@ -105135,7 +105132,7 @@ HolyFarmAddPageNote(
 )
 
 HOLY_MERGE_AUTOMATION_UI.Tabbox =
-    FarmPlantAutomationBox:AddTabbox()
+    FarmPlantAutomationBox
 
 HOLY_MERGE_AUTOMATION_UI.MergeTab =
     HOLY_MERGE_AUTOMATION_UI.Tabbox:AddTab(
