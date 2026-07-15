@@ -76477,70 +76477,29 @@ function HolyMergeAutomationStatusColor(status)
         tostring(status or "")
             :lower()
 
-    if lower:find(
-        "disabled",
-        1,
-        true
-    ) then
-
+    if lower:find("disabled", 1, true) then
         return "154, 147, 168"
     end
 
-    if lower:find(
-        "complete",
-        1,
-        true
-    )
-    or lower:find(
-        "ready",
-        1,
-        true
-    )
+    if lower:find("complete", 1, true)
+    or lower:find("ready", 1, true)
     or lower == "plant potted"
     or lower == "potted plant picked up"
-    or lower:find(
-        "growth complete",
-        1,
-        true
-    ) then
+    or lower:find("growth complete", 1, true) then
 
         return "73, 230, 133"
     end
 
-    if lower:find(
-        "waiting",
-        1,
-        true
-    )
-    or lower:find(
-        "paused",
-        1,
-        true
-    ) then
+    if lower:find("waiting", 1, true)
+    or lower:find("paused", 1, true) then
 
         return "255, 190, 85"
     end
 
-    if lower:find(
-        "failed",
-        1,
-        true
-    )
-    or lower:find(
-        "error",
-        1,
-        true
-    )
-    or lower:find(
-        "missing",
-        1,
-        true
-    )
-    or lower:find(
-        "rejected",
-        1,
-        true
-    ) then
+    if lower:find("failed", 1, true)
+    or lower:find("error", 1, true)
+    or lower:find("missing", 1, true)
+    or lower:find("rejected", 1, true) then
 
         return "255, 98, 109"
     end
@@ -76628,17 +76587,6 @@ end
 function HolyMergeAutomationBuildEclipseStatsText()
 
     return "Eclipse cycles: "
-        .. HolyMergeAutomationColoredCount(
-            HOLY_MERGE_AUTOMATION_RUNTIME.Cycles
-        )
-end
-
-function HolyMergeAutomationBuildStatsText()
-
-    return HolyMergeAutomationBuildMergeStatsText()
-        .. "\n"
-        .. HolyMergeAutomationBuildPotsStatsText()
-        .. "  •  Eclipse cycles: "
         .. HolyMergeAutomationColoredCount(
             HOLY_MERGE_AUTOMATION_RUNTIME.Cycles
         )
@@ -105209,7 +105157,7 @@ HOLY_MERGE_AUTOMATION_UI.RecipesDropdown =
                 8,
 
             Tooltip =
-                "Loaded from MergeFlags.Recipes. Future recipes appear without being hardcoded or automatically enabled.",
+                "Loaded dynamically from MergeFlags.Recipes. Future recipes appear automatically but stay unselected.",
         }
     )
 
@@ -105228,7 +105176,7 @@ FarmPlantMergeTab:AddButton({
         "Refresh Merge Recipes",
 
     Tooltip =
-        "Reloads MergeFlags.Recipes. Newly discovered recipes remain unselected.",
+        "Reloads MergeFlags.Recipes and checks for newly added recipes.",
 
     Func =
         function()
@@ -105261,7 +105209,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoWateringToggle =
                 HOLY_MERGE_AUTOMATION_STATE.AutoWatering == true,
 
             Tooltip =
-                "Uses the selected real watering can until each selected merged result is fully grown.",
+                "Uses the selected real watering can until selected merged plants are fully grown.",
         }
     )
 
@@ -105299,7 +105247,7 @@ HOLY_MERGE_AUTOMATION_UI.WateringCanDropdown =
                 2,
 
             Tooltip =
-                "Chooses which real watering-can stack is used for growth and Eclipse cycles.",
+                "Chooses which watering can is used for plant growth and Eclipse cycles.",
         }
     )
 
@@ -105334,7 +105282,7 @@ HOLY_MERGE_AUTOMATION_UI.WateringDelayInput =
                 false,
 
             Tooltip =
-                "Delay between growth uses. Default is 3, minimum is 0, and there is no maximum.",
+                "Delay between watering uses. Default is 3, minimum is 0, and there is no maximum.",
         }
     )
 
@@ -105380,7 +105328,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoPotToggle =
                 HOLY_MERGE_AUTOMATION_STATE.AutoPotPlants == true,
 
             Tooltip =
-                "Continuously pots matching owned plants. Ingredients reserved by Auto Merge are skipped.",
+                "Continuously pots matching owned plants. Ingredients reserved for Auto Merge are skipped.",
         }
     )
 
@@ -105420,7 +105368,7 @@ HOLY_MERGE_AUTOMATION_UI.PotPlantsDropdown =
                 10,
 
             Tooltip =
-                "Select individual plant types or All Plants. Counts show ready unpotted plants versus every unpotted plant.",
+                "Choose individual plant types or All Plants. Counts show ready and total unpotted plants.",
         }
     )
 
@@ -105445,7 +105393,7 @@ HOLY_MERGE_AUTOMATION_UI.OnlyFullyGrownToggle =
                 HOLY_MERGE_AUTOMATION_STATE.OnlyPotFullyGrown ~= false,
 
             Tooltip =
-                "When enabled, Auto Pot requires Age to be at least MaxAge.",
+                "Requires the plant to reach MaxAge before it is potted.",
         }
     )
 
@@ -105478,7 +105426,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoPickupToggle =
                 HOLY_MERGE_AUTOMATION_STATE.AutoPickupPottedPlants == true,
 
             Tooltip =
-                "Moves matching potted plants into your backpack. The active Eclipse target is always protected.",
+                "Moves matching potted plants into your backpack. The active Eclipse target is protected.",
         }
     )
 
@@ -105518,7 +105466,7 @@ HOLY_MERGE_AUTOMATION_UI.PickupPlantsDropdown =
                 10,
 
             Tooltip =
-                "Select individual plant types or All Potted Plants. Counts update after confirmed pot and pickup actions.",
+                "Choose individual plant types or All Potted Plants.",
         }
     )
 
@@ -105583,7 +105531,7 @@ HOLY_MERGE_AUTOMATION_UI.PottedActions =
                         "Pot Selected",
 
                     Tooltip =
-                        "Runs one complete pass over the selected unpotted plants without enabling Auto Pot.",
+                        "Runs one full pass over the selected unpotted plants.",
 
                     Callback =
                         function()
@@ -105600,7 +105548,7 @@ HOLY_MERGE_AUTOMATION_UI.PottedActions =
                         "Pick Up Now",
 
                     Tooltip =
-                        "Runs one complete pass over the selected potted plants without enabling Auto Pickup.",
+                        "Runs one full pass over the selected potted plants.",
 
                     Callback =
                         function()
@@ -105651,7 +105599,7 @@ HOLY_MERGE_AUTOMATION_UI.AutoEclipseLoopToggle =
                 HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop == true,
 
             Tooltip =
-                "Selects one Eclipse Bloom, pots it, waters once, picks it up, and places it back at its exact saved position.",
+                "Pots one Eclipse Bloom, waters it once, picks it up, and places it back at its exact saved position.",
         }
     )
 
@@ -105713,7 +105661,7 @@ HOLY_MERGE_AUTOMATION_UI.LoopActions =
                         "Run One Loop",
 
                     Tooltip =
-                        "Runs one confirmed Eclipse pot cycle without enabling the continuous loop.",
+                        "Runs one confirmed Eclipse pot cycle.",
 
                     Callback =
                         function()
@@ -105730,7 +105678,7 @@ HOLY_MERGE_AUTOMATION_UI.LoopActions =
                         "Reset Target",
 
                     Tooltip =
-                        "Forgets the selected Eclipse Bloom. The next planted one is selected automatically.",
+                        "Forgets the current Eclipse Bloom target.",
 
                     Callback =
                         function()
