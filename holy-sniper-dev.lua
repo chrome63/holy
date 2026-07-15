@@ -1770,6 +1770,7 @@ HOLY_DEV_UI_STATE = {
     AntiAfk = true,
     AntiKnockback = false,
     AntiWheelbarrow = false,
+    HideHarvestPrompts = false,
     AutoFarmMiddle = true,
 
     LowEndMode = false,
@@ -2772,6 +2773,43 @@ HOLY_ANTI_WHEELBARROW_STATE = {
 
     ActiveSeat =
         nil,
+}
+
+if type(HOLY_HARVEST_PROMPT_RUNTIME) == "table"
+and type(HOLY_HARVEST_PROMPT_RUNTIME.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_HARVEST_PROMPT_RUNTIME.Stop(
+            "restart"
+        )
+    end)
+end
+
+HOLY_HARVEST_PROMPT_RUNTIME = {
+    Running = false,
+
+    GardenRoot = nil,
+    GardenConnection = nil,
+    WorkspaceConnection = nil,
+
+    OriginalDistances =
+        setmetatable(
+            {},
+            {
+                __mode = "k",
+            }
+        ),
+
+    PromptConnections =
+        setmetatable(
+            {},
+            {
+                __mode = "k",
+            }
+        ),
+
+    Stop = nil,
 }
 
 if type(HOLY_SHOP_STATE) == "table" then
@@ -3896,6 +3934,9 @@ function HolySaveUISettings()
         AntiWheelbarrow =
             HOLY_DEV_UI_STATE.AntiWheelbarrow == true,
 
+        HideHarvestPrompts =
+            HOLY_DEV_UI_STATE.HideHarvestPrompts == true,
+
         AutoFarmMiddle =
             HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
 
@@ -4101,6 +4142,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.AntiWheelbarrow =
             data.AntiWheelbarrow
+    end
+
+    if type(data.HideHarvestPrompts) == "boolean" then
+
+        HOLY_DEV_UI_STATE.HideHarvestPrompts =
+            data.HideHarvestPrompts
     end
 
     if type(data.AutoFarmMiddle) == "boolean" then
@@ -9070,6 +9117,383 @@ function HolyFarmFindPlantHarvestPrompt(plant)
 
     return nil
 end
+
+function HolyHarvestPromptDisconnect(connection)
+
+    if typeof(connection) == "RBXScriptConnection" then
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+end
+
+function HolyHarvestPromptIsHarvest(prompt)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false
+    end
+
+    local actionText =
+        ""
+
+    pcall(function()
+
+        actionText =
+            HolyCleanText(
+                prompt.ActionText
+            ):lower()
+    end)
+
+    if actionText == "harvest" then
+
+        return true
+    end
+
+    local current =
+        prompt.Parent
+
+    for _ = 1, 10 do
+
+        if typeof(current) ~= "Instance" then
+
+            break
+        end
+
+        if current.Name == "HarvestPart" then
+
+            return true
+        end
+
+        current =
+            current.Parent
+    end
+
+    return false
+end
+
+function HolyHarvestPromptApply(prompt)
+
+    local runtime =
+        HOLY_HARVEST_PROMPT_RUNTIME
+
+    if runtime.Running ~= true
+    or HolyHarvestPromptIsHarvest(
+        prompt
+    ) ~= true then
+
+        return false
+    end
+
+    if runtime.OriginalDistances[prompt] == nil then
+
+        local originalDistance =
+            nil
+
+        local readOk =
+            pcall(function()
+
+                originalDistance =
+                    prompt.MaxActivationDistance
+            end)
+
+        if readOk ~= true
+        or type(originalDistance) ~= "number" then
+
+            return false
+        end
+
+        runtime.OriginalDistances[prompt] =
+            originalDistance
+    end
+
+    local hidden =
+        pcall(function()
+
+            prompt.MaxActivationDistance =
+                0
+        end)
+
+    if hidden ~= true then
+
+        return false
+    end
+
+    if runtime.PromptConnections[prompt] == nil then
+
+        runtime.PromptConnections[prompt] =
+            prompt:GetPropertyChangedSignal(
+                "MaxActivationDistance"
+            ):Connect(function()
+
+                if runtime.Running ~= true
+                or prompt.Parent == nil
+                or prompt.MaxActivationDistance == 0 then
+
+                    return
+                end
+
+                task.defer(function()
+
+                    if runtime.Running == true
+                    and prompt.Parent ~= nil then
+
+                        pcall(function()
+
+                            prompt.MaxActivationDistance =
+                                0
+                        end)
+                    end
+                end)
+            end)
+    end
+
+    return true
+end
+
+function HolyHarvestPromptRestoreAll()
+
+    local runtime =
+        HOLY_HARVEST_PROMPT_RUNTIME
+
+    for prompt,
+        connection in pairs(
+        runtime.PromptConnections
+        or {}
+    ) do
+
+        HolyHarvestPromptDisconnect(
+            connection
+        )
+
+        runtime.PromptConnections[prompt] =
+            nil
+    end
+
+    for prompt,
+        originalDistance in pairs(
+        runtime.OriginalDistances
+        or {}
+    ) do
+
+        if typeof(prompt) == "Instance"
+        and prompt.Parent ~= nil then
+
+            pcall(function()
+
+                prompt.MaxActivationDistance =
+                    originalDistance
+            end)
+        end
+
+        runtime.OriginalDistances[prompt] =
+            nil
+    end
+
+    return true
+end
+
+function HolyHarvestPromptScanGarden(gardenRoot)
+
+    if typeof(gardenRoot) ~= "Instance" then
+
+        return 0
+    end
+
+    local hiddenCount =
+        0
+
+    for _, descendant in ipairs(
+        gardenRoot:GetDescendants()
+    ) do
+
+        if descendant:IsA("ProximityPrompt")
+        and HolyHarvestPromptApply(
+            descendant
+        ) == true then
+
+            hiddenCount +=
+                1
+        end
+    end
+
+    return hiddenCount
+end
+
+function HolyHarvestPromptBindGarden(gardenRoot)
+
+    local runtime =
+        HOLY_HARVEST_PROMPT_RUNTIME
+
+    if runtime.Running ~= true
+    or typeof(gardenRoot) ~= "Instance" then
+
+        return false
+    end
+
+    if runtime.GardenRoot == gardenRoot
+    and typeof(runtime.GardenConnection)
+        == "RBXScriptConnection" then
+
+        return true
+    end
+
+    HolyHarvestPromptDisconnect(
+        runtime.GardenConnection
+    )
+
+    runtime.GardenRoot =
+        gardenRoot
+
+    runtime.GardenConnection =
+        gardenRoot.DescendantAdded:Connect(
+            function(descendant)
+
+                if descendant:IsA("ProximityPrompt") then
+
+                    HolyHarvestPromptApply(
+                        descendant
+                    )
+                end
+            end
+        )
+
+    task.defer(function()
+
+        if runtime.Running == true
+        and runtime.GardenRoot == gardenRoot then
+
+            HolyHarvestPromptScanGarden(
+                gardenRoot
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyHarvestPromptFindGarden()
+
+    return workspace:FindFirstChild(
+        "_Gardens"
+    )
+        or workspace:FindFirstChild(
+            "Gardens"
+        )
+end
+
+function HolyHarvestPromptStop(reason)
+
+    local runtime =
+        HOLY_HARVEST_PROMPT_RUNTIME
+
+    if type(runtime) ~= "table" then
+
+        return false
+    end
+
+    runtime.Running =
+        false
+
+    HolyHarvestPromptDisconnect(
+        runtime.GardenConnection
+    )
+
+    HolyHarvestPromptDisconnect(
+        runtime.WorkspaceConnection
+    )
+
+    runtime.GardenConnection =
+        nil
+
+    runtime.WorkspaceConnection =
+        nil
+
+    runtime.GardenRoot =
+        nil
+
+    HolyHarvestPromptRestoreAll()
+
+    return true
+end
+
+function HolyHarvestPromptStart(reason)
+
+    local runtime =
+        HOLY_HARVEST_PROMPT_RUNTIME
+
+    if runtime.Running == true then
+
+        local gardenRoot =
+            HolyHarvestPromptFindGarden()
+
+        if gardenRoot then
+
+            HolyHarvestPromptBindGarden(
+                gardenRoot
+            )
+        end
+
+        return true
+    end
+
+    runtime.Running =
+        true
+
+    runtime.WorkspaceConnection =
+        workspace.ChildAdded:Connect(
+            function(child)
+
+                if child.Name == "_Gardens"
+                or child.Name == "Gardens" then
+
+                    HolyHarvestPromptBindGarden(
+                        child
+                    )
+                end
+            end
+        )
+
+    local gardenRoot =
+        HolyHarvestPromptFindGarden()
+
+    if gardenRoot then
+
+        HolyHarvestPromptBindGarden(
+            gardenRoot
+        )
+    end
+
+    return true
+end
+
+function HolyHarvestPromptSetEnabled(value)
+
+    value =
+        value == true
+
+    HOLY_DEV_UI_STATE.HideHarvestPrompts =
+        value
+
+    HolySaveUISettings()
+
+    if value == true then
+
+        return HolyHarvestPromptStart(
+            "toggle on"
+        )
+    end
+
+    return HolyHarvestPromptStop(
+        "toggle off"
+    )
+end
+
+HOLY_HARVEST_PROMPT_RUNTIME.Stop =
+    HolyHarvestPromptStop
 
 function HolyFarmPlantHasFruitsFolder(plant)
 
@@ -81683,6 +82107,13 @@ if HOLY_DEV_UI_STATE.AntiWheelbarrow == true then
     )
 end
 
+if HOLY_DEV_UI_STATE.HideHarvestPrompts == true then
+
+    HolyHarvestPromptStart(
+        "startup"
+    )
+end
+
 if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
 
     HolyFarmMiddleRestoreState()
@@ -113227,6 +113658,25 @@ SettingsProtectionBox:AddToggle(
             "toggle off"
         )
     end
+end)
+
+SettingsProtectionBox:AddToggle(
+    "HolyHideHarvestPrompts",
+    {
+        Text =
+            "Hide Harvest Prompts",
+
+        Default =
+            HOLY_DEV_UI_STATE.HideHarvestPrompts == true,
+
+        Tooltip =
+            "Hides manual harvest prompts to prevent accidental fruit collection. Auto Collect still works.",
+    }
+):OnChanged(function(value)
+
+    HolyHarvestPromptSetEnabled(
+        value == true
+    )
 end)
 
 SettingsLayoutBox:AddToggle(
