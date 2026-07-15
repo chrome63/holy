@@ -3183,6 +3183,74 @@ HOLY_FARM_UI = {
     ProStatusLabel = nil,
 }
 
+if type(HOLY_MERGE_AUTOMATION_RUNTIME) == "table" then
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.Token =
+        nil
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.Running =
+        false
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.RunOnceRequested =
+        false
+end
+
+HOLY_MERGE_AUTOMATION_STATE = {
+    AutoMergePlants = false,
+
+    SelectedRecipes = {
+        "Moon Bloom+Sun Bloom",
+    },
+
+    AutoWatering = false,
+    WateringCan = "Super Watering Can",
+    WateringDelay = 3,
+
+    AutoEclipseLoop = false,
+    LoopDelay = 3,
+}
+
+HOLY_MERGE_AUTOMATION_RUNTIME = {
+    Running = false,
+    Token = nil,
+    RunOnceRequested = false,
+
+    Status = "Disabled",
+    Detail = "",
+
+    Packets = nil,
+
+    RecipesLoaded = false,
+    Recipes = {},
+    RecipeDisplayToKey = {},
+    RecipeKeyToDisplay = {},
+    UpdatingRecipes = false,
+    RangeStuds = 30,
+
+    EclipseTargetId = nil,
+    Recovery = nil,
+
+    Merges = 0,
+    WaterUses = 0,
+    Cycles = 0,
+}
+
+HOLY_MERGE_AUTOMATION_UI = {
+    AutoMergeToggle = nil,
+    RecipesDropdown = nil,
+
+    AutoWateringToggle = nil,
+    WateringCanDropdown = nil,
+    WateringDelayInput = nil,
+
+    AutoEclipseLoopToggle = nil,
+    LoopDelayInput = nil,
+    LoopActions = nil,
+
+    StatusLabel = nil,
+    StatsLabel = nil,
+}
+
 HOLY_FARM_PAGE_STATE = {
     Mode = "Collect",
 }
@@ -7044,6 +7112,11 @@ function HolySaveFarmSettings()
             type(HolyAutoTrowelGetSettingsData) == "function"
             and HolyAutoTrowelGetSettingsData()
             or nil,
+
+        MergeAutomation =
+            type(HolyMergeAutomationGetSettingsData) == "function"
+            and HolyMergeAutomationGetSettingsData()
+            or nil,
     }
 
     local encodeOk,
@@ -7193,6 +7266,13 @@ function HolyLoadFarmSettings()
 
         HolyAutoTrowelLoadSettingsData(
             data.AutoTrowel
+        )
+    end
+
+    if type(HolyMergeAutomationLoadSettingsData) == "function" then
+
+        HolyMergeAutomationLoadSettingsData(
+            data.MergeAutomation
         )
     end
 
@@ -75745,6 +75825,2468 @@ end
 HOLY_WATERING_REJOIN_RUNTIME.Stop =
     HolyWateringRejoinStop
 
+function HolyMergeAutomationReadDelay(value)
+
+    local number =
+        tonumber(value)
+
+    if number == nil
+    or number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        number =
+            3
+    end
+
+    return math.max(
+        0,
+        number
+    )
+end
+
+function HolyMergeAutomationNormalizeCan(value)
+
+    value =
+        tostring(value or "")
+
+    if value == "Common Watering Can" then
+        return value
+    end
+
+    return "Super Watering Can"
+end
+
+function HolyMergeAutomationSelectionArray(value)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    if type(value) ~= "table" then
+
+        value = {
+            value,
+        }
+    end
+
+    for key, selected in pairs(value) do
+
+        local item =
+            nil
+
+        if type(key) == "number" then
+
+            item =
+                selected
+
+        elseif selected == true then
+
+            item =
+                key
+        end
+
+        item =
+            HolyCleanText(
+                item
+            )
+
+        if item ~= ""
+        and seen[item] ~= true then
+
+            seen[item] =
+                true
+
+            table.insert(
+                output,
+                item
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyMergeAutomationGetSettingsData()
+
+    local state =
+        HOLY_MERGE_AUTOMATION_STATE
+
+    return {
+        AutoMergePlants =
+            state.AutoMergePlants == true,
+
+        SelectedRecipes =
+            HolyMergeAutomationSelectionArray(
+                state.SelectedRecipes
+            ),
+
+        AutoWatering =
+            state.AutoWatering == true,
+
+        WateringCan =
+            HolyMergeAutomationNormalizeCan(
+                state.WateringCan
+            ),
+
+        WateringDelay =
+            HolyMergeAutomationReadDelay(
+                state.WateringDelay
+            ),
+
+        AutoEclipseLoop =
+            state.AutoEclipseLoop == true,
+
+        LoopDelay =
+            HolyMergeAutomationReadDelay(
+                state.LoopDelay
+            ),
+    }
+end
+
+function HolyMergeAutomationLoadSettingsData(data)
+
+    if type(data) ~= "table" then
+        return false
+    end
+
+    local state =
+        HOLY_MERGE_AUTOMATION_STATE
+
+    state.AutoMergePlants =
+        data.AutoMergePlants == true
+
+    if type(data.SelectedRecipes) == "table" then
+
+        state.SelectedRecipes =
+            HolyMergeAutomationSelectionArray(
+                data.SelectedRecipes
+            )
+    end
+
+    state.AutoWatering =
+        data.AutoWatering == true
+
+    state.WateringCan =
+        HolyMergeAutomationNormalizeCan(
+            data.WateringCan
+        )
+
+    state.WateringDelay =
+        HolyMergeAutomationReadDelay(
+            data.WateringDelay
+        )
+
+    state.AutoEclipseLoop =
+        data.AutoEclipseLoop == true
+
+    state.LoopDelay =
+        HolyMergeAutomationReadDelay(
+            data.LoopDelay
+        )
+
+    return true
+end
+
+function HolyMergeAutomationFlagValue(value, fallback)
+
+    if type(value) == "table"
+    and value.Value ~= nil then
+
+        value =
+            value.Value
+    end
+
+    if value == nil then
+        return fallback
+    end
+
+    return value
+end
+
+function HolyMergeAutomationLoadRecipes(forceRefresh)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    if forceRefresh ~= true
+    and runtime.RecipesLoaded == true
+    and type(runtime.Recipes) == "table" then
+
+        return runtime.Recipes
+    end
+
+    local flags =
+        HolyShopRequireModule(
+            "SharedModules.Flags.MergeFlags"
+        )
+
+    local recipes =
+        type(flags) == "table"
+        and HolyMergeAutomationFlagValue(
+            flags.Recipes,
+            {}
+        )
+        or {}
+
+    runtime.Recipes =
+        {}
+
+    runtime.RecipeDisplayToKey =
+        {}
+
+    runtime.RecipeKeyToDisplay =
+        {}
+
+    runtime.RangeStuds =
+        math.max(
+            0,
+            tonumber(
+                type(flags) == "table"
+                and HolyMergeAutomationFlagValue(
+                    flags.RangeStuds,
+                    30
+                )
+                or 30
+            )
+            or 30
+        )
+
+    for recipeKey, resultName in pairs(recipes) do
+
+        recipeKey =
+            HolyCleanText(
+                recipeKey
+            )
+
+        resultName =
+            HolyCleanText(
+                HolyMergeAutomationFlagValue(
+                    resultName,
+                    ""
+                )
+            )
+
+        local left,
+            right =
+            recipeKey:match(
+                "^%s*(.-)%s*%+%s*(.-)%s*$"
+            )
+
+        left =
+            HolyCleanText(
+                left
+            )
+
+        right =
+            HolyCleanText(
+                right
+            )
+
+        if recipeKey ~= ""
+        and left ~= ""
+        and right ~= ""
+        and resultName ~= "" then
+
+            local display =
+                left
+                .. " + "
+                .. right
+                .. " -> "
+                .. resultName
+
+            local row = {
+                Key =
+                    recipeKey,
+
+                Left =
+                    left,
+
+                Right =
+                    right,
+
+                Result =
+                    resultName,
+
+                Display =
+                    display,
+            }
+
+            runtime.Recipes[recipeKey] =
+                row
+
+            runtime.RecipeDisplayToKey[display] =
+                recipeKey
+
+            runtime.RecipeKeyToDisplay[recipeKey] =
+                display
+        end
+    end
+
+    runtime.RecipesLoaded =
+        true
+
+    return runtime.Recipes
+end
+
+function HolyMergeAutomationGetRecipeDisplays(forceRefresh)
+
+    HolyMergeAutomationLoadRecipes(
+        forceRefresh == true
+    )
+
+    local values =
+        {}
+
+    for _, row in pairs(
+        HOLY_MERGE_AUTOMATION_RUNTIME.Recipes
+    ) do
+
+        table.insert(
+            values,
+            row.Display
+        )
+    end
+
+    table.sort(values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return values
+end
+
+function HolyMergeAutomationGetSelectedRecipeDisplays()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local output =
+        {}
+
+    for _, recipeKey in ipairs(
+        HOLY_MERGE_AUTOMATION_STATE.SelectedRecipes
+        or {}
+    ) do
+
+        local display =
+            runtime.RecipeKeyToDisplay[recipeKey]
+
+        if display then
+
+            table.insert(
+                output,
+                display
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyMergeAutomationGetSelectedRecipes()
+
+    HolyMergeAutomationLoadRecipes(
+        false
+    )
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local output =
+        {}
+
+    for _, recipeKey in ipairs(
+        HOLY_MERGE_AUTOMATION_STATE.SelectedRecipes
+        or {}
+    ) do
+
+        local row =
+            runtime.Recipes[recipeKey]
+
+        if row then
+
+            table.insert(
+                output,
+                row
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a.Display):lower()
+            < tostring(b.Display):lower()
+    end)
+
+    return output
+end
+
+function HolyMergeAutomationSetSelectedRecipes(value)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local selected =
+        {}
+
+    for _, item in ipairs(
+        HolyMergeAutomationSelectionArray(
+            value
+        )
+    ) do
+
+        local recipeKey =
+            runtime.RecipeDisplayToKey[item]
+            or (
+                runtime.Recipes[item]
+                and item
+            )
+
+        if recipeKey then
+
+            table.insert(
+                selected,
+                recipeKey
+            )
+        end
+    end
+
+    HOLY_MERGE_AUTOMATION_STATE.SelectedRecipes =
+        selected
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return selected
+end
+
+function HolyMergeAutomationRefreshRecipes(notifyPlayer)
+
+    local values =
+        HolyMergeAutomationGetRecipeDisplays(
+            true
+        )
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local validSelection =
+        {}
+
+    for _, recipeKey in ipairs(
+        HOLY_MERGE_AUTOMATION_STATE.SelectedRecipes
+        or {}
+    ) do
+
+        if runtime.Recipes[recipeKey] then
+
+            table.insert(
+                validSelection,
+                recipeKey
+            )
+        end
+    end
+
+    HOLY_MERGE_AUTOMATION_STATE.SelectedRecipes =
+        validSelection
+
+    local dropdown =
+        HOLY_MERGE_AUTOMATION_UI.RecipesDropdown
+
+    if type(dropdown) == "table" then
+
+        runtime.UpdatingRecipes =
+            true
+
+        pcall(function()
+
+            if type(dropdown.SetValues) == "function" then
+
+                dropdown:SetValues(
+                    values
+                )
+
+            elseif type(dropdown.SetItems) == "function" then
+
+                dropdown:SetItems(
+                    values
+                )
+            end
+        end)
+
+        pcall(function()
+
+            if type(dropdown.SetValue) == "function" then
+
+                dropdown:SetValue(
+                    HolyMergeAutomationGetSelectedRecipeDisplays()
+                )
+            end
+        end)
+
+        runtime.UpdatingRecipes =
+            false
+    end
+
+    if notifyPlayer == true then
+
+        HolyNotify(
+            "Plant Merging",
+            tostring(#values)
+                .. " merge recipe(s) found. New recipes are left unselected.",
+            4
+        )
+    end
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return values
+end
+
+function HolyMergeAutomationBuildStatusText()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local text =
+        "Status: "
+        .. tostring(
+            runtime.Status
+            or "Disabled"
+        )
+
+    if tostring(runtime.Detail or "") ~= "" then
+
+        text =
+            text
+            .. "\n"
+            .. tostring(runtime.Detail)
+    end
+
+    return text
+end
+
+function HolyMergeAutomationBuildStatsText()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    return "Merged: "
+        .. tostring(runtime.Merges or 0)
+        .. "  •  Water uses: "
+        .. tostring(runtime.WaterUses or 0)
+        .. "  •  Eclipse cycles: "
+        .. tostring(runtime.Cycles or 0)
+end
+
+function HolyMergeAutomationRefreshUI()
+
+    HolySniperSetLabel(
+        HOLY_MERGE_AUTOMATION_UI.StatusLabel,
+        HolyMergeAutomationBuildStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_MERGE_AUTOMATION_UI.StatsLabel,
+        HolyMergeAutomationBuildStatsText()
+    )
+
+    return true
+end
+
+function HolyMergeAutomationSetStatus(status, detail)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    runtime.Status =
+        tostring(status or "Ready")
+
+    runtime.Detail =
+        tostring(detail or "")
+
+    HolyMergeAutomationRefreshUI()
+
+    return true
+end
+
+function HolyMergeAutomationResolvePackets()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    if type(runtime.Packets) == "table"
+    and type(runtime.Packets.RequestMerge) == "table" then
+
+        return runtime.Packets
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local garden =
+        type(networking) == "table"
+        and type(networking.Garden) == "table"
+        and networking.Garden
+        or {}
+
+    local potPlacement =
+        type(networking) == "table"
+        and type(networking.PotPlacement) == "table"
+        and networking.PotPlacement
+        or {}
+
+    local wateringCan =
+        type(networking) == "table"
+        and type(networking.WateringCan) == "table"
+        and networking.WateringCan
+        or {}
+
+    runtime.Packets = {
+        RequestMerge =
+            garden.RequestMerge,
+
+        PotPlant =
+            garden.PotPlant,
+
+        PickUpPottedPlant =
+            potPlacement.PickUpPottedPlant,
+
+        PlacePottedPlant =
+            potPlacement.PlacePottedPlant,
+
+        UseWateringCan =
+            wateringCan.UseWateringCan,
+    }
+
+    return runtime.Packets
+end
+
+function HolyMergeAutomationGetPlantsFolder()
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            false
+        )
+
+    local plantsFolder =
+        plot
+        and plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) == "Instance" then
+        return plantsFolder
+    end
+
+    plot =
+        HolyFarmResolveOwnPlot(
+            true
+        )
+
+    plantsFolder =
+        plot
+        and plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) == "Instance" then
+        return plantsFolder
+    end
+
+    return nil
+end
+
+function HolyMergeAutomationPlantName(plant)
+
+    return HolyFarmCleanPlantName(
+        HolyFarmReadPlantName(
+            plant
+        )
+    )
+end
+
+function HolyMergeAutomationIsPotted(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return false
+    end
+
+    local value =
+        HolyFarmReadBooleanAttribute(
+            plant,
+            {
+                "IsPotted",
+                "Potted",
+            }
+        )
+
+    if value ~= nil then
+        return value == true
+    end
+
+    return plant:FindFirstChild(
+        "PotVisual"
+    ) ~= nil
+end
+
+function HolyMergeAutomationPlantPosition(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return nil
+    end
+
+    local ok,
+        pivot =
+        pcall(function()
+
+            return plant:GetPivot()
+        end)
+
+    if ok == true
+    and typeof(pivot) == "CFrame" then
+
+        return pivot.Position,
+            pivot
+    end
+
+    local part =
+        plant:IsA("BasePart")
+        and plant
+        or plant:FindFirstChildWhichIsA(
+            "BasePart",
+            true
+        )
+
+    if typeof(part) == "Instance" then
+
+        return part.Position,
+            part.CFrame
+    end
+
+    return nil
+end
+
+function HolyMergeAutomationFindPlantById(plantId)
+
+    plantId =
+        HolyCleanText(
+            plantId
+        )
+
+    if plantId == "" then
+        return nil
+    end
+
+    local plantsFolder =
+        HolyMergeAutomationGetPlantsFolder()
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return nil
+    end
+
+    for _, plant in ipairs(
+        plantsFolder:GetChildren()
+    ) do
+
+        if HolyAutoTrowelOwnsPlant(
+            plant,
+            plantsFolder
+        ) == true
+        and HolyFarmReadPlantId(plant) == plantId then
+
+            return plant
+        end
+    end
+
+    return nil
+end
+
+function HolyMergeAutomationFindPlantsByName(plantName)
+
+    local wanted =
+        HolyFarmPlantKey(
+            plantName
+        )
+
+    local plantsFolder =
+        HolyMergeAutomationGetPlantsFolder()
+
+    local output =
+        {}
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return output
+    end
+
+    for _, plant in ipairs(
+        plantsFolder:GetChildren()
+    ) do
+
+        if HolyAutoTrowelOwnsPlant(
+            plant,
+            plantsFolder
+        ) == true
+        and HolyFarmPlantKey(
+            HolyMergeAutomationPlantName(
+                plant
+            )
+        ) == wanted then
+
+            table.insert(
+                output,
+                plant
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(
+            HolyFarmReadPlantId(a)
+        ) < tostring(
+            HolyFarmReadPlantId(b)
+        )
+    end)
+
+    return output
+end
+
+function HolyMergeAutomationFindPlantByName(plantName, preferGrowing)
+
+    local plants =
+        HolyMergeAutomationFindPlantsByName(
+            plantName
+        )
+
+    if preferGrowing == true then
+
+        for _, plant in ipairs(plants) do
+
+            if HolyFarmInstanceReady(plant) ~= true then
+                return plant
+            end
+        end
+    end
+
+    return plants[1]
+end
+
+function HolyMergeAutomationToolPlantId(tool)
+
+    if typeof(tool) ~= "Instance" then
+        return ""
+    end
+
+    return HolyFarmReadAttribute(
+        tool,
+        {
+            "PlantId",
+            "PlantID",
+            "PlantUUID",
+            "UUID",
+            "Id",
+            "ID",
+        }
+    )
+end
+
+function HolyMergeAutomationFindPottedTool(plantName, plantId)
+
+    local wantedName =
+        HolyFarmPlantKey(
+            plantName
+        )
+
+    plantId =
+        HolyCleanText(
+            plantId
+        )
+
+    for _, container in ipairs({
+        LocalPlayer.Character,
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        ),
+    }) do
+
+        if typeof(container) == "Instance" then
+
+            for _, tool in ipairs(
+                container:GetChildren()
+            ) do
+
+                if tool:IsA("Tool") then
+
+                    local toolName =
+                        tostring(tool.Name or "")
+
+                    local nameMatches =
+                        wantedName ~= ""
+                        and HolyFarmPlantKey(toolName):find(
+                            wantedName,
+                            1,
+                            true
+                        ) ~= nil
+
+                    local idMatches =
+                        plantId ~= ""
+                        and HolyMergeAutomationToolPlantId(tool)
+                            == plantId
+
+                    local looksPotted =
+                        toolName:lower():find(
+                            "potted",
+                            1,
+                            true
+                        ) ~= nil
+                        or tool:GetAttribute("IsPotted") == true
+
+                    if looksPotted == true
+                    and (
+                        idMatches == true
+                        or nameMatches == true
+                    ) then
+
+                        return tool
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyMergeAutomationOutputExists(plantName)
+
+    if HolyMergeAutomationFindPlantByName(
+        plantName,
+        false
+    ) then
+
+        return true
+    end
+
+    return HolyMergeAutomationFindPottedTool(
+        plantName
+    ) ~= nil
+end
+
+function HolyMergeAutomationFindMergePair(recipe)
+
+    local leftPlants =
+        HolyMergeAutomationFindPlantsByName(
+            recipe.Left
+        )
+
+    local rightPlants =
+        HolyMergeAutomationFindPlantsByName(
+            recipe.Right
+        )
+
+    local samePlant =
+        HolyFarmPlantKey(recipe.Left)
+        == HolyFarmPlantKey(recipe.Right)
+
+    local bestLeft =
+        nil
+
+    local bestRight =
+        nil
+
+    local bestDistance =
+        math.huge
+
+    local range =
+        tonumber(
+            HOLY_MERGE_AUTOMATION_RUNTIME.RangeStuds
+        )
+        or 30
+
+    for _, left in ipairs(leftPlants) do
+
+        if HolyFarmInstanceReady(left) == true
+        and HolyMergeAutomationIsPotted(left) ~= true then
+
+            local leftPosition =
+                HolyMergeAutomationPlantPosition(
+                    left
+                )
+
+            if leftPosition then
+
+                for _, right in ipairs(rightPlants) do
+
+                    if right ~= left
+                    and (
+                        samePlant ~= true
+                        or HolyFarmReadPlantId(right)
+                            ~= HolyFarmReadPlantId(left)
+                    )
+                    and HolyFarmInstanceReady(right) == true
+                    and HolyMergeAutomationIsPotted(right) ~= true then
+
+                        local rightPosition =
+                            HolyMergeAutomationPlantPosition(
+                                right
+                            )
+
+                        if rightPosition then
+
+                            local distance =
+                                (
+                                    leftPosition
+                                    - rightPosition
+                                ).Magnitude
+
+                            if distance <= range
+                            and distance < bestDistance then
+
+                                bestLeft =
+                                    left
+
+                                bestRight =
+                                    right
+
+                                bestDistance =
+                                    distance
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return bestLeft,
+        bestRight,
+        bestDistance
+end
+
+function HolyMergeAutomationWaitFor(callback, timeout)
+
+    local deadline =
+        os.clock()
+        + math.max(
+            0,
+            tonumber(timeout)
+            or 0
+        )
+
+    repeat
+
+        local ok,
+            result =
+            pcall(
+                callback
+            )
+
+        if ok == true
+        and result then
+
+            return result
+        end
+
+        task.wait(
+            0.10
+        )
+
+    until os.clock() >= deadline
+
+    return nil
+end
+
+function HolyMergeAutomationWaitDelay(token, seconds)
+
+    seconds =
+        HolyMergeAutomationReadDelay(
+            seconds
+        )
+
+    if seconds <= 0 then
+
+        task.wait()
+
+        return HOLY_MERGE_AUTOMATION_RUNTIME.Token
+            == token
+    end
+
+    local deadline =
+        os.clock()
+        + seconds
+
+    while os.clock() < deadline do
+
+        if HOLY_MERGE_AUTOMATION_RUNTIME.Token
+            ~= token then
+
+            return false
+        end
+
+        task.wait(
+            math.min(
+                0.10,
+                math.max(
+                    0,
+                    deadline - os.clock()
+                )
+            )
+        )
+    end
+
+    return HOLY_MERGE_AUTOMATION_RUNTIME.Token
+        == token
+end
+
+function HolyMergeAutomationMergeRecipe(recipe)
+
+    if HolyMergeAutomationOutputExists(
+        recipe.Result
+    ) == true then
+
+        return true,
+            "already exists"
+    end
+
+    local left,
+        right =
+        HolyMergeAutomationFindMergePair(
+            recipe
+        )
+
+    if not left
+    or not right then
+
+        return false,
+            "Needs fully grown "
+                .. recipe.Left
+                .. " and "
+                .. recipe.Right
+                .. " within "
+                .. tostring(
+                    HOLY_MERGE_AUTOMATION_RUNTIME.RangeStuds
+                    or 30
+                )
+                .. " studs."
+    end
+
+    local packet =
+        HolyMergeAutomationResolvePackets()
+            .RequestMerge
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "Garden.RequestMerge is missing."
+    end
+
+    local leftId =
+        HolyFarmReadPlantId(
+            left
+        )
+
+    local rightId =
+        HolyFarmReadPlantId(
+            right
+        )
+
+    HolyMergeAutomationSetStatus(
+        "Merging plants",
+        recipe.Display
+    )
+
+    local callOk,
+        accepted,
+        message =
+        pcall(function()
+
+            return packet:Fire(
+                leftId,
+                rightId
+            )
+        end)
+
+    if callOk ~= true then
+
+        return false,
+            tostring(accepted)
+    end
+
+    if accepted == false then
+
+        return false,
+            tostring(
+                message
+                or "The server rejected the merge."
+            )
+    end
+
+    local result =
+        HolyMergeAutomationWaitFor(function()
+
+            return HolyMergeAutomationFindPlantByName(
+                recipe.Result,
+                false
+            )
+        end, 12)
+
+    if not result then
+
+        return false,
+            "Merge was sent, but "
+                .. recipe.Result
+                .. " did not appear."
+    end
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.Merges =
+        (
+            HOLY_MERGE_AUTOMATION_RUNTIME.Merges
+            or 0
+        )
+        + 1
+
+    HolyMergeAutomationSetStatus(
+        "Merge complete",
+        recipe.Result
+            .. " is now in your garden."
+    )
+
+    return true,
+        "merged"
+end
+
+function HolyMergeAutomationFindUsableWateringCan()
+
+    local wanted =
+        HolyMergeAutomationNormalizeCan(
+            HOLY_MERGE_AUTOMATION_STATE.WateringCan
+        )
+
+    for _, container in ipairs({
+        LocalPlayer.Character,
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        ),
+    }) do
+
+        if typeof(container) == "Instance" then
+
+            for _, tool in ipairs(
+                container:GetChildren()
+            ) do
+
+                if tool:IsA("Tool")
+                and tool.Name == wanted
+                and (
+                    tonumber(
+                        tool:GetAttribute("Count")
+                    )
+                    or 0
+                ) > 0 then
+
+                    return tool
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyMergeAutomationCountWateringUses()
+
+    local wanted =
+        HolyMergeAutomationNormalizeCan(
+            HOLY_MERGE_AUTOMATION_STATE.WateringCan
+        )
+
+    local total =
+        0
+
+    for _, container in ipairs({
+        LocalPlayer.Character,
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        ),
+    }) do
+
+        if typeof(container) == "Instance" then
+
+            for _, tool in ipairs(
+                container:GetChildren()
+            ) do
+
+                if tool:IsA("Tool")
+                and tool.Name == wanted then
+
+                    total =
+                        total
+                        + math.max(
+                            0,
+                            tonumber(
+                                tool:GetAttribute("Count")
+                            )
+                            or 0
+                        )
+                end
+            end
+        end
+    end
+
+    return total
+end
+
+function HolyMergeAutomationEquipTool(tool)
+
+    local character =
+        LocalPlayer.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+
+    if typeof(tool) ~= "Instance"
+    or typeof(character) ~= "Instance"
+    or typeof(humanoid) ~= "Instance" then
+
+        return false
+    end
+
+    if tool.Parent ~= character then
+
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+
+        task.wait(
+            0.20
+        )
+    end
+
+    return tool.Parent == character
+end
+
+function HolyMergeAutomationWaterOnce(plant)
+
+    if typeof(plant) ~= "Instance"
+    or plant.Parent == nil then
+
+        return false,
+            "The target plant disappeared."
+    end
+
+    local tool =
+        HolyMergeAutomationFindUsableWateringCan()
+
+    local canName =
+        HolyMergeAutomationNormalizeCan(
+            HOLY_MERGE_AUTOMATION_STATE.WateringCan
+        )
+
+    if not tool then
+
+        return false,
+            "No usable "
+                .. canName
+                .. " was found."
+    end
+
+    if HolyMergeAutomationEquipTool(tool) ~= true then
+
+        return false,
+            canName
+                .. " could not be equipped."
+    end
+
+    local packet =
+        HolyMergeAutomationResolvePackets()
+            .UseWateringCan
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "WateringCan.UseWateringCan is missing."
+    end
+
+    local position =
+        HolyMergeAutomationPlantPosition(
+            plant
+        )
+
+    if not position then
+
+        return false,
+            "The target plant has no usable position."
+    end
+
+    local beforeCount =
+        HolyMergeAutomationCountWateringUses()
+
+    local beforeAge =
+        HolyFarmReadNumberAttribute(
+            plant,
+            {
+                "Age",
+                "Growth",
+                "GrowAge",
+                "CurrentAge",
+            }
+        )
+
+    local callOk,
+        callError =
+        pcall(function()
+
+            packet:Fire(
+                position,
+                canName,
+                tool
+            )
+        end)
+
+    if callOk ~= true then
+
+        return false,
+            tostring(callError)
+    end
+
+    local confirmed =
+        HolyMergeAutomationWaitFor(function()
+
+            local afterCount =
+                HolyMergeAutomationCountWateringUses()
+
+            if afterCount < beforeCount then
+                return true
+            end
+
+            if typeof(plant) == "Instance"
+            and plant.Parent ~= nil
+            and beforeAge ~= nil then
+
+                local afterAge =
+                    HolyFarmReadNumberAttribute(
+                        plant,
+                        {
+                            "Age",
+                            "Growth",
+                            "GrowAge",
+                            "CurrentAge",
+                        }
+                    )
+
+                if afterAge ~= nil
+                and afterAge > beforeAge then
+
+                    return true
+                end
+            end
+
+            return false
+        end, 3)
+
+    if confirmed ~= true then
+
+        return false,
+            "Watering was not confirmed; no extra use was sent."
+    end
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.WaterUses =
+        (
+            HOLY_MERGE_AUTOMATION_RUNTIME.WaterUses
+            or 0
+        )
+        + 1
+
+    HolyMergeAutomationRefreshUI()
+
+    return true
+end
+
+function HolyMergeAutomationGrowPlant(plant, token)
+
+    local plantId =
+        HolyFarmReadPlantId(
+            plant
+        )
+
+    while HOLY_MERGE_AUTOMATION_RUNTIME.Token == token
+    and HOLY_MERGE_AUTOMATION_STATE.AutoWatering == true do
+
+        plant =
+            HolyMergeAutomationFindPlantById(
+                plantId
+            )
+
+        if not plant then
+
+            return false,
+                "The merged plant disappeared."
+        end
+
+        if HolyFarmInstanceReady(plant) == true then
+
+            HolyMergeAutomationSetStatus(
+                "Growth complete",
+                HolyMergeAutomationPlantName(plant)
+                    .. " reached MaxAge."
+            )
+
+            return true
+        end
+
+        local age =
+            HolyFarmReadNumberAttribute(
+                plant,
+                {
+                    "Age",
+                    "Growth",
+                    "CurrentAge",
+                }
+            )
+            or 0
+
+        local maxAge =
+            HolyFarmReadNumberAttribute(
+                plant,
+                {
+                    "MaxAge",
+                    "MaxGrowth",
+                    "RequiredAge",
+                }
+            )
+            or "?"
+
+        HolyMergeAutomationSetStatus(
+            "Growing "
+                .. HolyMergeAutomationPlantName(plant),
+            tostring(age)
+                .. " / "
+                .. tostring(maxAge)
+                .. " using "
+                .. HolyMergeAutomationNormalizeCan(
+                    HOLY_MERGE_AUTOMATION_STATE.WateringCan
+                )
+        )
+
+        local watered,
+            reason =
+            HolyMergeAutomationWaterOnce(
+                plant
+            )
+
+        if watered ~= true then
+
+            return false,
+                reason
+        end
+
+        if HolyFarmInstanceReady(plant) ~= true then
+
+            if HolyMergeAutomationWaitDelay(
+                token,
+                HOLY_MERGE_AUTOMATION_STATE.WateringDelay
+            ) ~= true then
+
+                return false,
+                    "Stopped."
+            end
+        end
+    end
+
+    return HolyFarmInstanceReady(plant) == true,
+        "Auto Watering is disabled."
+end
+
+function HolyMergeAutomationPotPlant(plant)
+
+    if HolyMergeAutomationIsPotted(plant) == true then
+
+        return true,
+            plant
+    end
+
+    local packet =
+        HolyMergeAutomationResolvePackets()
+            .PotPlant
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "Garden.PotPlant is missing."
+    end
+
+    local plantId =
+        HolyFarmReadPlantId(
+            plant
+        )
+
+    local callOk,
+        callError =
+        pcall(function()
+
+            packet:Fire(
+                plantId
+            )
+        end)
+
+    if callOk ~= true then
+
+        return false,
+            tostring(callError)
+    end
+
+    local potted =
+        HolyMergeAutomationWaitFor(function()
+
+            local current =
+                HolyMergeAutomationFindPlantById(
+                    plantId
+                )
+
+            if current
+            and HolyMergeAutomationIsPotted(current) == true then
+
+                return current
+            end
+
+            return nil
+        end, 6)
+
+    if not potted then
+
+        return false,
+            "Potting was not confirmed. Make sure you own an empty pot."
+    end
+
+    return true,
+        potted
+end
+
+function HolyMergeAutomationPickUpPlant(plant)
+
+    local packet =
+        HolyMergeAutomationResolvePackets()
+            .PickUpPottedPlant
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "PotPlacement.PickUpPottedPlant is missing."
+    end
+
+    local plantId =
+        HolyFarmReadPlantId(
+            plant
+        )
+
+    local plantName =
+        HolyMergeAutomationPlantName(
+            plant
+        )
+
+    local callOk,
+        callError =
+        pcall(function()
+
+            packet:Fire(
+                plantId
+            )
+        end)
+
+    if callOk ~= true then
+
+        return false,
+            tostring(callError)
+    end
+
+    local removedAt =
+        nil
+
+    local pickedUp =
+        HolyMergeAutomationWaitFor(function()
+
+            if HolyMergeAutomationFindPlantById(
+                plantId
+            ) == nil then
+
+                local pottedTool =
+                    HolyMergeAutomationFindPottedTool(
+                        plantName,
+                        plantId
+                    )
+
+                if pottedTool then
+                    return pottedTool
+                end
+
+                removedAt =
+                    removedAt
+                    or os.clock()
+
+                if os.clock() - removedAt >= 0.50 then
+                    return true
+                end
+
+                return nil
+            end
+
+            removedAt =
+                nil
+
+            return nil
+        end, 6)
+
+    if not pickedUp then
+
+        return false,
+            "Potted plant pickup was not confirmed."
+    end
+
+    return true
+end
+
+function HolyMergeAutomationPlacePlant(
+    plantId,
+    position,
+    rotationDegrees
+)
+
+    local packet =
+        HolyMergeAutomationResolvePackets()
+            .PlacePottedPlant
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "PotPlacement.PlacePottedPlant is missing."
+    end
+
+    local callOk,
+        callError =
+        pcall(function()
+
+            packet:Fire(
+                position,
+                rotationDegrees,
+                plantId
+            )
+        end)
+
+    if callOk ~= true then
+
+        return false,
+            tostring(callError)
+    end
+
+    local placed =
+        HolyMergeAutomationWaitFor(function()
+
+            local plant =
+                HolyMergeAutomationFindPlantById(
+                    plantId
+                )
+
+            if plant
+            and HolyMergeAutomationIsPotted(plant) == true then
+
+                return plant
+            end
+
+            return nil
+        end, 6)
+
+    if not placed then
+
+        return false,
+            "Potted plant placement was not confirmed."
+    end
+
+    return true,
+        placed
+end
+
+function HolyMergeAutomationRecoverHeldPlant()
+
+    local recovery =
+        HOLY_MERGE_AUTOMATION_RUNTIME.Recovery
+
+    if type(recovery) ~= "table" then
+        return true
+    end
+
+    if HolyMergeAutomationFindPlantById(
+        recovery.PlantId
+    ) then
+
+        HOLY_MERGE_AUTOMATION_RUNTIME.Recovery =
+            nil
+
+        return true
+    end
+
+    HolyMergeAutomationSetStatus(
+        "Recovering potted plant",
+        "Placing it back at the saved position."
+    )
+
+    local placed,
+        reason =
+        HolyMergeAutomationPlacePlant(
+            recovery.PlantId,
+            recovery.Position,
+            recovery.RotationDegrees
+        )
+
+    if placed == true then
+
+        HOLY_MERGE_AUTOMATION_RUNTIME.Recovery =
+            nil
+
+        return true
+    end
+
+    return false,
+        reason
+end
+
+function HolyMergeAutomationResolveEclipseTarget()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local target =
+        HolyMergeAutomationFindPlantById(
+            runtime.EclipseTargetId
+        )
+
+    if target
+    and HolyFarmPlantKey(
+        HolyMergeAutomationPlantName(target)
+    ) == HolyFarmPlantKey("Eclipse Bloom") then
+
+        return target
+    end
+
+    target =
+        HolyMergeAutomationFindPlantByName(
+            "Eclipse Bloom",
+            true
+        )
+        or HolyMergeAutomationFindPlantByName(
+            "Eclipse Bloom",
+            false
+        )
+
+    if target then
+
+        runtime.EclipseTargetId =
+            HolyFarmReadPlantId(
+                target
+            )
+    end
+
+    return target
+end
+
+function HolyMergeAutomationRunEclipseCycle(token)
+
+    local recovered,
+        recoveryReason =
+        HolyMergeAutomationRecoverHeldPlant()
+
+    if recovered ~= true then
+
+        return false,
+            recoveryReason
+    end
+
+    local plant =
+        HolyMergeAutomationResolveEclipseTarget()
+
+    if not plant then
+
+        if HolyMergeAutomationFindPottedTool(
+            "Eclipse Bloom"
+        ) then
+
+            return false,
+                "Place your potted Eclipse Bloom in the garden once so its position can be captured."
+        end
+
+        return false,
+            "No planted Eclipse Bloom was found."
+    end
+
+    if HolyFarmInstanceReady(plant) ~= true then
+
+        if HOLY_MERGE_AUTOMATION_STATE.AutoWatering ~= true then
+
+            return false,
+                "Enable Auto Watering to finish growing the Eclipse Bloom."
+        end
+
+        local grown,
+            growReason =
+            HolyMergeAutomationGrowPlant(
+                plant,
+                token
+            )
+
+        if grown ~= true then
+
+            return false,
+                growReason
+        end
+
+        plant =
+            HolyMergeAutomationResolveEclipseTarget()
+
+        if not plant then
+
+            return false,
+                "Eclipse Bloom disappeared after growing."
+        end
+    end
+
+    if HOLY_MERGE_AUTOMATION_STATE.AutoWatering ~= true then
+
+        return false,
+            "Enable Auto Watering; every Eclipse cycle needs one watering-can use."
+    end
+
+    HolyMergeAutomationSetStatus(
+        "Preparing Eclipse Bloom",
+        "Potting the fully grown plant."
+    )
+
+    local potted,
+        pottedPlantOrReason =
+        HolyMergeAutomationPotPlant(
+            plant
+        )
+
+    if potted ~= true then
+
+        return false,
+            pottedPlantOrReason
+    end
+
+    plant =
+        pottedPlantOrReason
+
+    HolyMergeAutomationSetStatus(
+        "Triggering Eclipse",
+        "Using one "
+            .. HolyMergeAutomationNormalizeCan(
+                HOLY_MERGE_AUTOMATION_STATE.WateringCan
+            )
+            .. "."
+    )
+
+    local watered,
+        waterReason =
+        HolyMergeAutomationWaterOnce(
+            plant
+        )
+
+    if watered ~= true then
+
+        return false,
+            waterReason
+    end
+
+    local position,
+        pivot =
+        HolyMergeAutomationPlantPosition(
+            plant
+        )
+
+    if not position
+    or typeof(pivot) ~= "CFrame" then
+
+        return false,
+            "Could not save the Eclipse Bloom placement."
+    end
+
+    local _,
+        yawRadians =
+        pivot:ToOrientation()
+
+    local plantId =
+        HolyFarmReadPlantId(
+            plant
+        )
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.Recovery = {
+        PlantId =
+            plantId,
+
+        Position =
+            position,
+
+        RotationDegrees =
+            math.deg(
+                yawRadians
+            ),
+    }
+
+    HolyMergeAutomationSetStatus(
+        "Cycling Eclipse Bloom",
+        "Picking up and placing the pot back."
+    )
+
+    local pickedUp,
+        pickupReason =
+        HolyMergeAutomationPickUpPlant(
+            plant
+        )
+
+    if pickedUp ~= true then
+
+        HOLY_MERGE_AUTOMATION_RUNTIME.Recovery =
+            nil
+
+        return false,
+            pickupReason
+    end
+
+    local placed,
+        placedPlantOrReason =
+        HolyMergeAutomationPlacePlant(
+            plantId,
+            position,
+            math.deg(
+                yawRadians
+            )
+        )
+
+    if placed ~= true then
+
+        return false,
+            placedPlantOrReason
+    end
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.Recovery =
+        nil
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.EclipseTargetId =
+        plantId
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.Cycles =
+        (
+            HOLY_MERGE_AUTOMATION_RUNTIME.Cycles
+            or 0
+        )
+        + 1
+
+    HolyMergeAutomationSetStatus(
+        "Eclipse cycle complete",
+        "Waiting "
+            .. tostring(
+                HolyMergeAutomationReadDelay(
+                    HOLY_MERGE_AUTOMATION_STATE.LoopDelay
+                )
+            )
+            .. " second(s)."
+    )
+
+    return true,
+        placedPlantOrReason
+end
+
+function HolyMergeAutomationShouldRun()
+
+    local state =
+        HOLY_MERGE_AUTOMATION_STATE
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    return state.AutoMergePlants == true
+        or state.AutoWatering == true
+        or state.AutoEclipseLoop == true
+        or runtime.RunOnceRequested == true
+end
+
+function HolyMergeAutomationStop(status)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    if status then
+
+        HolyMergeAutomationSetStatus(
+            status
+        )
+    end
+
+    return true
+end
+
+function HolyMergeAutomationWorker(token)
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    local startedForRunOnce =
+        runtime.RunOnceRequested == true
+
+    HolyMergeAutomationSetStatus(
+        "Starting",
+        "Checking your garden and selected recipes."
+    )
+
+    while runtime.Token == token
+    and HolyMergeAutomationShouldRun() == true do
+
+        local didWork =
+            false
+
+        local selectedRecipes =
+            HolyMergeAutomationGetSelectedRecipes()
+
+        if HOLY_MERGE_AUTOMATION_STATE.AutoMergePlants == true then
+
+            if #selectedRecipes <= 0 then
+
+                HolyMergeAutomationSetStatus(
+                    "Waiting",
+                    "Select at least one merge recipe."
+                )
+
+            else
+
+                for _, recipe in ipairs(selectedRecipes) do
+
+                    if HolyMergeAutomationOutputExists(
+                        recipe.Result
+                    ) ~= true then
+
+                        local merged,
+                            mergeReason =
+                            HolyMergeAutomationMergeRecipe(
+                                recipe
+                            )
+
+                        didWork =
+                            merged == true
+
+                        if merged ~= true then
+
+                            HolyMergeAutomationSetStatus(
+                                "Waiting to merge",
+                                mergeReason
+                            )
+                        end
+
+                        break
+                    end
+                end
+            end
+        end
+
+        if runtime.Token ~= token then
+            break
+        end
+
+        if HOLY_MERGE_AUTOMATION_STATE.AutoWatering == true then
+
+            for _, recipe in ipairs(selectedRecipes) do
+
+                local plant =
+                    HolyMergeAutomationFindPlantByName(
+                        recipe.Result,
+                        true
+                    )
+
+                if plant
+                and HolyFarmInstanceReady(plant) ~= true then
+
+                    local grown,
+                        growReason =
+                        HolyMergeAutomationGrowPlant(
+                            plant,
+                            token
+                        )
+
+                    didWork =
+                        didWork
+                        or grown == true
+
+                    if grown ~= true
+                    and tostring(growReason or "") ~= "Stopped." then
+
+                        HolyMergeAutomationSetStatus(
+                            "Watering paused",
+                            growReason
+                        )
+                    end
+
+                    break
+                end
+            end
+        end
+
+        if runtime.Token ~= token then
+            break
+        end
+
+        local runOnce =
+            runtime.RunOnceRequested == true
+
+        if HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop == true
+        or runOnce == true then
+
+            local completed,
+                cycleReason =
+                HolyMergeAutomationRunEclipseCycle(
+                    token
+                )
+
+            didWork =
+                didWork
+                or completed == true
+
+            if runOnce == true then
+
+                runtime.RunOnceRequested =
+                    false
+            end
+
+            if completed ~= true then
+
+                HolyMergeAutomationSetStatus(
+                    "Eclipse loop waiting",
+                    cycleReason
+                )
+
+            elseif HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop == true then
+
+                if HolyMergeAutomationWaitDelay(
+                    token,
+                    HOLY_MERGE_AUTOMATION_STATE.LoopDelay
+                ) ~= true then
+
+                    break
+                end
+            end
+        end
+
+        if runtime.Token ~= token then
+            break
+        end
+
+        if didWork ~= true then
+
+            if HolyMergeAutomationWaitDelay(
+                token,
+                0.50
+            ) ~= true then
+
+                break
+            end
+        end
+    end
+
+    if runtime.Token == token then
+
+        runtime.Token =
+            nil
+
+        runtime.Running =
+            false
+
+        if startedForRunOnce ~= true then
+
+            HolyMergeAutomationSetStatus(
+                "Disabled"
+            )
+        end
+    end
+end
+
+function HolyMergeAutomationWake()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    if HolyMergeAutomationShouldRun() ~= true then
+
+        HolyMergeAutomationStop(
+            "Disabled"
+        )
+
+        return false
+    end
+
+    if runtime.Running == true
+    and runtime.Token ~= nil then
+
+        return true
+    end
+
+    runtime.Running =
+        true
+
+    runtime.Token =
+        {}
+
+    local token =
+        runtime.Token
+
+    task.spawn(function()
+
+        HolyMergeAutomationWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyMergeAutomationSetAutoMerge(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.AutoMergePlants =
+        value == true
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.AutoMergePlants
+end
+
+function HolyMergeAutomationSetAutoWatering(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.AutoWatering =
+        value == true
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.AutoWatering
+end
+
+function HolyMergeAutomationSetWateringCan(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.WateringCan =
+        HolyMergeAutomationNormalizeCan(
+            value
+        )
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.WateringCan
+end
+
+function HolyMergeAutomationSetWateringDelay(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.WateringDelay =
+        HolyMergeAutomationReadDelay(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_MERGE_AUTOMATION_STATE.WateringDelay
+end
+
+function HolyMergeAutomationSetAutoEclipseLoop(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop =
+        value == true
+
+    HolySaveFarmSettings()
+    HolyMergeAutomationWake()
+
+    return HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop
+end
+
+function HolyMergeAutomationSetLoopDelay(value)
+
+    HOLY_MERGE_AUTOMATION_STATE.LoopDelay =
+        HolyMergeAutomationReadDelay(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_MERGE_AUTOMATION_STATE.LoopDelay
+end
+
+function HolyMergeAutomationRunOneLoop()
+
+    local runtime =
+        HOLY_MERGE_AUTOMATION_RUNTIME
+
+    if HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop == true then
+
+        HolyNotify(
+            "Eclipse Loop",
+            "Auto Eclipse Loop is already running.",
+            3
+        )
+
+        return false
+    end
+
+    runtime.RunOnceRequested =
+        true
+
+    HolyMergeAutomationWake()
+
+    return true
+end
+
+function HolyMergeAutomationResetTarget()
+
+    HOLY_MERGE_AUTOMATION_RUNTIME.EclipseTargetId =
+        nil
+
+    HolyMergeAutomationSetStatus(
+        "Target reset",
+        "The next planted Eclipse Bloom will be selected automatically."
+    )
+
+    HolyMergeAutomationWake()
+
+    return true
+end
+
+HOLY_MERGE_AUTOMATION_RUNTIME.Stop =
+    HolyMergeAutomationStop
+
 --==================================================
 -- [3] LOAD SETTINGS + LIBRARY
 --==================================================
@@ -101237,10 +103779,326 @@ HolyFarmAddPageNote(
     "Farm middle, safety, and maintenance options will go here."
 )
 
-HolyFarmAddPageNote(
+HolySniperAddLabel(
     FarmExtraExperimentalBox,
-    "Experimental farm systems and debug tools will go here."
+    "Plant Merging"
 )
+
+HOLY_MERGE_AUTOMATION_UI.AutoMergeToggle =
+    FarmExtraExperimentalBox:AddToggle(
+        "HolyMergeAutomationAutoMerge",
+        {
+            Text =
+                "Auto Merge Plants",
+
+            Default =
+                HOLY_MERGE_AUTOMATION_STATE.AutoMergePlants == true,
+
+            Tooltip =
+                "Creates one missing result for every selected recipe. Ingredients must be fully grown, unpotted, and inside the game's merge range.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.AutoMergeToggle:OnChanged(function(value)
+
+    HolyMergeAutomationSetAutoMerge(
+        value == true
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.RecipesDropdown =
+    FarmExtraExperimentalBox:AddDropdown(
+        "HolyMergeAutomationRecipes",
+        {
+            Text =
+                "Merge Recipes",
+
+            Values =
+                HolyMergeAutomationGetRecipeDisplays(),
+
+            Default =
+                HolyMergeAutomationGetSelectedRecipeDisplays(),
+
+            Multi =
+                true,
+
+            Searchable =
+                true,
+
+            AllowNull =
+                true,
+
+            MaxVisibleDropdownItems =
+                8,
+
+            Tooltip =
+                "Loaded from MergeFlags.Recipes. Future recipes appear without being hardcoded or automatically enabled.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.RecipesDropdown:OnChanged(function(value)
+
+    if HOLY_MERGE_AUTOMATION_RUNTIME.UpdatingRecipes ~= true then
+
+        HolyMergeAutomationSetSelectedRecipes(
+            value
+        )
+    end
+end)
+
+FarmExtraExperimentalBox:AddButton({
+    Text =
+        "Refresh Merge Recipes",
+
+    Tooltip =
+        "Reloads MergeFlags.Recipes. Newly discovered recipes remain unselected.",
+
+    Func =
+        function()
+
+            HolyMergeAutomationRefreshRecipes(
+                true
+            )
+        end,
+})
+
+HolySniperAddLabel(
+    FarmExtraExperimentalBox,
+    "Merged Plant Growth"
+)
+
+HOLY_MERGE_AUTOMATION_UI.AutoWateringToggle =
+    FarmExtraExperimentalBox:AddToggle(
+        "HolyMergeAutomationAutoWatering",
+        {
+            Text =
+                "Auto Watering",
+
+            Default =
+                HOLY_MERGE_AUTOMATION_STATE.AutoWatering == true,
+
+            Tooltip =
+                "Uses the selected real watering can until each selected merged result reaches MaxAge.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.AutoWateringToggle:OnChanged(function(value)
+
+    HolyMergeAutomationSetAutoWatering(
+        value == true
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.WateringCanDropdown =
+    FarmExtraExperimentalBox:AddDropdown(
+        "HolyMergeAutomationWateringCan",
+        {
+            Text =
+                "Watering Can",
+
+            Values = {
+                "Super Watering Can",
+                "Common Watering Can",
+            },
+
+            Default =
+                HolyMergeAutomationNormalizeCan(
+                    HOLY_MERGE_AUTOMATION_STATE.WateringCan
+                ),
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                2,
+
+            Tooltip =
+                "Chooses which real watering-can stack is used for growth and Eclipse cycles.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.WateringCanDropdown:OnChanged(function(value)
+
+    HolyMergeAutomationSetWateringCan(
+        value
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.WateringDelayInput =
+    FarmExtraExperimentalBox:AddInput(
+        "HolyMergeAutomationWateringDelay",
+        {
+            Text =
+                "Watering Delay (Seconds)",
+
+            Default =
+                tostring(
+                    HolyMergeAutomationReadDelay(
+                        HOLY_MERGE_AUTOMATION_STATE.WateringDelay
+                    )
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Delay between growth uses. Default is 3, minimum is 0, and there is no maximum.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.WateringDelayInput:OnChanged(function(value)
+
+    HolyMergeAutomationSetWateringDelay(
+        value
+    )
+end)
+
+HolySniperAddLabel(
+    FarmExtraExperimentalBox,
+    "Eclipse Weather Loop"
+)
+
+HOLY_MERGE_AUTOMATION_UI.AutoEclipseLoopToggle =
+    FarmExtraExperimentalBox:AddToggle(
+        "HolyMergeAutomationAutoEclipseLoop",
+        {
+            Text =
+                "Auto Eclipse Loop",
+
+            Default =
+                HOLY_MERGE_AUTOMATION_STATE.AutoEclipseLoop == true,
+
+            Tooltip =
+                "Selects one Eclipse Bloom, pots it, waters once, picks it up, and places it back at its exact saved position.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.AutoEclipseLoopToggle:OnChanged(function(value)
+
+    HolyMergeAutomationSetAutoEclipseLoop(
+        value == true
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.LoopDelayInput =
+    FarmExtraExperimentalBox:AddInput(
+        "HolyMergeAutomationLoopDelay",
+        {
+            Text =
+                "Loop Delay (Seconds)",
+
+            Default =
+                tostring(
+                    HolyMergeAutomationReadDelay(
+                        HOLY_MERGE_AUTOMATION_STATE.LoopDelay
+                    )
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Delay after each completed Eclipse cycle. Default is 3, minimum is 0, and there is no maximum.",
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.LoopDelayInput:OnChanged(function(value)
+
+    HolyMergeAutomationSetLoopDelay(
+        value
+    )
+end)
+
+HOLY_MERGE_AUTOMATION_UI.LoopActions =
+    FarmExtraExperimentalBox:AddActionRow(
+        "HolyMergeAutomationLoopActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "RunOneLoop",
+
+                    Text =
+                        "Run One Loop",
+
+                    Tooltip =
+                        "Runs one confirmed Eclipse pot cycle without enabling the continuous loop.",
+
+                    Callback =
+                        function()
+
+                            HolyMergeAutomationRunOneLoop()
+                        end,
+                },
+
+                {
+                    Id =
+                        "ResetTarget",
+
+                    Text =
+                        "Reset Target",
+
+                    Tooltip =
+                        "Forgets the selected Eclipse Bloom. The next planted one is selected automatically.",
+
+                    Callback =
+                        function()
+
+                            HolyMergeAutomationResetTarget()
+                        end,
+                },
+            },
+        }
+    )
+
+HOLY_MERGE_AUTOMATION_UI.StatusLabel =
+    HolySniperAddLabel(
+        FarmExtraExperimentalBox,
+        HolyMergeAutomationBuildStatusText()
+    )
+
+HOLY_MERGE_AUTOMATION_UI.StatsLabel =
+    HolySniperAddLabel(
+        FarmExtraExperimentalBox,
+        HolyMergeAutomationBuildStatsText()
+    )
+
+task.defer(function()
+
+    task.wait(
+        0.75
+    )
+
+    HolyMergeAutomationRefreshRecipes(
+        false
+    )
+
+    if HolyMergeAutomationShouldRun() == true then
+
+        HolyMergeAutomationWake()
+    else
+
+        HolyMergeAutomationRefreshUI()
+    end
+end)
 
 HolyFarmSetPage(
     HOLY_FARM_PAGE_STATE.Mode
