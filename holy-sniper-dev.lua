@@ -2955,13 +2955,22 @@ HOLY_SHOP_STATE = {
 
     WorkerRunning = false,
     PendingCategories = {},
-    BurstAttempts = {},
+    BurstItems = {},
     PacketCache = {},
     ItemCache = {},
     StockConnections = {},
 
     MaxBurstFires = 120,
     YieldEvery = 24,
+
+    BurstConfirmDelay = 0.75,
+    BurstFailureCooldown = 5,
+
+    BurstRetryDelays = {
+        0,
+        0.75,
+        1.50,
+    },
 
     SellWorkerRunning = false,
     SellWatcherStarted = false,
@@ -46279,6 +46288,56 @@ function HolyShopFlagEnabled(modulePath, itemName, fallback)
     return fallback ~= false
 end
 
+function HolyShopGetFlagOverride(modulePath, itemName)
+
+    local module =
+        HolyShopRequireModule(
+            modulePath
+        )
+
+    local enabledOverrides =
+        type(module) == "table"
+        and module.EnabledOverrides
+        or nil
+
+    local valueTable =
+        type(enabledOverrides) == "table"
+        and enabledOverrides.Value
+        or nil
+
+    if type(valueTable) == "table"
+    and valueTable[itemName] ~= nil then
+
+        return valueTable[itemName] == true,
+            true
+    end
+
+    return nil,
+        false
+end
+
+function HolyShopSeedEnabled(seedName)
+
+    local overrideValue,
+        hasOverride =
+        HolyShopGetFlagOverride(
+            "SharedModules.Flags.SeedShopFlags",
+            seedName
+        )
+
+    if hasOverride == true then
+
+        return overrideValue == true
+    end
+
+    return HolyShopModuleEnabled(
+        "SharedModules.SeedShopEnabled",
+        "IsSeedEnabled",
+        seedName,
+        true
+    ) == true
+end
+
 function HolyShopAddStockRows(category, rows)
 
     -- Dropdown names must come from real shop data only.
@@ -46309,11 +46368,8 @@ function HolyShopBuildSeedRows()
 
                 if seedName ~= ""
                 and row.RestockShop == true
-                and HolyShopModuleEnabled(
-                    "SharedModules.SeedShopEnabled",
-                    "IsSeedEnabled",
-                    seedName,
-                    true
+                and HolyShopSeedEnabled(
+                    seedName
                 ) == true then
 
                     HolyShopAddItemRow(
@@ -46837,30 +46893,293 @@ function HolyShopFireBurst(category, itemName, amount)
     return fired
 end
 
+function HolyShopIsItemSelected(category, itemName)
+
+    local selection =
+        HolyShopGetSelection(
+            category
+        )
+
+    return selection.All == true
+        or selection[itemName] == true
+end
+
+function HolyShopGetBurstItemState(category, itemName)
+
+    HOLY_SHOP_STATE.BurstItems =
+        type(HOLY_SHOP_STATE.BurstItems) == "table"
+        and HOLY_SHOP_STATE.BurstItems
+        or {}
+
+    local key =
+        tostring(category)
+        .. "|"
+        .. tostring(itemName)
+
+    HOLY_SHOP_STATE.BurstItems[key] =
+        type(HOLY_SHOP_STATE.BurstItems[key]) == "table"
+        and HOLY_SHOP_STATE.BurstItems[key]
+        or {
+            Running = false,
+            BlockedSignature = "",
+            RetryAfter = 0,
+        }
+
+    return HOLY_SHOP_STATE.BurstItems[key]
+end
+
+function HolyShopRunVerifiedBurst(category, itemName)
+
+    if HolyShopCategoryEnabled(category) ~= true
+    or HolyShopIsItemSelected(category, itemName) ~= true then
+
+        return false
+    end
+
+    local firstStock =
+        HolyShopGetStockValue(
+            category,
+            itemName
+        )
+
+    if firstStock <= 0 then
+
+        return false
+    end
+
+    local state =
+        HolyShopGetBurstItemState(
+            category,
+            itemName
+        )
+
+    if state.Running == true then
+
+        return false
+    end
+
+    local restockKey =
+        HolyShopGetRestockKey(
+            category
+        )
+
+    local signature =
+        tostring(restockKey)
+        .. "|"
+        .. tostring(firstStock)
+
+    if state.BlockedSignature == signature
+    and os.clock() < (
+        tonumber(state.RetryAfter)
+        or 0
+    ) then
+
+        return false
+    end
+
+    state.Running =
+        true
+
+    state.BlockedSignature =
+        ""
+
+    state.RetryAfter =
+        0
+
+    local retryDelays =
+        type(HOLY_SHOP_STATE.BurstRetryDelays) == "table"
+        and HOLY_SHOP_STATE.BurstRetryDelays
+        or {
+            0,
+            0.75,
+            1.50,
+        }
+
+    local progressed =
+        false
+
+    local completed =
+        false
+
+    local cancelled =
+        false
+
+    local restockChanged =
+        false
+
+    for passIndex, retryDelay in ipairs(retryDelays) do
+
+        if passIndex > 1 then
+
+            task.wait(
+                math.max(
+                    0,
+                    tonumber(retryDelay)
+                    or 0
+                )
+            )
+        end
+
+        if HolyShopCategoryEnabled(category) ~= true
+        or HolyShopIsItemSelected(category, itemName) ~= true then
+
+            cancelled =
+                true
+
+            break
+        end
+
+        if HolyShopGetRestockKey(category) ~= restockKey then
+
+            restockChanged =
+                true
+
+            break
+        end
+
+        local beforeStock =
+            HolyShopGetStockValue(
+                category,
+                itemName
+            )
+
+        if beforeStock <= 0 then
+
+            completed =
+                true
+
+            break
+        end
+
+        local fired =
+            HolyShopFireBurst(
+                category,
+                itemName,
+                beforeStock
+            )
+
+        if fired <= 0 then
+
+            break
+        end
+
+        task.wait(
+            math.max(
+                0.05,
+                tonumber(
+                    HOLY_SHOP_STATE.BurstConfirmDelay
+                )
+                or 0.75
+            )
+        )
+
+        local afterStock =
+            HolyShopGetStockValue(
+                category,
+                itemName
+            )
+
+        if afterStock < beforeStock then
+
+            progressed =
+                true
+        end
+
+        if afterStock <= 0 then
+
+            completed =
+                true
+
+            break
+        end
+    end
+
+    local remainingStock =
+        HolyShopGetStockValue(
+            category,
+            itemName
+        )
+
+    state.Running =
+        false
+
+    if cancelled == true
+    or completed == true
+    or restockChanged == true
+    or remainingStock <= 0 then
+
+        state.BlockedSignature =
+            ""
+
+        state.RetryAfter =
+            0
+
+    else
+
+        state.BlockedSignature =
+            tostring(
+                HolyShopGetRestockKey(
+                    category
+                )
+            )
+            .. "|"
+            .. tostring(remainingStock)
+
+        state.RetryAfter =
+            os.clock()
+            + math.max(
+                0,
+                tonumber(
+                    HOLY_SHOP_STATE.BurstFailureCooldown
+                )
+                or 5
+            )
+    end
+
+    if restockChanged == true
+    and HolyShopCategoryEnabled(category) == true then
+
+        HolyShopQueueCategory(
+            category
+        )
+    end
+
+    return completed == true
+        or progressed == true
+end
+
 function HolyShopRunCategory(category)
 
     if HolyShopCategoryEnabled(category) ~= true then
+
         return false
+    end
+
+    if category == "Seeds" then
+
+        HOLY_SHOP_STATE.ItemCache =
+            type(HOLY_SHOP_STATE.ItemCache) == "table"
+            and HOLY_SHOP_STATE.ItemCache
+            or {}
+
+        HOLY_SHOP_STATE.ItemCache.Seeds =
+            nil
     end
 
     local rows =
-        HolyShopGetSelectedRows(category)
+        HolyShopGetSelectedRows(
+            category
+        )
 
     if #rows <= 0 then
+
         return false
     end
-
-    HOLY_SHOP_STATE.BurstAttempts =
-        type(HOLY_SHOP_STATE.BurstAttempts) == "table"
-        and HOLY_SHOP_STATE.BurstAttempts
-        or {}
-
-    local restockKey =
-        HolyShopGetRestockKey(category)
 
     for _, row in ipairs(rows) do
 
         if HolyShopCategoryEnabled(category) ~= true then
+
             return true
         end
 
@@ -46872,26 +47191,10 @@ function HolyShopRunCategory(category)
 
         if stock > 0 then
 
-            local attemptKey =
-                tostring(category)
-                .. "|"
-                .. tostring(row.Name)
-                .. "|"
-                .. tostring(restockKey)
-                .. "|"
-                .. tostring(stock)
-
-            if HOLY_SHOP_STATE.BurstAttempts[attemptKey] ~= true then
-
-                HOLY_SHOP_STATE.BurstAttempts[attemptKey] =
-                    true
-
-                HolyShopFireBurst(
-                    category,
-                    row.Name,
-                    stock
-                )
-            end
+            HolyShopRunVerifiedBurst(
+                category,
+                row.Name
+            )
         end
     end
 
@@ -46993,9 +47296,31 @@ function HolyShopQueueAll()
     end
 end
 
+function HolyShopConnectStockValue(category, child)
+
+    if typeof(child) ~= "Instance"
+    or child:IsA("ValueBase") ~= true then
+
+        return false
+    end
+
+    table.insert(
+        HOLY_SHOP_STATE.StockConnections,
+        child.Changed:Connect(function()
+
+            HolyShopQueueCategory(
+                category
+            )
+        end)
+    )
+
+    return true
+end
+
 function HolyShopConnectStockSignals()
 
     if HOLY_SHOP_STATE.StockConnected == true then
+
         return
     end
 
@@ -47010,27 +47335,27 @@ function HolyShopConnectStockSignals()
     for category, config in pairs(HOLY_SHOP_CATEGORIES) do
 
         local items =
-            ReplicatedStorage:FindFirstChild("StockValues")
-            and ReplicatedStorage.StockValues:FindFirstChild(config.ShopName)
-            and ReplicatedStorage.StockValues[config.ShopName]:FindFirstChild("Items")
+            ReplicatedStorage:FindFirstChild(
+                "StockValues"
+            )
+            and ReplicatedStorage.StockValues:FindFirstChild(
+                config.ShopName
+            )
+            and ReplicatedStorage.StockValues[
+                config.ShopName
+            ]:FindFirstChild(
+                "Items"
+            )
             or nil
 
         if typeof(items) == "Instance" then
 
             for _, child in ipairs(items:GetChildren()) do
 
-                if child:IsA("ValueBase") then
-
-                    table.insert(
-                        HOLY_SHOP_STATE.StockConnections,
-                        child.Changed:Connect(function()
-
-                            HolyShopQueueCategory(
-                                category
-                            )
-                        end)
-                    )
-                end
+                HolyShopConnectStockValue(
+                    category,
+                    child
+                )
             end
 
             table.insert(
@@ -47038,6 +47363,19 @@ function HolyShopConnectStockSignals()
                 items.ChildAdded:Connect(function(child)
 
                     if child:IsA("ValueBase") then
+
+                        HolyShopConnectStockValue(
+                            category,
+                            child
+                        )
+
+                        HOLY_SHOP_STATE.ItemCache =
+                            type(HOLY_SHOP_STATE.ItemCache) == "table"
+                            and HOLY_SHOP_STATE.ItemCache
+                            or {}
+
+                        HOLY_SHOP_STATE.ItemCache[category] =
+                            nil
 
                         task.defer(function()
 
@@ -57738,11 +58076,31 @@ if type(HOLY_DAILY_DEAL_LIVE_RUNTIME) == "table" then
 
     HOLY_DAILY_DEAL_LIVE_RUNTIME.Running =
         false
+
+    local oldSnapshotConnection =
+        HOLY_DAILY_DEAL_LIVE_RUNTIME
+            .SnapshotConnection
+
+    if oldSnapshotConnection ~= nil then
+
+        pcall(function()
+
+            oldSnapshotConnection:Disconnect()
+        end)
+    end
 end
 
 HOLY_DAILY_DEAL_LIVE_RUNTIME = {
     Running = false,
     Token = nil,
+
+    SnapshotConnection = nil,
+    SnapshotConnected = false,
+    LastSnapshotAt = 0,
+
+    LastCycleKey = "",
+    LastProcessedCycleKey = "",
+    LastStockResult = nil,
 
     LastHash = "",
     LastSentAt = 0,
@@ -57994,6 +58352,66 @@ function HolyDailyDealLiveReadSeconds(value)
     )
 end
 
+function HolyDailyDealLiveServerNow()
+
+    local success,
+        result =
+        pcall(function()
+
+            return workspace:GetServerTimeNow()
+        end)
+
+    local serverNow =
+        success == true
+        and tonumber(result)
+        or nil
+
+    if serverNow ~= nil
+    and serverNow > 1000000000
+    and serverNow == serverNow
+    and serverNow ~= math.huge
+    and serverNow ~= -math.huge then
+
+        return serverNow
+    end
+
+    return os.time()
+end
+
+function HolyDailyDealLiveResolveLastRefreshAt(stockResult)
+
+    stockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or {}
+
+    local directValues = {
+        stockResult.LastRefreshAt,
+        stockResult.lastRefreshAt,
+        stockResult.LastRefreshUnix,
+        stockResult.lastRefreshUnix,
+        stockResult.last_refresh_unix,
+        stockResult.LastRestockAt,
+        stockResult.lastRestockAt,
+        stockResult.LastRestockUnix,
+        stockResult.lastRestockUnix,
+    }
+
+    for _, value in ipairs(directValues) do
+
+        local unix =
+            HolyDailyDealLiveReadUnix(
+                value
+            )
+
+        if unix > 0 then
+            return unix
+        end
+    end
+
+    return 0
+end
+
 function HolyDailyDealLiveResolveNextRestockAt(stockResult)
 
     stockResult =
@@ -58025,20 +58443,23 @@ function HolyDailyDealLiveResolveNextRestockAt(stockResult)
         end
     end
 
-    local serverNow =
-        HolyDailyDealLiveReadUnix(
-            stockResult.ServerNowUnix
-            or stockResult.serverNowUnix
-            or stockResult.server_now_unix
-            or stockResult.NowUnix
-            or stockResult.nowUnix
-            or stockResult.now
+    local lastRefreshAt =
+        HolyDailyDealLiveResolveLastRefreshAt(
+            stockResult
         )
 
-    if serverNow <= 0 then
+    local cycleSeconds =
+        HolyDailyDealLiveReadSeconds(
+            stockResult.CycleSeconds
+            or stockResult.cycleSeconds
+            or stockResult.cycle_seconds
+        )
 
-        serverNow =
-            os.time()
+    if lastRefreshAt > 0
+    and cycleSeconds > 0 then
+
+        return lastRefreshAt
+            + cycleSeconds
     end
 
     local secondsUntil =
@@ -58058,10 +58479,62 @@ function HolyDailyDealLiveResolveNextRestockAt(stockResult)
 
     if secondsUntil > 0 then
 
-        return serverNow + secondsUntil
+        return math.floor(
+            HolyDailyDealLiveServerNow()
+            + secondsUntil
+        )
     end
 
-    return os.time() + 300
+    return 0
+end
+
+function HolyDailyDealLiveBuildStockFingerprint(stockResult)
+
+    stockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or {}
+
+    local entries =
+        HolyDailyDealLiveBuildEntries(
+            stockResult.entries
+            or stockResult.Entries
+            or stockResult.Stock
+            or stockResult.stock
+            or {}
+        )
+
+    if #entries <= 0 then
+        return ""
+    end
+
+    local parts =
+        {}
+
+    for _, entry in ipairs(entries) do
+
+        parts[
+            #parts + 1
+        ] =
+            HolyCleanText(
+                entry.Name
+            ):lower()
+            .. ":"
+            .. string.format(
+                "%.9f",
+                tonumber(entry.Multiplier)
+                or 0
+            )
+            .. ":"
+            .. HolyCleanText(
+                entry.Tier
+            ):lower()
+    end
+
+    return table.concat(
+        parts,
+        "|"
+    )
 end
 
 function HolyDailyDealLiveBuildRestockKey(stockResult)
@@ -58071,7 +58544,7 @@ function HolyDailyDealLiveBuildRestockKey(stockResult)
         and stockResult
         or {}
 
-    local key =
+    local explicitKey =
         HolyCleanText(
             stockResult.RestockKey
             or stockResult.restockKey
@@ -58082,15 +58555,46 @@ function HolyDailyDealLiveBuildRestockKey(stockResult)
             or ""
         )
 
-    if key ~= "" then
-        return key
+    if explicitKey ~= "" then
+        return explicitKey
     end
 
-    return tostring(
+    local lastRefreshAt =
+        HolyDailyDealLiveResolveLastRefreshAt(
+            stockResult
+        )
+
+    if lastRefreshAt > 0 then
+
+        return tostring(
+            lastRefreshAt
+        )
+    end
+
+    local nextRefreshAt =
         HolyDailyDealLiveResolveNextRestockAt(
             stockResult
         )
-    )
+
+    if nextRefreshAt > 0 then
+
+        return tostring(
+            nextRefreshAt
+        )
+    end
+
+    local fingerprint =
+        HolyDailyDealLiveBuildStockFingerprint(
+            stockResult
+        )
+
+    if fingerprint ~= "" then
+
+        return "stock:"
+            .. fingerprint
+    end
+
+    return ""
 end
 
 function HolyDailyDealLiveBuildHash(stockResult, entries)
@@ -58459,24 +58963,24 @@ function HolyDailyDealLiveResolveWait(stockResult)
             stockResult
         )
 
+    if nextRestockAt <= 0 then
+
+        return 30
+    end
+
     local seconds =
-        nextRestockAt - os.time() + 2
+        nextRestockAt
+        - HolyDailyDealLiveServerNow()
+        + 1
 
-    local cycleSeconds =
-        tonumber(
-            stockResult.cycleSeconds
-            or stockResult.CycleSeconds
-            or 600
-        )
-        or 600
+    if seconds <= 0 then
 
-    return math.clamp(
-        seconds,
-        15,
-        math.max(
-            610,
-            cycleSeconds + 10
-        )
+        return 1
+    end
+
+    return math.max(
+        1,
+        seconds
     )
 end
 
@@ -58595,10 +59099,21 @@ function HolyDailyDealEvaluate(mode)
             "stock failed"
     end
 
-    HolyDailyDealSendLiveReportAsync(
-        stockResult,
-        mode
-    )
+    if type(HolyDailyDealLiveHandleStockResult)
+    == "function" then
+
+        HolyDailyDealLiveHandleStockResult(
+            stockResult,
+            mode
+        )
+
+    else
+
+        HolyDailyDealSendLiveReportAsync(
+            stockResult,
+            mode
+        )
+    end
 
     local best,
         triggerReason =
@@ -59231,6 +59746,23 @@ function HolyDailyDealLiveStopWorker(reason)
 
     runtime.Running =
         false
+
+    local snapshotConnection =
+        runtime.SnapshotConnection
+
+    runtime.SnapshotConnection =
+        nil
+
+    runtime.SnapshotConnected =
+        false
+
+    if snapshotConnection ~= nil then
+
+        pcall(function()
+
+            snapshotConnection:Disconnect()
+        end)
+    end
 
     runtime.LastResult =
         tostring(reason or "Live: stopped")
@@ -60371,15 +60903,50 @@ function HolyWebhookProcessFruitStock(stockResult)
         return false
     end
 
-    local restockKey = tostring(
-        HolyDailyDealLiveBuildRestockKey(
+    local restockKey =
+        tostring(
+            HolyDailyDealLiveBuildRestockKey(
+                stockResult
+            )
+            or ""
+        )
+
+    if restockKey == "" then
+        return false
+    end
+
+    local previousKey =
+        tostring(
+            HOLY_WEBHOOK_STATE
+                .LastNotifiedRestockKey
+            or ""
+        )
+
+    local nextRefreshAt =
+        HolyDailyDealLiveResolveNextRestockAt(
             stockResult
         )
-    )
 
-    if restockKey == ""
-    or HOLY_WEBHOOK_STATE.LastNotifiedRestockKey
-        == restockKey
+    local legacyNextKey =
+        nextRefreshAt > 0
+        and tostring(nextRefreshAt)
+        or ""
+
+    if previousKey ~= ""
+    and legacyNextKey ~= ""
+    and previousKey == legacyNextKey
+    and previousKey ~= restockKey then
+
+        HOLY_WEBHOOK_STATE
+            .LastNotifiedRestockKey =
+                restockKey
+
+        HolySaveWebhookSettings()
+
+        return false
+    end
+
+    if previousKey == restockKey
     or HOLY_WEBHOOK_RUNTIME
         .PendingRestockKeys[restockKey] == true then
 
@@ -60527,6 +61094,180 @@ function HolyWebhookSendTest()
     )
 end
 
+function HolyDailyDealLiveHandleStockResult(
+    stockResult,
+    source
+)
+
+    local runtime =
+        HOLY_DAILY_DEAL_LIVE_RUNTIME
+
+    if type(stockResult) ~= "table"
+    or type(stockResult.entries) ~= "table" then
+
+        return false,
+            "invalid stock result"
+    end
+
+    local cycleKey =
+        tostring(
+            HolyDailyDealLiveBuildRestockKey(
+                stockResult
+            )
+            or ""
+        )
+
+    if cycleKey == "" then
+
+        return false,
+            "cycle key missing"
+    end
+
+    runtime.LastCycleKey =
+        cycleKey
+
+    runtime.LastStockResult =
+        stockResult
+
+    local newCycle =
+        runtime.LastProcessedCycleKey
+        ~= cycleKey
+
+    if newCycle == true then
+
+        runtime.LastProcessedCycleKey =
+            cycleKey
+
+        HolyDailyDealSendLiveReportAsync(
+            stockResult,
+            source or "stock"
+        )
+    end
+
+    HolyWebhookProcessFruitStock(
+        stockResult
+    )
+
+    runtime.LastResult =
+        newCycle == true
+        and (
+            "Live: new refresh "
+            .. cycleKey
+        )
+        or (
+            "Live: current refresh "
+            .. cycleKey
+        )
+
+    return newCycle,
+        cycleKey
+end
+
+function HolyDailyDealLiveConnectSnapshot()
+
+    local runtime =
+        HOLY_DAILY_DEAL_LIVE_RUNTIME
+
+    if runtime.SnapshotConnection ~= nil then
+
+        runtime.SnapshotConnected =
+            true
+
+        return true
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local snapshotPacket =
+        type(networking) == "table"
+        and type(networking.FruitStock) == "table"
+        and networking.FruitStock.Snapshot
+        or nil
+
+    local snapshotSignal =
+        type(snapshotPacket) == "table"
+        and snapshotPacket.OnClientEvent
+        or nil
+
+    if snapshotSignal == nil
+    or type(snapshotSignal.Connect) ~= "function" then
+
+        runtime.SnapshotConnected =
+            false
+
+        return false,
+            "FruitStock.Snapshot missing"
+    end
+
+    local success,
+        connection =
+        pcall(function()
+
+            return snapshotSignal:Connect(
+                function(stockResult)
+
+                    if HOLY_DAILY_DEAL_LIVE_RUNTIME
+                    ~= runtime
+                    or runtime.Token == nil then
+
+                        return
+                    end
+
+                    runtime.LastSnapshotAt =
+                        os.clock()
+
+                    task.defer(function()
+
+                        if HOLY_DAILY_DEAL_LIVE_RUNTIME
+                        ~= runtime
+                        or runtime.Token == nil then
+
+                            return
+                        end
+
+                        local handled,
+                            handleError =
+                            pcall(
+                                HolyDailyDealLiveHandleStockResult,
+                                stockResult,
+                                "snapshot"
+                            )
+
+                        if handled ~= true then
+
+                            warn(
+                                "[HOLY DAILY DEAL LIVE]",
+                                "snapshot handling failed:",
+                                tostring(handleError)
+                            )
+                        end
+                    end)
+                end
+            )
+        end)
+
+    if success ~= true
+    or connection == nil then
+
+        runtime.SnapshotConnected =
+            false
+
+        return false,
+            tostring(connection)
+    end
+
+    runtime.SnapshotConnection =
+        connection
+
+    runtime.SnapshotConnected =
+        true
+
+    return true
+end
+
 function HolyDailyDealLiveStartWorker(reason)
 
     local runtime =
@@ -60534,6 +61275,8 @@ function HolyDailyDealLiveStartWorker(reason)
 
     if runtime.Running == true
     and runtime.Token ~= nil then
+
+        HolyDailyDealLiveConnectSnapshot()
 
         return false
     end
@@ -60550,16 +61293,18 @@ function HolyDailyDealLiveStartWorker(reason)
     runtime.LastResult =
         "Live: starting"
 
+    HolyDailyDealLiveConnectSnapshot()
+
     task.spawn(function()
 
         task.wait(
-            8
+            1
         )
 
         while runtime.Token == token do
 
             local waitSeconds =
-                45
+                15
 
             local requestOk,
                 stockResult,
@@ -60575,14 +61320,25 @@ function HolyDailyDealLiveStartWorker(reason)
             and type(stockResult) == "table"
             and type(stockResult.entries) == "table" then
 
-                HolyDailyDealSendLiveReportAsync(
-                    stockResult,
-                    "live"
-                )
+                local handled,
+                    handleError =
+                    pcall(
+                        HolyDailyDealLiveHandleStockResult,
+                        stockResult,
+                        "request"
+                    )
 
-                HolyWebhookProcessFruitStock(
-                    stockResult
-                )
+                if handled ~= true then
+
+                    runtime.LastResult =
+                        "Live: processing failed"
+
+                    warn(
+                        "[HOLY DAILY DEAL LIVE]",
+                        "stock processing failed:",
+                        tostring(handleError)
+                    )
+                end
 
                 waitSeconds =
                     HolyDailyDealLiveResolveWait(
@@ -60608,20 +61364,27 @@ function HolyDailyDealLiveStartWorker(reason)
                     warn(
                         "[HOLY DAILY DEAL LIVE]",
                         "stock failed:",
-                        tostring(stockReason)
+                        tostring(
+                            stockReason
+                            or stockResult
+                        )
                     )
                 end
             end
 
             local untilClock =
                 os.clock()
-                + waitSeconds
+                + math.max(
+                    tonumber(waitSeconds)
+                    or 1,
+                    1
+                )
 
             while runtime.Token == token
             and os.clock() < untilClock do
 
                 task.wait(
-                    1
+                    0.5
                 )
             end
         end
