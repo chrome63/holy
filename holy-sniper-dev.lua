@@ -1399,6 +1399,9 @@ HOLY_ANTI_KNOCKBACK_STATE = {
     RecoveryQueued =
         false,
 
+    SpringRecoveryQueued =
+        false,
+
     LastRagdollAt =
         0,
 }
@@ -42356,30 +42359,97 @@ function HolyAntiKnockbackIsForce(instance)
         or instance:IsA("BodyAngularVelocity")
 end
 
+function HolyAntiKnockbackIsSpringForce(
+    instance,
+    character
+)
+
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("BodyVelocity") ~= true then
+
+        return false
+    end
+
+    if typeof(character) ~= "Instance"
+    or instance:IsDescendantOf(
+        character
+    ) ~= true then
+
+        return false
+    end
+
+    local velocity =
+        Vector3.zero
+
+    local maximumForce =
+        Vector3.zero
+
+    pcall(function()
+
+        velocity =
+            instance.Velocity
+    end)
+
+    pcall(function()
+
+        maximumForce =
+            instance.MaxForce
+    end)
+
+    return math.abs(
+        velocity.Y
+    ) >= 1000
+        or math.abs(
+            maximumForce.Y
+        ) >= 1000
+end
+
 function HolyAntiKnockbackRemoveForces(root)
 
     if typeof(root) ~= "Instance" then
         return 0
     end
 
+    local searchRoot =
+        root
+
+    local character =
+        HOLY_ANTI_KNOCKBACK_STATE.Character
+
+    if typeof(character) == "Instance"
+    and (
+        root == character
+        or root:IsDescendantOf(
+            character
+        )
+    ) then
+
+        searchRoot =
+            character
+    end
+
     local removed =
         0
 
-    for _, child in ipairs(
-        root:GetChildren()
+    for _, descendant in ipairs(
+        searchRoot:GetDescendants()
     ) do
 
         if HolyAntiKnockbackIsForce(
-            child
+            descendant
         ) == true then
 
-            removed +=
-                1
+            local destroyed =
+                pcall(function()
 
-            pcall(function()
+                    descendant:Destroy()
+                end)
 
-                child:Destroy()
-            end)
+            if destroyed == true then
+
+                removed +=
+                    1
+            end
         end
     end
 
@@ -42518,7 +42588,8 @@ function HolyAntiKnockbackStabilize(
 end
 
 function HolyAntiKnockbackLateCleanup(
-    expectedCharacter
+    expectedCharacter,
+    clearVelocity
 )
 
     local runtime =
@@ -42543,25 +42614,36 @@ function HolyAntiKnockbackLateCleanup(
     end
 
     HolyAntiKnockbackRemoveForces(
-        root
+        character
     )
 
-    pcall(function()
+    if clearVelocity == true then
 
-        if humanoid.Health > 0
-        and humanoid.PlatformStand == true then
+        HolyAntiKnockbackStabilize(
+            humanoid,
+            root,
+            true
+        )
 
-            humanoid.PlatformStand =
-                false
-        end
+    else
 
-        if humanoid.Health > 0
-        and humanoid.AutoRotate ~= true then
+        pcall(function()
 
-            humanoid.AutoRotate =
-                true
-        end
-    end)
+            if humanoid.Health > 0
+            and humanoid.PlatformStand == true then
+
+                humanoid.PlatformStand =
+                    false
+            end
+
+            if humanoid.Health > 0
+            and humanoid.AutoRotate ~= true then
+
+                humanoid.AutoRotate =
+                    true
+            end
+        end)
+    end
 
     return true
 end
@@ -42571,7 +42653,13 @@ function HolyAntiKnockbackRecover(reason)
     local runtime =
         HOLY_ANTI_KNOCKBACK_STATE
 
+    local springRecovery =
+        runtime.SpringRecoveryQueued == true
+
     runtime.RecoveryQueued =
+        false
+
+    runtime.SpringRecoveryQueued =
         false
 
     if runtime.Running ~= true then
@@ -42591,22 +42679,31 @@ function HolyAntiKnockbackRecover(reason)
         return false
     end
 
-    local ragdollModule =
-        HolyAntiKnockbackLoadModule()
+    local currentlyRagdolled =
+        character:GetAttribute(
+            "Ragdolled"
+        ) == true
 
-    if type(ragdollModule) == "table"
-    and type(ragdollModule.Unragdoll) == "function" then
+    if springRecovery ~= true
+    or currentlyRagdolled == true then
 
-        pcall(function()
+        local ragdollModule =
+            HolyAntiKnockbackLoadModule()
 
-            ragdollModule:Unragdoll(
-                character
-            )
-        end)
+        if type(ragdollModule) == "table"
+        and type(ragdollModule.Unragdoll) == "function" then
+
+            pcall(function()
+
+                ragdollModule:Unragdoll(
+                    character
+                )
+            end)
+        end
     end
 
     HolyAntiKnockbackRemoveForces(
-        root
+        character
     )
 
     HolyAntiKnockbackStabilize(
@@ -42615,18 +42712,30 @@ function HolyAntiKnockbackRecover(reason)
         true
     )
 
-    for _, delayTime in ipairs({
-        0.05,
-        0.15,
-        0.30,
-    }) do
+    local cleanupDelays =
+        springRecovery == true
+        and {
+            0.03,
+            0.08,
+            0.16,
+        }
+        or {
+            0.05,
+            0.15,
+            0.30,
+        }
+
+    for _, delayTime in ipairs(
+        cleanupDelays
+    ) do
 
         task.delay(
             delayTime,
             function()
 
                 HolyAntiKnockbackLateCleanup(
-                    character
+                    character,
+                    springRecovery
                 )
             end
         )
@@ -42635,7 +42744,10 @@ function HolyAntiKnockbackRecover(reason)
     return true
 end
 
-function HolyAntiKnockbackQueueRecovery(reason)
+function HolyAntiKnockbackQueueRecovery(
+    reason,
+    springRecovery
+)
 
     local runtime =
         HOLY_ANTI_KNOCKBACK_STATE
@@ -42644,8 +42756,16 @@ function HolyAntiKnockbackQueueRecovery(reason)
         return
     end
 
-    runtime.LastRagdollAt =
-        os.clock()
+    if springRecovery == true then
+
+        runtime.SpringRecoveryQueued =
+            true
+
+    else
+
+        runtime.LastRagdollAt =
+            os.clock()
+    end
 
     if runtime.RecoveryQueued == true then
         return
@@ -42684,6 +42804,9 @@ function HolyAntiKnockbackBindCharacter(character)
         nil
 
     runtime.RecoveryQueued =
+        false
+
+    runtime.SpringRecoveryQueued =
         false
 
     runtime.LastRagdollAt =
@@ -42763,6 +42886,24 @@ function HolyAntiKnockbackBindCharacter(character)
                     return
                 end
 
+                if HolyAntiKnockbackIsSpringForce(
+                    descendant,
+                    character
+                ) == true then
+
+                    pcall(function()
+
+                        descendant:Destroy()
+                    end)
+
+                    HolyAntiKnockbackQueueRecovery(
+                        "spring force",
+                        true
+                    )
+
+                    return
+                end
+
                 local currentlyRagdolled =
                     character:GetAttribute(
                         "Ragdolled"
@@ -42826,6 +42967,9 @@ function HolyAntiKnockbackStop(reason)
         false
 
     runtime.RecoveryQueued =
+        false
+
+    runtime.SpringRecoveryQueued =
         false
 
     local character,
