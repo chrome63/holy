@@ -27,6 +27,15 @@ local Lighting =
 local UserInputService =
     game:GetService("UserInputService")
 
+local RunService =
+    game:GetService("RunService")
+
+local TextService =
+    game:GetService("TextService")
+
+local Stats =
+    game:GetService("Stats")
+
 local PathfindingService =
     game:GetService("PathfindingService")
 
@@ -1768,6 +1777,10 @@ HOLY_DEV_UI_STATE = {
     ShowUIOnLoad = true,
     DPIScale = 100,
 
+    PerformanceMonitor = true,
+    PerformanceMonitorX = 12,
+    PerformanceMonitorY = 12,
+
     ThemeName = "HOLY Red",
     InterfaceTransparency = 0,
     InterfaceAnimations = true,
@@ -1978,6 +1991,64 @@ HOLY_PERFORMANCE_STATE = {
 }
 
 HOLY_PERFORMANCE_UI = {}
+
+if type(HOLY_PERFORMANCE_MONITOR_RUNTIME) == "table" then
+
+    local oldRuntime =
+        HOLY_PERFORMANCE_MONITOR_RUNTIME
+
+    local oldConnections =
+        oldRuntime.Connections
+
+    if type(oldConnections) == "table" then
+
+        for _, connection in pairs(oldConnections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+    end
+
+    if oldRuntime.Connection then
+
+        pcall(function()
+
+            oldRuntime.Connection:Disconnect()
+        end)
+    end
+
+    if typeof(oldRuntime.ScreenGui) == "Instance" then
+
+        pcall(function()
+
+            oldRuntime.ScreenGui:Destroy()
+        end)
+    end
+end
+
+HOLY_PERFORMANCE_MONITOR_RUNTIME = {
+    Active = false,
+
+    ScreenGui = nil,
+    Frame = nil,
+    Scale = nil,
+
+    Connections = {},
+
+    Frames = 0,
+    FPS = nil,
+    LastSampleAt = 0,
+
+    Dragging = false,
+    DragTouch = nil,
+    DragStart = nil,
+    DragStartPosition = nil,
+}
 
 function HolyLowEndModeEnabled()
 
@@ -3906,6 +3977,32 @@ function HolySaveUISettings()
             )
             or 100,
 
+        PerformanceMonitor =
+            HOLY_DEV_UI_STATE.PerformanceMonitor
+            == true,
+
+        PerformanceMonitorX =
+            math.floor(
+                (
+                    tonumber(
+                        HOLY_DEV_UI_STATE.PerformanceMonitorX
+                    )
+                    or 12
+                )
+                + 0.5
+            ),
+
+        PerformanceMonitorY =
+            math.floor(
+                (
+                    tonumber(
+                        HOLY_DEV_UI_STATE.PerformanceMonitorY
+                    )
+                    or 12
+                )
+                + 0.5
+            ),
+
         ThemeName =
             tostring(
                 HOLY_DEV_UI_STATE.ThemeName
@@ -4080,6 +4177,46 @@ function HolyLoadUISettings()
             )
     end
 
+    if type(data.PerformanceMonitor) == "boolean" then
+
+        HOLY_DEV_UI_STATE.PerformanceMonitor =
+            data.PerformanceMonitor
+    end
+
+    local monitorX =
+        tonumber(
+            data.PerformanceMonitorX
+        )
+
+    if monitorX then
+
+        HOLY_DEV_UI_STATE.PerformanceMonitorX =
+            math.clamp(
+                math.floor(
+                    monitorX + 0.5
+                ),
+                -10000,
+                10000
+            )
+    end
+
+    local monitorY =
+        tonumber(
+            data.PerformanceMonitorY
+        )
+
+    if monitorY then
+
+        HOLY_DEV_UI_STATE.PerformanceMonitorY =
+            math.clamp(
+                math.floor(
+                    monitorY + 0.5
+                ),
+                -10000,
+                10000
+            )
+    end
+
     local themeName =
         tostring(
             data.ThemeName
@@ -4227,6 +4364,837 @@ function HolyLoadUISettings()
     end
 
     return true
+end
+
+--==================================================
+-- [2.01] PERFORMANCE MONITOR
+--==================================================
+
+local HOLY_PERFORMANCE_MONITOR_SCALE =
+    0.8
+
+function HolyPerformanceMonitorDisconnect()
+
+    local runtime =
+        HOLY_PERFORMANCE_MONITOR_RUNTIME
+
+    local connections =
+        runtime.Connections
+
+    if type(connections) == "table" then
+
+        for _, connection in pairs(connections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+    end
+
+    runtime.Connections =
+        {}
+
+    runtime.Dragging =
+        false
+
+    runtime.DragTouch =
+        nil
+end
+
+function HolyPerformanceMonitorAddConnection(connection)
+
+    if connection == nil then
+        return nil
+    end
+
+    table.insert(
+        HOLY_PERFORMANCE_MONITOR_RUNTIME.Connections,
+        connection
+    )
+
+    return connection
+end
+
+function HolyPerformanceMonitorReadMemory()
+
+    local success,
+        value =
+        pcall(function()
+
+            return Stats:GetTotalMemoryUsageMb()
+        end)
+
+    value =
+        tonumber(value)
+
+    if success == true
+    and value
+    and value >= 0 then
+
+        return value
+    end
+
+    return nil
+end
+
+function HolyPerformanceMonitorReadPing()
+
+    local success,
+        value =
+        pcall(function()
+
+            return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+        end)
+
+    value =
+        tonumber(value)
+
+    if success == true
+    and value
+    and value >= 0 then
+
+        return value
+    end
+
+    local fallbackSuccess,
+        fallbackValue =
+        pcall(function()
+
+            return LocalPlayer:GetNetworkPing()
+                * 1000
+        end)
+
+    fallbackValue =
+        tonumber(fallbackValue)
+
+    if fallbackSuccess == true
+    and fallbackValue
+    and fallbackValue >= 0 then
+
+        return fallbackValue
+    end
+
+    return nil
+end
+
+function HolyPerformanceMonitorGetViewport()
+
+    local camera =
+        workspace.CurrentCamera
+
+    if camera then
+
+        local viewport =
+            camera.ViewportSize
+
+        if viewport.X > 0
+        and viewport.Y > 0 then
+
+            return viewport
+        end
+    end
+
+    return Vector2.new(
+        1920,
+        1080
+    )
+end
+
+function HolyPerformanceMonitorSetPosition(
+    x,
+    y,
+    savePosition
+)
+
+    local runtime =
+        HOLY_PERFORMANCE_MONITOR_RUNTIME
+
+    local frame =
+        runtime.Frame
+
+    if typeof(frame) ~= "Instance"
+    or frame.Parent == nil then
+
+        return false
+    end
+
+    x =
+        tonumber(x)
+        or 12
+
+    y =
+        tonumber(y)
+        or 12
+
+    local viewport =
+        HolyPerformanceMonitorGetViewport()
+
+    local frameSize =
+        frame.AbsoluteSize
+
+    local renderedWidth =
+        tonumber(frameSize.X)
+        or 0
+
+    local renderedHeight =
+        tonumber(frameSize.Y)
+        or 0
+
+    if renderedWidth <= 0 then
+
+        renderedWidth =
+            frame.Size.X.Offset
+            * HOLY_PERFORMANCE_MONITOR_SCALE
+    end
+
+    if renderedHeight <= 0 then
+
+        renderedHeight =
+            frame.Size.Y.Offset
+            * HOLY_PERFORMANCE_MONITOR_SCALE
+    end
+
+    local maximumX =
+        math.max(
+            4,
+            viewport.X
+            - renderedWidth
+            - 4
+        )
+
+    local maximumY =
+        math.max(
+            4,
+            viewport.Y
+            - renderedHeight
+            - 4
+        )
+
+    x =
+        math.floor(
+            math.clamp(
+                x,
+                4,
+                maximumX
+            )
+            + 0.5
+        )
+
+    y =
+        math.floor(
+            math.clamp(
+                y,
+                4,
+                maximumY
+            )
+            + 0.5
+        )
+
+    frame.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
+
+    HOLY_DEV_UI_STATE.PerformanceMonitorX =
+        x
+
+    HOLY_DEV_UI_STATE.PerformanceMonitorY =
+        y
+
+    if savePosition == true then
+
+        HolySaveUISettings()
+    end
+
+    return true
+end
+
+function HolyPerformanceMonitorRefresh()
+
+    local runtime =
+        HOLY_PERFORMANCE_MONITOR_RUNTIME
+
+    local frame =
+        runtime.Frame
+
+    if runtime.Active ~= true
+    or typeof(frame) ~= "Instance"
+    or frame.Parent == nil then
+
+        return false
+    end
+
+    local memory =
+        HolyPerformanceMonitorReadMemory()
+
+    local ping =
+        HolyPerformanceMonitorReadPing()
+
+    local memoryText =
+        memory
+        and tostring(
+            math.floor(
+                memory + 0.5
+            )
+        )
+        or "--"
+
+    local fpsText =
+        runtime.FPS
+        and tostring(
+            math.floor(
+                runtime.FPS + 0.5
+            )
+        )
+        or "--"
+
+    local pingText =
+        ping
+        and tostring(
+            math.floor(
+                ping + 0.5
+            )
+        )
+        or "--"
+
+    local text =
+        memoryText
+        .. " MB  |  "
+        .. fpsText
+        .. " fps  |  "
+        .. pingText
+        .. " ms"
+
+    frame.Text =
+        text
+
+    local textSize =
+        TextService:GetTextSize(
+            text,
+            frame.TextSize,
+            frame.Font,
+            Vector2.new(
+                1000,
+                42
+            )
+        )
+
+    frame.Size =
+        UDim2.fromOffset(
+            textSize.X + 38,
+            42
+        )
+
+    HolyPerformanceMonitorSetPosition(
+        HOLY_DEV_UI_STATE.PerformanceMonitorX,
+        HOLY_DEV_UI_STATE.PerformanceMonitorY,
+        false
+    )
+
+    return true
+end
+
+function HolyPerformanceMonitorStop(destroyGui)
+
+    local runtime =
+        HOLY_PERFORMANCE_MONITOR_RUNTIME
+
+    runtime.Active =
+        false
+
+    HolyPerformanceMonitorDisconnect()
+
+    if destroyGui == true then
+
+        local screenGui =
+            runtime.ScreenGui
+
+        runtime.ScreenGui =
+            nil
+
+        runtime.Frame =
+            nil
+
+        runtime.Scale =
+            nil
+
+        if typeof(screenGui) == "Instance" then
+
+            pcall(function()
+
+                screenGui:Destroy()
+            end)
+        end
+
+    elseif typeof(runtime.ScreenGui) == "Instance" then
+
+        runtime.ScreenGui.Enabled =
+            false
+    end
+
+    runtime.Frames =
+        0
+
+    runtime.FPS =
+        nil
+
+    return true
+end
+
+function HolyPerformanceMonitorGetParent()
+
+    local parent =
+        nil
+
+    if type(gethui) == "function" then
+
+        pcall(function()
+
+            parent =
+                gethui()
+        end)
+    end
+
+    if typeof(parent) ~= "Instance" then
+
+        parent =
+            CoreGui
+    end
+
+    return parent
+end
+
+function HolyPerformanceMonitorStart()
+
+    if HOLY_DEV_UI_STATE.PerformanceMonitor
+    ~= true then
+
+        return false
+    end
+
+    local runtime =
+        HOLY_PERFORMANCE_MONITOR_RUNTIME
+
+    if runtime.Active == true
+    and typeof(runtime.ScreenGui) == "Instance"
+    and runtime.ScreenGui.Parent ~= nil then
+
+        runtime.ScreenGui.Enabled =
+            true
+
+        return true
+    end
+
+    HolyPerformanceMonitorStop(
+        true
+    )
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name =
+        "HOLYPerformanceMonitor"
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.DisplayOrder =
+        999999
+
+    screenGui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    local parentSuccess =
+        pcall(function()
+
+            screenGui.Parent =
+                HolyPerformanceMonitorGetParent()
+        end)
+
+    if parentSuccess ~= true
+    or screenGui.Parent == nil then
+
+        local playerGui =
+            LocalPlayer:FindFirstChildOfClass(
+                "PlayerGui"
+            )
+            or LocalPlayer:WaitForChild(
+                "PlayerGui",
+                5
+            )
+
+        if playerGui == nil then
+
+            screenGui:Destroy()
+
+            return false
+        end
+
+        screenGui.Parent =
+            playerGui
+    end
+
+    local frame =
+        Instance.new("TextLabel")
+
+    frame.Name =
+        "PerformanceMonitor"
+
+    frame.Position =
+        UDim2.fromOffset(
+            tonumber(
+                HOLY_DEV_UI_STATE.PerformanceMonitorX
+            )
+            or 12,
+            tonumber(
+                HOLY_DEV_UI_STATE.PerformanceMonitorY
+            )
+            or 12
+        )
+
+    frame.Size =
+        UDim2.fromOffset(
+            300,
+            42
+        )
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(
+            13,
+            13,
+            15
+        )
+
+    frame.BackgroundTransparency =
+        0
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Text =
+        "-- MB  |  -- fps  |  -- ms"
+
+    frame.TextColor3 =
+        Color3.fromRGB(
+            220,
+            220,
+            225
+        )
+
+    frame.TextTransparency =
+        0
+
+    frame.TextSize =
+        16
+
+    frame.Font =
+        Enum.Font.GothamMedium
+
+    frame.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    frame.Active =
+        true
+
+    frame.Selectable =
+        false
+
+    frame.ZIndex =
+        100
+
+    frame.Parent =
+        screenGui
+
+    local scale =
+        Instance.new("UIScale")
+
+    scale.Scale =
+        HOLY_PERFORMANCE_MONITOR_SCALE
+
+    scale.Parent =
+        frame
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            8
+        )
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(
+            0,
+            0,
+            0
+        )
+
+    stroke.Thickness =
+        3
+
+    stroke.Transparency =
+        0
+
+    stroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    stroke.Parent =
+        frame
+
+    local padding =
+        Instance.new("UIPadding")
+
+    padding.PaddingLeft =
+        UDim.new(
+            0,
+            16
+        )
+
+    padding.PaddingRight =
+        UDim.new(
+            0,
+            16
+        )
+
+    padding.Parent =
+        frame
+
+    runtime.ScreenGui =
+        screenGui
+
+    runtime.Frame =
+        frame
+
+    runtime.Scale =
+        scale
+
+    runtime.Active =
+        true
+
+    runtime.Frames =
+        0
+
+    runtime.FPS =
+        nil
+
+    runtime.LastSampleAt =
+        os.clock()
+
+    HolyPerformanceMonitorAddConnection(
+        frame.InputBegan:Connect(function(input)
+
+            if runtime.Active ~= true then
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType
+                ~= Enum.UserInputType.MouseButton1
+            and inputType
+                ~= Enum.UserInputType.Touch then
+
+                return
+            end
+
+            runtime.Dragging =
+                true
+
+            runtime.DragTouch =
+                inputType
+                == Enum.UserInputType.Touch
+                and input
+                or nil
+
+            runtime.DragStart =
+                input.Position
+
+            runtime.DragStartPosition =
+                frame.Position
+        end)
+    )
+
+    HolyPerformanceMonitorAddConnection(
+        UserInputService.InputChanged:Connect(function(input)
+
+            if runtime.Active ~= true
+            or runtime.Dragging ~= true then
+
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType
+                ~= Enum.UserInputType.MouseMovement
+            and inputType
+                ~= Enum.UserInputType.Touch then
+
+                return
+            end
+
+            if inputType == Enum.UserInputType.Touch
+            and runtime.DragTouch
+            and input ~= runtime.DragTouch then
+
+                return
+            end
+
+            local dragStart =
+                runtime.DragStart
+
+            local startingPosition =
+                runtime.DragStartPosition
+
+            if dragStart == nil
+            or startingPosition == nil then
+
+                return
+            end
+
+            local delta =
+                input.Position
+                - dragStart
+
+            HolyPerformanceMonitorSetPosition(
+                startingPosition.X.Offset
+                + delta.X,
+                startingPosition.Y.Offset
+                + delta.Y,
+                false
+            )
+        end)
+    )
+
+    HolyPerformanceMonitorAddConnection(
+        UserInputService.InputEnded:Connect(function(input)
+
+            if runtime.Dragging ~= true then
+                return
+            end
+
+            local inputType =
+                input.UserInputType
+
+            if inputType
+                ~= Enum.UserInputType.MouseButton1
+            and inputType
+                ~= Enum.UserInputType.Touch then
+
+                return
+            end
+
+            if inputType == Enum.UserInputType.Touch
+            and runtime.DragTouch
+            and input ~= runtime.DragTouch then
+
+                return
+            end
+
+            runtime.Dragging =
+                false
+
+            runtime.DragTouch =
+                nil
+
+            HolyPerformanceMonitorSetPosition(
+                frame.Position.X.Offset,
+                frame.Position.Y.Offset,
+                true
+            )
+        end)
+    )
+
+    HolyPerformanceMonitorAddConnection(
+        RunService.RenderStepped:Connect(function()
+
+            if runtime.Active ~= true then
+                return
+            end
+
+            runtime.Frames += 1
+
+            local now =
+                os.clock()
+
+            local elapsed =
+                now
+                - runtime.LastSampleAt
+
+            if elapsed < 1 then
+                return
+            end
+
+            runtime.FPS =
+                runtime.Frames
+                / elapsed
+
+            runtime.Frames =
+                0
+
+            runtime.LastSampleAt =
+                now
+
+            HolyPerformanceMonitorRefresh()
+        end)
+    )
+
+    HolyPerformanceMonitorRefresh()
+
+    task.defer(function()
+
+        if runtime.Active == true then
+
+            HolyPerformanceMonitorSetPosition(
+                HOLY_DEV_UI_STATE.PerformanceMonitorX,
+                HOLY_DEV_UI_STATE.PerformanceMonitorY,
+                false
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyPerformanceMonitorSetEnabled(value)
+
+    value =
+        value == true
+
+    HOLY_DEV_UI_STATE.PerformanceMonitor =
+        value
+
+    if value == true then
+
+        HolyPerformanceMonitorStart()
+
+    else
+
+        HolyPerformanceMonitorStop(
+            true
+        )
+    end
+
+    HolySaveUISettings()
+
+    return value
 end
 
 function HolyVisualReadNumberText(value, fallback, maxValue)
@@ -83819,6 +84787,19 @@ end
 HOLY_DEV_LIBRARY =
     Library
 
+if type(Library.OnUnload) == "function" then
+
+    pcall(function()
+
+        Library:OnUnload(function()
+
+            HolyPerformanceMonitorStop(
+                true
+            )
+        end)
+    end)
+end
+
 function HolyApplyUIScale(value)
 
     local scale =
@@ -115754,6 +116735,26 @@ SettingsUIBox:AddToggle(
 end)
 
 SettingsPerformanceBox:AddToggle(
+    "HolyPerformanceMonitor",
+    {
+        Text =
+            "Performance Monitor",
+
+        Default =
+            HOLY_DEV_UI_STATE.PerformanceMonitor
+            == true,
+
+        Tooltip =
+            "Shows FPS, Roblox memory usage, and ping in a small movable HUD.",
+    }
+):OnChanged(function(value)
+
+    HolyPerformanceMonitorSetEnabled(
+        value == true
+    )
+end)
+
+SettingsPerformanceBox:AddToggle(
     "HolyLowEndMode",
     {
         Text =
@@ -119400,6 +120401,14 @@ if type(HolyStartupLoading) == "table" then
             HOLY_DEV_UI_STATE.ShowUIOnLoad
             == true
         )
+    end)
+end
+
+if HOLY_DEV_UI_STATE.PerformanceMonitor == true then
+
+    task.defer(function()
+
+        HolyPerformanceMonitorStart()
     end)
 end
 
