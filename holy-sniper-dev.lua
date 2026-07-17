@@ -3193,6 +3193,7 @@ end
 
 HOLY_FARM_STATE = {
     AutoCollectFruits = false,
+    AutoEclipseCollection = false,
 
     ProFruitCollector = false,
     LowGardenDetail = false,
@@ -3295,6 +3296,31 @@ HOLY_PRO_FARM_RUNTIME = {
     HiddenVisualRoots = 0,
 }
 
+if type(HOLY_ECLIPSE_COLLECTION_RUNTIME) == "table" then
+
+    HOLY_ECLIPSE_COLLECTION_RUNTIME.Token =
+        nil
+
+    HOLY_ECLIPSE_COLLECTION_RUNTIME.Running =
+        false
+end
+
+HOLY_ECLIPSE_COLLECTION_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    WaitingForStart = false,
+    WaitingForEnd = false,
+
+    NextCollectAt = 0,
+    LastFireAt = 0,
+
+    LastPlantId = "",
+    LastFruitId = "",
+
+    Stop = nil,
+}
+
 HOLY_FARM_UI = {
     PageControl = nil,
 
@@ -3306,6 +3332,7 @@ HOLY_FARM_UI = {
     WeightThresholdInput = nil,
 
     AutoCollectToggle = nil,
+    EclipseCollectionToggle = nil,
 
     ProCollectorToggle = nil,
     LowGardenDetailToggle = nil,
@@ -7891,6 +7918,9 @@ function HolyFarmEnsureState()
     HOLY_FARM_STATE.AutoCollectFruits =
         HOLY_FARM_STATE.AutoCollectFruits == true
 
+    HOLY_FARM_STATE.AutoEclipseCollection =
+        HOLY_FARM_STATE.AutoEclipseCollection == true
+
     HOLY_FARM_STATE.ProFruitCollector =
         HOLY_FARM_STATE.ProFruitCollector == true
 
@@ -8148,6 +8178,9 @@ function HolySaveFarmSettings()
         AutoCollectFruits =
             HOLY_FARM_STATE.AutoCollectFruits == true,
 
+        AutoEclipseCollection =
+            HOLY_FARM_STATE.AutoEclipseCollection == true,
+
         ProFruitCollector =
             HOLY_FARM_STATE.ProFruitCollector == true,
 
@@ -8288,6 +8321,9 @@ function HolyLoadFarmSettings()
 
     HOLY_FARM_STATE.AutoCollectFruits =
         data.AutoCollectFruits == true
+
+    HOLY_FARM_STATE.AutoEclipseCollection =
+        data.AutoEclipseCollection == true
 
     HOLY_FARM_STATE.ProFruitCollector =
         data.ProFruitCollector == true
@@ -10810,6 +10846,14 @@ function HolyFarmQueueFruit(plant, fruit, reason)
             fruit
         )
 
+    if type(HolyEclipseCollectionOwnsPlantName) == "function"
+    and HolyEclipseCollectionOwnsPlantName(
+        plantName
+    ) == true then
+
+        return false
+    end
+
     if HolyFarmSelectionAllowsPlant(plantName) ~= true then
         return false
     end
@@ -10912,6 +10956,14 @@ function HolyFarmQueuePlantHarvest(plant, reason)
             plant,
             nil
         )
+
+    if type(HolyEclipseCollectionOwnsPlantName) == "function"
+    and HolyEclipseCollectionOwnsPlantName(
+        plantName
+    ) == true then
+
+        return false
+    end
 
     if HolyFarmSelectionAllowsPlant(
         plantName
@@ -11598,6 +11650,14 @@ function HolyFarmCollectEntry(entry)
         HolyFarmEnsureRuntime()
 
     if type(entry) ~= "table" then
+        return false
+    end
+
+    if type(HolyEclipseCollectionOwnsPlantName) == "function"
+    and HolyEclipseCollectionOwnsPlantName(
+        entry.PlantName
+    ) == true then
+
         return false
     end
 
@@ -13058,6 +13118,14 @@ function HolyProFarmEntryAllowed(entry)
         return false
     end
 
+    if type(HolyEclipseCollectionOwnsPlantName) == "function"
+    and HolyEclipseCollectionOwnsPlantName(
+        entry.PlantName
+    ) == true then
+
+        return false
+    end
+
     if HolyFarmSelectionAllowsPlant(
         entry.PlantName
     ) ~= true then
@@ -13667,6 +13735,20 @@ function HolyProFarmSendRetry(token, packet, key, pending)
     local entry =
         pending.Entry
 
+    if type(HolyEclipseCollectionOwnsPlantName) == "function"
+    and HolyEclipseCollectionOwnsPlantName(
+        entry.PlantName
+    ) == true then
+
+        runtime.Pending[key] =
+            nil
+
+        runtime.Cooldowns[key] =
+            nil
+
+        return false
+    end
+
     if HolyProFarmTargetExists(
         entry
     ) ~= true then
@@ -14220,6 +14302,627 @@ function HolyFarmSetAutoCollectFruits(value)
         "toggle off"
     )
 end
+
+--==================================================
+-- [2.124] FARM / ECLIPSE COLLECTION
+--==================================================
+
+function HolyEclipseCollectionEnsureRuntime()
+
+    HOLY_ECLIPSE_COLLECTION_RUNTIME =
+        type(HOLY_ECLIPSE_COLLECTION_RUNTIME) == "table"
+        and HOLY_ECLIPSE_COLLECTION_RUNTIME
+        or {}
+
+    local runtime =
+        HOLY_ECLIPSE_COLLECTION_RUNTIME
+
+    runtime.Running =
+        runtime.Running == true
+
+    runtime.WaitingForStart =
+        runtime.WaitingForStart == true
+
+    runtime.WaitingForEnd =
+        runtime.WaitingForEnd == true
+
+    runtime.NextCollectAt =
+        tonumber(
+            runtime.NextCollectAt
+        )
+        or 0
+
+    runtime.LastFireAt =
+        tonumber(
+            runtime.LastFireAt
+        )
+        or 0
+
+    runtime.LastPlantId =
+        tostring(
+            runtime.LastPlantId
+            or ""
+        )
+
+    runtime.LastFruitId =
+        tostring(
+            runtime.LastFruitId
+            or ""
+        )
+
+    return runtime
+end
+
+function HolyEclipseCollectionOwnsPlantName(
+    plantName
+)
+
+    return type(HOLY_FARM_STATE) == "table"
+        and HOLY_FARM_STATE.AutoEclipseCollection == true
+        and HolyFarmPlantKey(
+            plantName
+        ) == HolyFarmPlantKey(
+            "Eclipse Bloom"
+        )
+end
+
+function HolyEclipseCollectionServerNow()
+
+    local ok,
+        serverNow =
+        pcall(function()
+
+            return workspace:GetServerTimeNow()
+        end)
+
+    if ok == true
+    and tonumber(serverNow) then
+
+        return tonumber(serverNow)
+    end
+
+    return os.time()
+end
+
+function HolyEclipseCollectionWeatherActive()
+
+    local weatherText =
+        HolyFarmPlantKey(
+            workspace:GetAttribute(
+                "ActiveWeather"
+            )
+        )
+        .. " "
+        .. HolyFarmPlantKey(
+            workspace:GetAttribute(
+                "ActivePhase"
+            )
+        )
+        .. " "
+        .. HolyFarmPlantKey(
+            workspace:GetAttribute(
+                "Phase"
+            )
+        )
+
+    if weatherText:find(
+        "eclipse",
+        1,
+        true
+    ) == nil then
+
+        return false
+    end
+
+    local phaseEnd =
+        tonumber(
+            workspace:GetAttribute(
+                "PhaseDuration"
+            )
+        )
+
+    if phaseEnd
+    and phaseEnd > 0
+    and HolyEclipseCollectionServerNow()
+        >= phaseEnd then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyEclipseCollectionFindProEntry()
+
+    if HOLY_FARM_STATE.ProFruitCollector ~= true then
+        return nil
+    end
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if runtime.SnapshotReady ~= true
+    or type(runtime.Cache) ~= "table"
+    or type(runtime.Cache.Plants) ~= "table" then
+
+        return nil
+    end
+
+    for plantId, plantData in pairs(
+        runtime.Cache.Plants
+    ) do
+
+        if type(plantData) == "table" then
+
+            local plantName =
+                HolyCleanText(
+                    plantData.PlantName
+                    or plantData.FruitName
+                    or plantData.SeedName
+                    or plantData.Name
+                    or ""
+                )
+
+            if HolyEclipseCollectionOwnsPlantName(
+                plantName
+            ) == true then
+
+                local fruitCount =
+                    0
+
+                if type(plantData.Fruits) == "table" then
+
+                    for fruitId, fruitData in pairs(
+                        plantData.Fruits
+                    ) do
+
+                        if type(fruitData) == "table" then
+
+                            fruitCount +=
+                                1
+
+                            if HolyProFarmDataReady(
+                                fruitData
+                            ) == true then
+
+                                return HolyProFarmBuildEntry(
+                                    plantId,
+                                    plantData,
+                                    fruitId,
+                                    fruitData
+                                )
+                            end
+                        end
+                    end
+                end
+
+                if fruitCount == 0
+                and (
+                    tonumber(
+                        plantData.MaxFruitSpawnLocations
+                    )
+                    or 0
+                ) <= 0
+                and HolyProFarmDataReady(
+                    plantData
+                ) == true then
+
+                    return HolyProFarmBuildEntry(
+                        plantId,
+                        plantData,
+                        "",
+                        plantData
+                    )
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyEclipseCollectionFindWorkspaceEntry()
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            false
+        )
+
+    if typeof(plot) ~= "Instance" then
+
+        plot =
+            HolyFarmResolveOwnPlot(
+                true
+            )
+    end
+
+    if typeof(plot) ~= "Instance" then
+        return nil
+    end
+
+    local plantsFolder =
+        plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return nil
+    end
+
+    for _, plant in ipairs(
+        plantsFolder:GetChildren()
+    ) do
+
+        local plantName =
+            HolyFarmReadPlantName(
+                plant,
+                nil
+            )
+
+        if HolyEclipseCollectionOwnsPlantName(
+            plantName
+        ) == true then
+
+            local plantId =
+                HolyFarmReadPlantId(
+                    plant
+                )
+
+            local fruitsFolder =
+                plant:FindFirstChild(
+                    "Fruits"
+                )
+
+            if typeof(fruitsFolder) == "Instance" then
+
+                for _, fruit in ipairs(
+                    fruitsFolder:GetChildren()
+                ) do
+
+                    if HolyFarmFruitReady(
+                        fruit
+                    ) == true then
+
+                        local fruitId =
+                            HolyFarmReadFruitId(
+                                plant,
+                                fruit
+                            )
+
+                        if HolyCleanText(plantId) ~= ""
+                        and HolyCleanText(fruitId) ~= "" then
+
+                            return {
+                                Kind =
+                                    "FruitHarvest",
+
+                                Plant =
+                                    plant,
+
+                                Fruit =
+                                    fruit,
+
+                                PlantName =
+                                    plantName,
+
+                                PlantId =
+                                    plantId,
+
+                                FruitId =
+                                    fruitId,
+
+                                Key =
+                                    HolyFarmBuildFruitKey(
+                                        plantId,
+                                        fruitId
+                                    ),
+                            }
+                        end
+                    end
+                end
+
+            elseif HolyFarmPlantLevelHarvestReady(
+                plant
+            ) == true
+            and HolyCleanText(plantId) ~= "" then
+
+                return {
+                    Kind =
+                        "PlantHarvest",
+
+                    Plant =
+                        plant,
+
+                    Fruit =
+                        plant,
+
+                    PlantName =
+                        plantName,
+
+                    PlantId =
+                        plantId,
+
+                    FruitId =
+                        "",
+
+                    Key =
+                        HolyFarmBuildPlantHarvestKey(
+                            plantId
+                        ),
+                }
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyEclipseCollectionFindEntry()
+
+    local proEntry =
+        HolyEclipseCollectionFindProEntry()
+
+    if type(proEntry) == "table" then
+        return proEntry
+    end
+
+    return HolyEclipseCollectionFindWorkspaceEntry()
+end
+
+function HolyEclipseCollectionFireOne()
+
+    local runtime =
+        HolyEclipseCollectionEnsureRuntime()
+
+    if HOLY_FARM_STATE.AutoEclipseCollection ~= true
+    or HolyEclipseCollectionWeatherActive() == true then
+
+        return false
+    end
+
+    if type(HolyFarmAutoCollectBlocked) == "function"
+    and HolyFarmAutoCollectBlocked() == true then
+
+        return false
+    end
+
+    local entry =
+        HolyEclipseCollectionFindEntry()
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if HolyEclipseCollectionWeatherActive() == true then
+        return false
+    end
+
+    local packet =
+        HolyFarmResolveCollectFruitPacket(
+            false
+        )
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            packet:Fire(
+                entry.PlantId,
+                entry.FruitId
+                or ""
+            )
+        end)
+
+    if ok ~= true then
+        return false
+    end
+
+    runtime.WaitingForStart =
+        true
+
+    runtime.WaitingForEnd =
+        false
+
+    runtime.NextCollectAt =
+        math.huge
+
+    runtime.LastFireAt =
+        os.clock()
+
+    runtime.LastPlantId =
+        tostring(
+            entry.PlantId
+            or ""
+        )
+
+    runtime.LastFruitId =
+        tostring(
+            entry.FruitId
+            or ""
+        )
+
+    return true
+end
+
+function HolyEclipseCollectionRunWorker(
+    token
+)
+
+    local runtime =
+        HolyEclipseCollectionEnsureRuntime()
+
+    while runtime.Token == token
+    and HOLY_FARM_STATE.AutoEclipseCollection == true do
+
+        local eclipseActive =
+            HolyEclipseCollectionWeatherActive()
+
+        if runtime.WaitingForStart == true then
+
+            if eclipseActive == true then
+
+                runtime.WaitingForStart =
+                    false
+
+                runtime.WaitingForEnd =
+                    true
+            end
+
+        elseif runtime.WaitingForEnd == true then
+
+            if eclipseActive ~= true then
+
+                runtime.WaitingForEnd =
+                    false
+
+                runtime.NextCollectAt =
+                    os.clock()
+                    + 2
+            end
+
+        elseif eclipseActive == true then
+
+            runtime.WaitingForEnd =
+                true
+
+            runtime.NextCollectAt =
+                math.huge
+
+        elseif os.clock()
+            >= runtime.NextCollectAt then
+
+            if HolyEclipseCollectionFireOne() ~= true then
+
+                runtime.NextCollectAt =
+                    os.clock()
+                    + 1
+            end
+        end
+
+        task.wait(
+            0.25
+        )
+    end
+
+    if runtime.Token == token then
+
+        runtime.Running =
+            false
+    end
+end
+
+function HolyEclipseCollectionStart(
+    reason
+)
+
+    HolyFarmEnsureState()
+
+    if HOLY_FARM_STATE.AutoEclipseCollection ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyEclipseCollectionEnsureRuntime()
+
+    if runtime.Running == true then
+        return false
+    end
+
+    runtime.Token =
+        {}
+
+    runtime.Running =
+        true
+
+    runtime.WaitingForStart =
+        false
+
+    runtime.WaitingForEnd =
+        HolyEclipseCollectionWeatherActive()
+
+    runtime.NextCollectAt =
+        runtime.WaitingForEnd == true
+        and math.huge
+        or os.clock()
+
+    local token =
+        runtime.Token
+
+    task.spawn(function()
+
+        HolyEclipseCollectionRunWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyEclipseCollectionStop(
+    reason
+)
+
+    local runtime =
+        HolyEclipseCollectionEnsureRuntime()
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    runtime.WaitingForStart =
+        false
+
+    runtime.WaitingForEnd =
+        false
+
+    runtime.NextCollectAt =
+        0
+
+    return true
+end
+
+function HolyEclipseCollectionSetEnabled(
+    value
+)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.AutoEclipseCollection =
+        value == true
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoEclipseCollection == true then
+
+        return HolyEclipseCollectionStart(
+            "toggle on"
+        )
+    end
+
+    HolyEclipseCollectionStop(
+        "toggle off"
+    )
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRequestRebuild(
+            "eclipse collection disabled",
+            0.05
+        )
+    end
+
+    return true
+end
+
+HOLY_ECLIPSE_COLLECTION_RUNTIME.Stop =
+    HolyEclipseCollectionStop
 
 --==================================================
 -- [2.125] FARM / AUTO TROWEL CORE
@@ -98737,12 +99440,12 @@ local FarmProCollectionBox =
         "star"
     )
 
-local FarmOverridesBox =
+local FarmEclipseCollectionBox =
     HolyAddRightGroupbox(
         Tabs.Farm,
-        "Farm.CollectionOverrides",
-        "Collection Overrides",
-        "shield"
+        "Farm.EclipseCollection",
+        "Eclipse Collection",
+        "eclipse"
     )
 
 local FarmPlantBox =
@@ -99089,7 +99792,7 @@ function HolyFarmRefreshPage()
     )
 
     HolySetGroupboxVisible(
-        FarmOverridesBox,
+        FarmEclipseCollectionBox,
         isCollect
     )
 
@@ -111109,10 +111812,31 @@ local function HolyFarmAddPageNote(box, text)
     return true
 end
 
-HolyFarmAddPageNote(
-    FarmOverridesBox,
-    "No overrides added yet.\nMutation Weight Override will go here."
-)
+if FarmEclipseCollectionBox
+and type(FarmEclipseCollectionBox.AddToggle) == "function" then
+
+    HOLY_FARM_UI.EclipseCollectionToggle =
+        FarmEclipseCollectionBox:AddToggle(
+            "HolyFarmAutoEclipseCollection",
+            {
+                Text =
+                    "Auto Collect Eclipse Bloom",
+
+                Default =
+                    HOLY_FARM_STATE.AutoEclipseCollection == true,
+
+                Tooltip =
+                    "Collects one ready Eclipse Bloom, waits for the Eclipse to end, then collects another.",
+            }
+        )
+
+    HOLY_FARM_UI.EclipseCollectionToggle:OnChanged(function(value)
+
+        HolyEclipseCollectionSetEnabled(
+            value == true
+        )
+    end)
+end
 
 HolyFarmAddPageNote(
     FarmPlantBox,
@@ -112139,6 +112863,13 @@ task.defer(function()
     elseif HOLY_FARM_STATE.AutoCollectFruits == true then
 
         HolyFarmStartAutoCollect(
+            "startup"
+        )
+    end
+
+    if HOLY_FARM_STATE.AutoEclipseCollection == true then
+
+        HolyEclipseCollectionStart(
             "startup"
         )
     end
