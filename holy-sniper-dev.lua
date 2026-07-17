@@ -3195,6 +3195,9 @@ HOLY_FARM_STATE = {
     AutoCollectFruits = false,
     AutoEclipseCollection = false,
 
+    MutatedWeightOverride = false,
+    MutatedWeightOverrideKg = "0",
+
     ProFruitCollector = false,
     LowGardenDetail = false,
 
@@ -3333,6 +3336,9 @@ HOLY_FARM_UI = {
 
     AutoCollectToggle = nil,
     EclipseCollectionToggle = nil,
+
+    MutatedWeightOverrideToggle = nil,
+    MutatedWeightOverrideInput = nil,
 
     ProCollectorToggle = nil,
     LowGardenDetailToggle = nil,
@@ -7921,6 +7927,17 @@ function HolyFarmEnsureState()
     HOLY_FARM_STATE.AutoEclipseCollection =
         HOLY_FARM_STATE.AutoEclipseCollection == true
 
+    HOLY_FARM_STATE.MutatedWeightOverride =
+        HOLY_FARM_STATE.MutatedWeightOverride == true
+
+    HOLY_FARM_STATE.MutatedWeightOverrideKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                HOLY_FARM_STATE.MutatedWeightOverrideKg
+                or "0"
+            )
+        )
+
     HOLY_FARM_STATE.ProFruitCollector =
         HOLY_FARM_STATE.ProFruitCollector == true
 
@@ -8181,6 +8198,16 @@ function HolySaveFarmSettings()
         AutoEclipseCollection =
             HOLY_FARM_STATE.AutoEclipseCollection == true,
 
+        MutatedWeightOverride =
+            HOLY_FARM_STATE.MutatedWeightOverride == true,
+
+        MutatedWeightOverrideKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    HOLY_FARM_STATE.MutatedWeightOverrideKg
+                )
+            ),
+
         ProFruitCollector =
             HOLY_FARM_STATE.ProFruitCollector == true,
 
@@ -8324,6 +8351,17 @@ function HolyLoadFarmSettings()
 
     HOLY_FARM_STATE.AutoEclipseCollection =
         data.AutoEclipseCollection == true
+
+    HOLY_FARM_STATE.MutatedWeightOverride =
+        data.MutatedWeightOverride == true
+
+    HOLY_FARM_STATE.MutatedWeightOverrideKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                data.MutatedWeightOverrideKg
+                or "0"
+            )
+        )
 
     HOLY_FARM_STATE.ProFruitCollector =
         data.ProFruitCollector == true
@@ -9360,6 +9398,88 @@ function HolyFarmSelectionAllowsPlant(plantName)
         and map[plantName] == true
 end
 
+function HolyFarmMutatedWeightOverrideAllowsEntry(entry)
+
+    HolyFarmEnsureState()
+
+    if type(entry) ~= "table"
+    or HOLY_FARM_STATE.MutatedWeightOverride ~= true then
+
+        return false
+    end
+
+    local threshold =
+        HolyFarmReadWeightThresholdKg(
+            HOLY_FARM_STATE.MutatedWeightOverrideKg
+        )
+
+    if threshold <= 0 then
+        return false
+    end
+
+    local mutations =
+        HolyFarmReadEntryMutations(
+            entry
+        )
+
+    if type(mutations) ~= "table"
+    or #mutations <= 0 then
+
+        return false
+    end
+
+    local predictedKg =
+        HolyFarmPredictEntryWeightKg(
+            entry
+        )
+
+    predictedKg =
+        tonumber(predictedKg)
+
+    if predictedKg == nil then
+        return false
+    end
+
+    return predictedKg >= threshold
+end
+
+function HolyFarmCollectionAllowsEntry(entry)
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if HolyFarmMutatedWeightOverrideAllowsEntry(
+        entry
+    ) == true then
+
+        return true
+    end
+
+    if HolyFarmSelectionAllowsPlant(
+        entry.PlantName
+    ) ~= true then
+
+        return false
+    end
+
+    if HolyFarmMutationAllowsEntry(
+        entry
+    ) ~= true then
+
+        return false
+    end
+
+    if HolyFarmWeightAllowsEntry(
+        entry
+    ) ~= true then
+
+        return false
+    end
+
+    return true
+end
+
 function HolyFarmRefreshPlantDropdown(forceRefresh)
 
     HOLY_FARM_UI =
@@ -9588,6 +9708,48 @@ function HolyFarmSetWeightThresholdKg(value)
 
         HolyFarmRequestRebuild(
             "weight threshold changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmSetMutatedWeightOverride(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.MutatedWeightOverride =
+        value == true
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRequestRebuild(
+            "mutated weight override changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmSetMutatedWeightOverrideKg(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.MutatedWeightOverrideKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                value
+            )
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRequestRebuild(
+            "mutated weight override threshold changed"
         )
     end
 
@@ -10854,10 +11016,6 @@ function HolyFarmQueueFruit(plant, fruit, reason)
         return false
     end
 
-    if HolyFarmSelectionAllowsPlant(plantName) ~= true then
-        return false
-    end
-
     local plantId =
         HolyFarmReadPlantId(
             plant
@@ -10908,11 +11066,10 @@ function HolyFarmQueueFruit(plant, fruit, reason)
             tostring(reason or "ready"),
     }
 
-    if HolyFarmMutationAllowsEntry(entry) ~= true then
-        return false
-    end
+    if HolyFarmCollectionAllowsEntry(
+        entry
+    ) ~= true then
 
-    if HolyFarmWeightAllowsEntry(entry) ~= true then
         return false
     end
 
@@ -10965,13 +11122,6 @@ function HolyFarmQueuePlantHarvest(plant, reason)
         return false
     end
 
-    if HolyFarmSelectionAllowsPlant(
-        plantName
-    ) ~= true then
-
-        return false
-    end
-
     local plantId =
         HolyFarmReadPlantId(
             plant
@@ -11015,11 +11165,10 @@ function HolyFarmQueuePlantHarvest(plant, reason)
             tostring(reason or "plant ready"),
     }
 
-    if HolyFarmMutationAllowsEntry(entry) ~= true then
-        return false
-    end
+    if HolyFarmCollectionAllowsEntry(
+        entry
+    ) ~= true then
 
-    if HolyFarmWeightAllowsEntry(entry) ~= true then
         return false
     end
 
@@ -11706,15 +11855,10 @@ function HolyFarmCollectEntry(entry)
             )
     end
 
-    if HolyFarmSelectionAllowsPlant(entry.PlantName) ~= true then
-        return false
-    end
+    if HolyFarmCollectionAllowsEntry(
+        entry
+    ) ~= true then
 
-    if HolyFarmMutationAllowsEntry(entry) ~= true then
-        return false
-    end
-
-    if HolyFarmWeightAllowsEntry(entry) ~= true then
         return false
     end
 
@@ -13126,28 +13270,9 @@ function HolyProFarmEntryAllowed(entry)
         return false
     end
 
-    if HolyFarmSelectionAllowsPlant(
-        entry.PlantName
-    ) ~= true then
-
-        return false
-    end
-
-    if HolyFarmMutationAllowsEntry(
+    return HolyFarmCollectionAllowsEntry(
         entry
-    ) ~= true then
-
-        return false
-    end
-
-    if HolyFarmWeightAllowsEntry(
-        entry
-    ) ~= true then
-
-        return false
-    end
-
-    return true
+    ) == true
 end
 
 function HolyProFarmFindTarget()
@@ -99440,12 +99565,12 @@ local FarmProCollectionBox =
         "star"
     )
 
-local FarmEclipseCollectionBox =
+local FarmCollectionOverridesBox =
     HolyAddRightGroupbox(
         Tabs.Farm,
-        "Farm.EclipseCollection",
-        "Eclipse Collection",
-        "eclipse"
+        "Farm.CollectionOverrides",
+        "Collection Overrides",
+        "list-filter-plus"
     )
 
 local FarmPlantBox =
@@ -99792,7 +99917,7 @@ function HolyFarmRefreshPage()
     )
 
     HolySetGroupboxVisible(
-        FarmEclipseCollectionBox,
+        FarmCollectionOverridesBox,
         isCollect
     )
 
@@ -111812,15 +111937,15 @@ local function HolyFarmAddPageNote(box, text)
     return true
 end
 
-if FarmEclipseCollectionBox
-and type(FarmEclipseCollectionBox.AddToggle) == "function" then
+if FarmCollectionOverridesBox
+and type(FarmCollectionOverridesBox.AddToggle) == "function" then
 
     HOLY_FARM_UI.EclipseCollectionToggle =
-        FarmEclipseCollectionBox:AddToggle(
+        FarmCollectionOverridesBox:AddToggle(
             "HolyFarmAutoEclipseCollection",
             {
                 Text =
-                    "Auto Collect Eclipse Bloom",
+                    "🌑 Auto Collect Eclipse Bloom",
 
                 Default =
                     HOLY_FARM_STATE.AutoEclipseCollection == true,
@@ -111834,6 +111959,68 @@ and type(FarmEclipseCollectionBox.AddToggle) == "function" then
 
         HolyEclipseCollectionSetEnabled(
             value == true
+        )
+    end)
+
+    HOLY_FARM_UI.MutatedWeightOverrideToggle =
+        FarmCollectionOverridesBox:AddToggle(
+            "HolyFarmMutatedWeightOverride",
+            {
+                Text =
+                    "🧬 Mutated Weight Override",
+
+                Default =
+                    HOLY_FARM_STATE.MutatedWeightOverride == true,
+
+                Tooltip =
+                    "Collects ready mutated fruits at or above the minimum weight, even when the normal plant, mutation, or weight filters would skip them. Works with normal and Pro collectors.",
+            }
+        )
+
+    HOLY_FARM_UI.MutatedWeightOverrideToggle:OnChanged(function(value)
+
+        HolyFarmSetMutatedWeightOverride(
+            value == true
+        )
+    end)
+end
+
+if FarmCollectionOverridesBox
+and type(FarmCollectionOverridesBox.AddInput) == "function" then
+
+    HOLY_FARM_UI.MutatedWeightOverrideInput =
+        FarmCollectionOverridesBox:AddInput(
+            "HolyFarmMutatedWeightOverrideKg",
+            {
+                Text =
+                    "📏 Minimum Weight (kg)",
+
+                Default =
+                    tostring(
+                        HolyFarmReadWeightThresholdKg(
+                            HOLY_FARM_STATE.MutatedWeightOverrideKg
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Minimum weight required by Mutated Weight Override. 0 disables this override.",
+            }
+        )
+
+    HOLY_FARM_UI.MutatedWeightOverrideInput:OnChanged(function(value)
+
+        HolyFarmSetMutatedWeightOverrideKg(
+            value
         )
     end)
 end
