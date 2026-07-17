@@ -99553,8 +99553,16 @@ local FarmCollectionBox =
     HolyAddLeftGroupbox(
         Tabs.Farm,
         "Farm.FruitCollection",
-        "Auto Collect Fruits",
+        "Fruit Collector",
         "zap"
+    )
+
+local FarmCollectionFiltersBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.CollectionFilters",
+        "Collection Filters",
+        "list-filter"
     )
 
 local FarmProCollectionBox =
@@ -99908,6 +99916,11 @@ function HolyFarmRefreshPage()
 
     HolySetGroupboxVisible(
         FarmCollectionBox,
+        isCollect
+    )
+
+    HolySetGroupboxVisible(
+        FarmCollectionFiltersBox,
         isCollect
     )
 
@@ -108255,6 +108268,79 @@ end
 -- [6] MAIN TAB
 --==================================================
 
+function HolyOpenDeveloperConsole()
+
+    local StarterGui =
+        game:GetService(
+            "StarterGui"
+        )
+
+    local lastError =
+        nil
+
+    for attempt = 1, 10 do
+
+        local success,
+            result =
+            pcall(function()
+
+                StarterGui:SetCore(
+                    "DevConsoleVisible",
+                    true
+                )
+            end)
+
+        if success == true then
+
+            print(
+                "[HOLY] Developer Console opened."
+            )
+
+            return true,
+                "opened"
+        end
+
+        lastError =
+            result
+
+        task.wait(
+            0.25
+        )
+    end
+
+    return false,
+        tostring(
+            lastError
+            or "unknown error"
+        )
+end
+
+MainQuickBox:AddButton({
+    Text =
+        "Open Console",
+
+    Tooltip =
+        "Opens the Roblox Developer Console.",
+
+    Func =
+        function()
+
+            local opened,
+                reason =
+                HolyOpenDeveloperConsole()
+
+            if opened ~= true then
+
+                HolyNotify(
+                    "HOLY",
+                    "Could not open Developer Console: "
+                        .. tostring(reason),
+                    5
+                )
+            end
+        end,
+})
+
 local RejoinButton =
     MainQuickBox:AddButton({
         Text =
@@ -111196,15 +111282,15 @@ and type(FarmCollectionBox.AddToggle) == "function" then
     end)
 end
 
-if FarmCollectionBox
-and type(FarmCollectionBox.AddDropdown) == "function" then
+if FarmCollectionFiltersBox
+and type(FarmCollectionFiltersBox.AddDropdown) == "function" then
 
     HOLY_FARM_UI.ModeDropdown =
-        FarmCollectionBox:AddDropdown(
+        FarmCollectionFiltersBox:AddDropdown(
             "HolyFarmCollectMode",
             {
                 Text =
-                    "🎯 Mode",
+                    "🎯 Collection Mode",
 
                 Values = {
                     "All",
@@ -111227,7 +111313,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
                     2,
 
                 Tooltip =
-                    "All collects every ready fruit. Selected only collects chosen plants.",
+                    "Used by normal and Pro collectors. All collects every ready fruit. Selected only collects chosen plants.",
             }
         )
 
@@ -111239,7 +111325,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
     end)
 
     HOLY_FARM_UI.PlantsDropdown =
-        FarmCollectionBox:AddDropdown(
+        FarmCollectionFiltersBox:AddDropdown(
             "HolyFarmCollectPlants",
             {
                 Text =
@@ -111275,7 +111361,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
     end)
 
     HOLY_FARM_UI.MutationModeDropdown =
-        FarmCollectionBox:AddDropdown(
+        FarmCollectionFiltersBox:AddDropdown(
             "HolyFarmMutationMode",
             {
                 Text =
@@ -111316,7 +111402,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
     end)
 
     HOLY_FARM_UI.MutationsDropdown =
-        FarmCollectionBox:AddDropdown(
+        FarmCollectionFiltersBox:AddDropdown(
             "HolyFarmSelectedMutations",
             {
                 Text =
@@ -111352,7 +111438,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
     end)
 
     HOLY_FARM_UI.WeightModeDropdown =
-        FarmCollectionBox:AddDropdown(
+        FarmCollectionFiltersBox:AddDropdown(
             "HolyFarmWeightMode",
             {
                 Text =
@@ -111392,11 +111478,11 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
     end)
 end
 
-if FarmCollectionBox
-and type(FarmCollectionBox.AddInput) == "function" then
+if FarmCollectionFiltersBox
+and type(FarmCollectionFiltersBox.AddInput) == "function" then
 
     HOLY_FARM_UI.WeightThresholdInput =
-        FarmCollectionBox:AddInput(
+        FarmCollectionFiltersBox:AddInput(
             "HolyFarmWeightThresholdKg",
             {
                 Text =
