@@ -70147,62 +70147,369 @@ function HolyVisualGardenReadMutations(plant, fruit, kind)
     )
 end
 
+function HolyVisualGardenIsHelperPart(part, root)
+
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
+
+        return true
+    end
+
+    if part:GetAttribute("IsHitbox") == true
+    or part:GetAttribute("Hitbox") == true
+    or part:GetAttribute("IsCollision") == true
+    or part:GetAttribute("IsTrigger") == true then
+
+        return true
+    end
+
+    local current =
+        part
+
+    while typeof(current) == "Instance" do
+
+        local nameKey =
+            tostring(
+                current.Name
+                or ""
+            )
+            :lower()
+            :gsub(
+                "[^%w]",
+                ""
+            )
+
+        if nameKey == "harvestpart"
+        or nameKey:find("proximityprompt", 1, true)
+        or nameKey:find("promptpart", 1, true)
+        or nameKey:find("promptanchor", 1, true)
+        or nameKey:find("interactionpart", 1, true)
+        or nameKey:find("hitbox", 1, true)
+        or nameKey:find("collision", 1, true)
+        or nameKey:find("collider", 1, true)
+        or nameKey:find("trigger", 1, true)
+        or nameKey:find("touchpart", 1, true) then
+
+            return true
+        end
+
+        if current == root then
+            break
+        end
+
+        current =
+            current.Parent
+    end
+
+    return false
+end
+
+function HolyVisualGardenIsVisiblePart(part)
+
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    local size =
+        part.Size
+
+    if size.X <= 0.01
+    or size.Y <= 0.01
+    or size.Z <= 0.01 then
+
+        return false
+    end
+
+    if part.Transparency >= 0.98
+    or part.LocalTransparencyModifier >= 0.98 then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyVisualGardenGetPartBounds(parts)
+
+    if type(parts) ~= "table"
+    or #parts <= 0 then
+
+        return nil,
+            nil
+    end
+
+    local minX =
+        math.huge
+
+    local minY =
+        math.huge
+
+    local minZ =
+        math.huge
+
+    local maxX =
+        -math.huge
+
+    local maxY =
+        -math.huge
+
+    local maxZ =
+        -math.huge
+
+    for _, part in ipairs(parts) do
+
+        if typeof(part) == "Instance"
+        and part:IsA("BasePart") then
+
+            local halfSize =
+                part.Size
+                * 0.5
+
+            for xSign = -1, 1, 2 do
+
+                for ySign = -1, 1, 2 do
+
+                    for zSign = -1, 1, 2 do
+
+                        local corner =
+                            part.CFrame:PointToWorldSpace(
+                                Vector3.new(
+                                    halfSize.X * xSign,
+                                    halfSize.Y * ySign,
+                                    halfSize.Z * zSign
+                                )
+                            )
+
+                        minX =
+                            math.min(
+                                minX,
+                                corner.X
+                            )
+
+                        minY =
+                            math.min(
+                                minY,
+                                corner.Y
+                            )
+
+                        minZ =
+                            math.min(
+                                minZ,
+                                corner.Z
+                            )
+
+                        maxX =
+                            math.max(
+                                maxX,
+                                corner.X
+                            )
+
+                        maxY =
+                            math.max(
+                                maxY,
+                                corner.Y
+                            )
+
+                        maxZ =
+                            math.max(
+                                maxZ,
+                                corner.Z
+                            )
+                    end
+                end
+            end
+        end
+    end
+
+    if minX == math.huge
+    or maxX == -math.huge then
+
+        return nil,
+            nil
+    end
+
+    local center =
+        Vector3.new(
+            (
+                minX
+                + maxX
+            )
+            * 0.5,
+
+            (
+                minY
+                + maxY
+            )
+            * 0.5,
+
+            (
+                minZ
+                + maxZ
+            )
+            * 0.5
+        )
+
+    local topCenter =
+        Vector3.new(
+            center.X,
+            maxY,
+            center.Z
+        )
+
+    return center,
+        topCenter
+end
+
 function HolyVisualGardenFindAdornee(instance)
 
     if typeof(instance) ~= "Instance" then
         return nil
     end
 
+    local allParts =
+        {}
+
     if instance:IsA("BasePart") then
-        return instance
+
+        table.insert(
+            allParts,
+            instance
+        )
     end
 
-    local harvestPart =
-        instance:FindFirstChild(
-            "HarvestPart",
-            true
+    for _, descendant in ipairs(
+        instance:GetDescendants()
+    ) do
+
+        if descendant:IsA("BasePart") then
+
+            table.insert(
+                allParts,
+                descendant
+            )
+        end
+    end
+
+    if #allParts <= 0 then
+        return nil
+    end
+
+    local visibleParts =
+        {}
+
+    local nonHelperParts =
+        {}
+
+    for _, part in ipairs(allParts) do
+
+        if HolyVisualGardenIsHelperPart(
+            part,
+            instance
+        ) ~= true then
+
+            table.insert(
+                nonHelperParts,
+                part
+            )
+
+            if HolyVisualGardenIsVisiblePart(
+                part
+            ) then
+
+                table.insert(
+                    visibleParts,
+                    part
+                )
+            end
+        end
+    end
+
+    local visualParts
+
+    if #visibleParts > 0 then
+
+        visualParts =
+            visibleParts
+
+    elseif #nonHelperParts > 0 then
+
+        visualParts =
+            nonHelperParts
+
+    else
+
+        -- Last-resort fallback for fruits whose only BasePart
+        -- is also used as the interaction part.
+        visualParts =
+            allParts
+    end
+
+    local visualCenter,
+        visualTop =
+        HolyVisualGardenGetPartBounds(
+            visualParts
         )
 
-    if typeof(harvestPart) == "Instance" then
+    if typeof(visualCenter) ~= "Vector3"
+    or typeof(visualTop) ~= "Vector3" then
 
-        if harvestPart:IsA("BasePart") then
-            return harvestPart
+        local fallback =
+            visualParts[1]
+
+        if typeof(fallback) == "Instance"
+        and fallback:IsA("BasePart") then
+
+            return fallback,
+                Vector3.new(
+                    0,
+                    fallback.Size.Y * 0.5,
+                    0
+                )
         end
 
-        local nested =
-            harvestPart:FindFirstChildWhichIsA(
-                "BasePart",
-                true
-            )
+        return nil
+    end
 
-        if nested then
-            return nested
+    local adornee =
+        nil
+
+    local bestDistance =
+        math.huge
+
+    for _, part in ipairs(visualParts) do
+
+        if typeof(part) == "Instance"
+        and part:IsA("BasePart") then
+
+            local distance =
+                (
+                    part.Position
+                    - visualCenter
+                ).Magnitude
+
+            if distance < bestDistance then
+
+                bestDistance =
+                    distance
+
+                adornee =
+                    part
+            end
         end
     end
 
-    if instance:IsA("Model") then
-
-        if instance.PrimaryPart then
-            return instance.PrimaryPart
-        end
-
-        local rootPart =
-            instance:FindFirstChild(
-                "RootPart",
-                true
-            )
-
-        if rootPart
-        and rootPart:IsA("BasePart") then
-
-            return rootPart
-        end
+    if typeof(adornee) ~= "Instance" then
+        return nil
     end
 
-    return instance:FindFirstChildWhichIsA(
-        "BasePart",
-        true
-    )
+    local worldOffset =
+        visualTop
+        - adornee.Position
+
+    return adornee,
+        worldOffset
 end
 
 function HolyVisualGardenGetRootPart()
@@ -70225,7 +70532,10 @@ function HolyVisualGardenGetRootPart()
     or character.PrimaryPart
 end
 
-function HolyVisualGardenGetDistance(adornee)
+function HolyVisualGardenGetDistance(
+    adornee,
+    worldOffset
+)
 
     if typeof(adornee) ~= "Instance"
     or adornee:IsA("BasePart") ~= true then
@@ -70242,9 +70552,18 @@ function HolyVisualGardenGetDistance(adornee)
         return 0
     end
 
+    local worldPosition =
+        adornee.Position
+
+    if typeof(worldOffset) == "Vector3" then
+
+        worldPosition +=
+            worldOffset
+    end
+
     return (
         root.Position
-        - adornee.Position
+        - worldPosition
     ).Magnitude
 end
 
@@ -70796,7 +71115,8 @@ function HolyVisualGardenReadRow(plant, fruit, kind)
         return nil
     end
 
-    local adornee =
+    local adornee,
+        worldOffset =
         HolyVisualGardenFindAdornee(
             fruit
         )
@@ -70807,6 +71127,11 @@ function HolyVisualGardenReadRow(plant, fruit, kind)
         return nil
     end
 
+    worldOffset =
+        typeof(worldOffset) == "Vector3"
+        and worldOffset
+        or Vector3.zero
+
     local maxDistance =
         tonumber(
             HOLY_VISUAL_STATE.GardenFruitMaxDistance
@@ -70815,7 +71140,8 @@ function HolyVisualGardenReadRow(plant, fruit, kind)
 
     local distance =
         HolyVisualGardenGetDistance(
-            adornee
+            adornee,
+            worldOffset
         )
 
     if maxDistance > 0
@@ -70889,6 +71215,9 @@ function HolyVisualGardenReadRow(plant, fruit, kind)
 
         Adornee =
             adornee,
+
+        WorldOffset =
+            worldOffset,
 
         Name =
             fruitName,
@@ -71143,9 +71472,17 @@ function HolyVisualGardenEnsureLabel(row)
         )
 
     label.StudsOffset =
-        Vector3.new(
+        Vector3.zero
+
+    label.StudsOffsetWorldSpace =
+        (
+            typeof(row.WorldOffset) == "Vector3"
+            and row.WorldOffset
+            or Vector3.zero
+        )
+        + Vector3.new(
             0,
-            2.2,
+            1.35,
             0
         )
 
@@ -71334,6 +71671,21 @@ function HolyVisualRefreshGardenFruitESP()
 
             label.Adornee =
                 row.Adornee
+
+            label.StudsOffset =
+                Vector3.zero
+
+            label.StudsOffsetWorldSpace =
+                (
+                    typeof(row.WorldOffset) == "Vector3"
+                    and row.WorldOffset
+                    or Vector3.zero
+                )
+                + Vector3.new(
+                    0,
+                    1.35,
+                    0
+                )
 
             label.MaxDistance =
                 tonumber(
