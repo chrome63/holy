@@ -70446,12 +70446,14 @@ function HolyVisualGardenFindAdornee(instance)
             allParts
     end
 
-    local visualCenter =
+    local visualCenter,
+        visualTop =
         HolyVisualGardenGetPartBounds(
             visualParts
         )
 
-    if typeof(visualCenter) ~= "Vector3" then
+    if typeof(visualCenter) ~= "Vector3"
+    or typeof(visualTop) ~= "Vector3" then
 
         local fallback =
             visualParts[1]
@@ -70460,11 +70462,28 @@ function HolyVisualGardenFindAdornee(instance)
         and fallback:IsA("BasePart") then
 
             return fallback,
-                Vector3.zero
+                Vector3.new(
+                    0,
+                    -fallback.Size.Y * 0.5,
+                    0
+                )
         end
 
         return nil
     end
+
+    local visualBottom =
+        Vector3.new(
+            visualCenter.X,
+
+            (
+                visualCenter.Y
+                * 2
+            )
+            - visualTop.Y,
+
+            visualCenter.Z
+        )
 
     local adornee =
         nil
@@ -70499,7 +70518,7 @@ function HolyVisualGardenFindAdornee(instance)
     end
 
     local worldOffset =
-        visualCenter
+        visualBottom
         - adornee.Position
 
     return adornee,
