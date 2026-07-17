@@ -2874,11 +2874,19 @@ end
 HOLY_HARVEST_PROMPT_RUNTIME = {
     Running = false,
 
-    GardenRoot = nil,
-    GardenConnection = nil,
     WorkspaceConnection = nil,
+    PromptShownConnection = nil,
+    WatchdogToken = nil,
 
-    OriginalDistances =
+    RootConnections =
+        setmetatable(
+            {},
+            {
+                __mode = "k",
+            }
+        ),
+
+    OriginalStates =
         setmetatable(
             {},
             {
@@ -2887,6 +2895,14 @@ HOLY_HARVEST_PROMPT_RUNTIME = {
         ),
 
     PromptConnections =
+        setmetatable(
+            {},
+            {
+                __mode = "k",
+            }
+        ),
+
+    Applying =
         setmetatable(
             {},
             {
@@ -10309,15 +10325,70 @@ function HolyHarvestPromptDisconnect(connection)
     end
 end
 
+function HolyHarvestPromptDisconnectList(connections)
+
+    if type(connections) ~= "table" then
+        return
+    end
+
+    for _, connection in ipairs(connections) do
+
+        HolyHarvestPromptDisconnect(
+            connection
+        )
+    end
+
+    table.clear(
+        connections
+    )
+end
+
+function HolyHarvestPromptIsInGarden(prompt)
+
+    if typeof(prompt) ~= "Instance" then
+        return false
+    end
+
+    for _, rootName in ipairs({
+        "Gardens",
+        "_Gardens",
+    }) do
+
+        local gardenRoot =
+            workspace:FindFirstChild(
+                rootName
+            )
+
+        if typeof(gardenRoot) == "Instance"
+        and prompt:IsDescendantOf(
+            gardenRoot
+        ) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
 function HolyHarvestPromptIsHarvest(prompt)
 
     if typeof(prompt) ~= "Instance"
-    or prompt:IsA("ProximityPrompt") ~= true then
+    or prompt:IsA("ProximityPrompt") ~= true
+    or HolyHarvestPromptIsInGarden(
+        prompt
+    ) ~= true then
 
         return false
     end
 
     local actionText =
+        ""
+
+    local objectText =
+        ""
+
+    local promptName =
         ""
 
     pcall(function()
@@ -10326,9 +10397,40 @@ function HolyHarvestPromptIsHarvest(prompt)
             HolyCleanText(
                 prompt.ActionText
             ):lower()
+
+        objectText =
+            HolyCleanText(
+                prompt.ObjectText
+            ):lower()
+
+        promptName =
+            HolyCleanText(
+                prompt.Name
+            ):lower()
     end)
 
-    if actionText == "harvest" then
+    local combinedText =
+        actionText
+        .. " "
+        .. objectText
+        .. " "
+        .. promptName
+
+    if combinedText:find(
+        "harvest",
+        1,
+        true
+    )
+    or combinedText:find(
+        "pluck",
+        1,
+        true
+    )
+    or combinedText:find(
+        "pick fruit",
+        1,
+        true
+    ) then
 
         return true
     end
@@ -10336,23 +10438,95 @@ function HolyHarvestPromptIsHarvest(prompt)
     local current =
         prompt.Parent
 
-    for _ = 1, 10 do
+    for _ = 1, 14 do
 
         if typeof(current) ~= "Instance" then
-
             break
         end
 
-        if current.Name == "HarvestPart" then
+        local nameKey =
+            tostring(
+                current.Name
+                or ""
+            )
+            :lower()
+            :gsub(
+                "[^%w]",
+                ""
+            )
+
+        if nameKey == "harvestpart"
+        or nameKey == "fruitprompt"
+        or nameKey == "harvestprompt" then
+
+            return true
+        end
+
+        if current:GetAttribute("FruitId") ~= nil
+        or current:GetAttribute("FruitID") ~= nil
+        or current:GetAttribute("FruitUUID") ~= nil then
+
+            return true
+        end
+
+        local parent =
+            current.Parent
+
+        if typeof(parent) == "Instance"
+        and parent.Name == "Fruits" then
 
             return true
         end
 
         current =
-            current.Parent
+            parent
     end
 
     return false
+end
+
+function HolyHarvestPromptSaveOriginal(prompt)
+
+    local runtime =
+        HOLY_HARVEST_PROMPT_RUNTIME
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false
+    end
+
+    if runtime.OriginalStates[prompt] ~= nil then
+        return true
+    end
+
+    local originalState =
+        {}
+
+    local success =
+        pcall(function()
+
+            originalState.Enabled =
+                prompt.Enabled
+
+            originalState.MaxActivationDistance =
+                prompt.MaxActivationDistance
+
+            originalState.Style =
+                prompt.Style
+
+            originalState.ClickablePrompt =
+                prompt.ClickablePrompt
+        end)
+
+    if success ~= true then
+        return false
+    end
+
+    runtime.OriginalStates[prompt] =
+        originalState
+
+    return true
 end
 
 function HolyHarvestPromptApply(prompt)
@@ -10368,70 +10542,112 @@ function HolyHarvestPromptApply(prompt)
         return false
     end
 
-    if runtime.OriginalDistances[prompt] == nil then
+    if HolyHarvestPromptSaveOriginal(
+        prompt
+    ) ~= true then
 
-        local originalDistance =
-            nil
-
-        local readOk =
-            pcall(function()
-
-                originalDistance =
-                    prompt.MaxActivationDistance
-            end)
-
-        if readOk ~= true
-        or type(originalDistance) ~= "number" then
-
-            return false
-        end
-
-        runtime.OriginalDistances[prompt] =
-            originalDistance
+        return false
     end
+
+    if runtime.Applying[prompt] == true then
+        return true
+    end
+
+    runtime.Applying[prompt] =
+        true
 
     local hidden =
         pcall(function()
 
+            prompt.Style =
+                Enum.ProximityPromptStyle.Custom
+
+            prompt.ClickablePrompt =
+                false
+
             prompt.MaxActivationDistance =
                 0
+
+            prompt.Enabled =
+                false
         end)
 
-    if hidden ~= true then
+    runtime.Applying[prompt] =
+        nil
 
+    if hidden ~= true then
         return false
     end
 
     if runtime.PromptConnections[prompt] == nil then
 
-        runtime.PromptConnections[prompt] =
+        local connections =
+            {}
+
+        local function reapply()
+
+            if runtime.Running ~= true
+            or runtime.Applying[prompt] == true then
+
+                return
+            end
+
+            task.defer(function()
+
+                if runtime.Running == true
+                and prompt.Parent ~= nil then
+
+                    HolyHarvestPromptApply(
+                        prompt
+                    )
+                end
+            end)
+        end
+
+        table.insert(
+            connections,
+            prompt:GetPropertyChangedSignal(
+                "Enabled"
+            ):Connect(
+                reapply
+            )
+        )
+
+        table.insert(
+            connections,
             prompt:GetPropertyChangedSignal(
                 "MaxActivationDistance"
-            ):Connect(function()
+            ):Connect(
+                reapply
+            )
+        )
 
-                if runtime.Running ~= true
-                or prompt.Parent == nil
-                or prompt.MaxActivationDistance == 0 then
+        table.insert(
+            connections,
+            prompt:GetPropertyChangedSignal(
+                "Style"
+            ):Connect(
+                reapply
+            )
+        )
 
-                    return
-                end
+        pcall(function()
 
-                task.defer(function()
+            table.insert(
+                connections,
+                prompt:GetPropertyChangedSignal(
+                    "ClickablePrompt"
+                ):Connect(
+                    reapply
+                )
+            )
+        end)
 
-                    if runtime.Running == true
-                    and prompt.Parent ~= nil then
-
-                        pcall(function()
-
-                            prompt.MaxActivationDistance =
-                                0
-                        end)
-                    end
-                end)
-            end)
+        runtime.PromptConnections[prompt] =
+            connections
     end
 
-    return true
+    return prompt.Enabled == false
 end
 
 function HolyHarvestPromptRestoreAll()
@@ -10440,13 +10656,13 @@ function HolyHarvestPromptRestoreAll()
         HOLY_HARVEST_PROMPT_RUNTIME
 
     for prompt,
-        connection in pairs(
+        connections in pairs(
         runtime.PromptConnections
         or {}
     ) do
 
-        HolyHarvestPromptDisconnect(
-            connection
+        HolyHarvestPromptDisconnectList(
+            connections
         )
 
         runtime.PromptConnections[prompt] =
@@ -10454,22 +10670,50 @@ function HolyHarvestPromptRestoreAll()
     end
 
     for prompt,
-        originalDistance in pairs(
-        runtime.OriginalDistances
+        originalState in pairs(
+        runtime.OriginalStates
         or {}
     ) do
 
         if typeof(prompt) == "Instance"
-        and prompt.Parent ~= nil then
+        and prompt.Parent ~= nil
+        and type(originalState) == "table" then
+
+            runtime.Applying[prompt] =
+                true
 
             pcall(function()
 
-                prompt.MaxActivationDistance =
-                    originalDistance
+                if originalState.Style ~= nil then
+
+                    prompt.Style =
+                        originalState.Style
+                end
+
+                if originalState.ClickablePrompt ~= nil then
+
+                    prompt.ClickablePrompt =
+                        originalState.ClickablePrompt
+                end
+
+                if originalState.MaxActivationDistance ~= nil then
+
+                    prompt.MaxActivationDistance =
+                        originalState.MaxActivationDistance
+                end
+
+                if originalState.Enabled ~= nil then
+
+                    prompt.Enabled =
+                        originalState.Enabled
+                end
             end)
+
+            runtime.Applying[prompt] =
+                nil
         end
 
-        runtime.OriginalDistances[prompt] =
+        runtime.OriginalStates[prompt] =
             nil
     end
 
@@ -10479,7 +10723,6 @@ end
 function HolyHarvestPromptScanGarden(gardenRoot)
 
     if typeof(gardenRoot) ~= "Instance" then
-
         return 0
     end
 
@@ -10514,29 +10757,36 @@ function HolyHarvestPromptBindGarden(gardenRoot)
         return false
     end
 
-    if runtime.GardenRoot == gardenRoot
-    and typeof(runtime.GardenConnection)
-        == "RBXScriptConnection" then
+    local existingConnection =
+        runtime.RootConnections[
+            gardenRoot
+        ]
+
+    if typeof(existingConnection) == "RBXScriptConnection" then
+
+        HolyHarvestPromptScanGarden(
+            gardenRoot
+        )
 
         return true
     end
 
-    HolyHarvestPromptDisconnect(
-        runtime.GardenConnection
-    )
-
-    runtime.GardenRoot =
-        gardenRoot
-
-    runtime.GardenConnection =
+    runtime.RootConnections[gardenRoot] =
         gardenRoot.DescendantAdded:Connect(
             function(descendant)
 
                 if descendant:IsA("ProximityPrompt") then
 
-                    HolyHarvestPromptApply(
-                        descendant
-                    )
+                    task.defer(function()
+
+                        if runtime.Running == true
+                        and descendant.Parent ~= nil then
+
+                            HolyHarvestPromptApply(
+                                descendant
+                            )
+                        end
+                    end)
                 end
             end
         )
@@ -10544,7 +10794,7 @@ function HolyHarvestPromptBindGarden(gardenRoot)
     task.defer(function()
 
         if runtime.Running == true
-        and runtime.GardenRoot == gardenRoot then
+        and gardenRoot.Parent ~= nil then
 
             HolyHarvestPromptScanGarden(
                 gardenRoot
@@ -10555,14 +10805,53 @@ function HolyHarvestPromptBindGarden(gardenRoot)
     return true
 end
 
-function HolyHarvestPromptFindGarden()
+function HolyHarvestPromptFindGardens()
 
-    return workspace:FindFirstChild(
-        "_Gardens"
-    )
-        or workspace:FindFirstChild(
-            "Gardens"
+    local roots =
+        {}
+
+    for _, rootName in ipairs({
+        "Gardens",
+        "_Gardens",
+    }) do
+
+        local gardenRoot =
+            workspace:FindFirstChild(
+                rootName
+            )
+
+        if typeof(gardenRoot) == "Instance" then
+
+            table.insert(
+                roots,
+                gardenRoot
+            )
+        end
+    end
+
+    return roots
+end
+
+function HolyHarvestPromptBindCurrentGardens()
+
+    local hiddenCount =
+        0
+
+    for _, gardenRoot in ipairs(
+        HolyHarvestPromptFindGardens()
+    ) do
+
+        HolyHarvestPromptBindGarden(
+            gardenRoot
         )
+
+        hiddenCount +=
+            HolyHarvestPromptScanGarden(
+                gardenRoot
+            )
+    end
+
+    return hiddenCount
 end
 
 function HolyHarvestPromptStop(reason)
@@ -10571,29 +10860,42 @@ function HolyHarvestPromptStop(reason)
         HOLY_HARVEST_PROMPT_RUNTIME
 
     if type(runtime) ~= "table" then
-
         return false
     end
 
     runtime.Running =
         false
 
-    HolyHarvestPromptDisconnect(
-        runtime.GardenConnection
-    )
+    runtime.WatchdogToken =
+        nil
 
     HolyHarvestPromptDisconnect(
         runtime.WorkspaceConnection
     )
 
-    runtime.GardenConnection =
-        nil
+    HolyHarvestPromptDisconnect(
+        runtime.PromptShownConnection
+    )
 
     runtime.WorkspaceConnection =
         nil
 
-    runtime.GardenRoot =
+    runtime.PromptShownConnection =
         nil
+
+    for gardenRoot,
+        connection in pairs(
+        runtime.RootConnections
+        or {}
+    ) do
+
+        HolyHarvestPromptDisconnect(
+            connection
+        )
+
+        runtime.RootConnections[gardenRoot] =
+            nil
+    end
 
     HolyHarvestPromptRestoreAll()
 
@@ -10607,15 +10909,7 @@ function HolyHarvestPromptStart(reason)
 
     if runtime.Running == true then
 
-        local gardenRoot =
-            HolyHarvestPromptFindGarden()
-
-        if gardenRoot then
-
-            HolyHarvestPromptBindGarden(
-                gardenRoot
-            )
-        end
+        HolyHarvestPromptBindCurrentGardens()
 
         return true
     end
@@ -10627,8 +10921,8 @@ function HolyHarvestPromptStart(reason)
         workspace.ChildAdded:Connect(
             function(child)
 
-                if child.Name == "_Gardens"
-                or child.Name == "Gardens" then
+                if child.Name == "Gardens"
+                or child.Name == "_Gardens" then
 
                     HolyHarvestPromptBindGarden(
                         child
@@ -10637,15 +10931,75 @@ function HolyHarvestPromptStart(reason)
             end
         )
 
-    local gardenRoot =
-        HolyHarvestPromptFindGarden()
-
-    if gardenRoot then
-
-        HolyHarvestPromptBindGarden(
-            gardenRoot
+    local proximityPromptService =
+        game:GetService(
+            "ProximityPromptService"
         )
-    end
+
+    runtime.PromptShownConnection =
+        proximityPromptService.PromptShown:Connect(
+            function(prompt)
+
+                if runtime.Running == true
+                and HolyHarvestPromptIsHarvest(
+                    prompt
+                ) then
+
+                    HolyHarvestPromptApply(
+                        prompt
+                    )
+                end
+            end
+        )
+
+    HolyHarvestPromptBindCurrentGardens()
+
+    runtime.WatchdogToken =
+        {}
+
+    local watchdogToken =
+        runtime.WatchdogToken
+
+    task.spawn(function()
+
+        while runtime.Running == true
+        and runtime.WatchdogToken == watchdogToken do
+
+            for prompt in pairs(
+                runtime.OriginalStates
+            ) do
+
+                if typeof(prompt) ~= "Instance"
+                or prompt.Parent == nil then
+
+                    HolyHarvestPromptDisconnectList(
+                        runtime.PromptConnections[
+                            prompt
+                        ]
+                    )
+
+                    runtime.PromptConnections[prompt] =
+                        nil
+
+                    runtime.OriginalStates[prompt] =
+                        nil
+
+                    runtime.Applying[prompt] =
+                        nil
+
+                else
+
+                    HolyHarvestPromptApply(
+                        prompt
+                    )
+                end
+            end
+
+            task.wait(
+                0.25
+            )
+        end
+    end)
 
     return true
 end
