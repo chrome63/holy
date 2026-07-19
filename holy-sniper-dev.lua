@@ -101925,7 +101925,7 @@ function HolyMailCreateHud()
                 Size =
                     UDim2.fromOffset(
                         920,
-                        620
+                        700
                     ),
 
                 BackgroundColor3 =
@@ -101994,7 +101994,7 @@ function HolyMailCreateHud()
             math.clamp(
                 math.min(
                     viewport.X / 980,
-                    viewport.Y / 690
+                    viewport.Y / 770
                 ),
                 0.62,
                 1
@@ -102270,17 +102270,15 @@ function HolyMailCreateHud()
                     1,
 
                 Size =
-                    UDim2.new(
-                        1,
-                        -24,
-                        1,
-                        -80
+                    UDim2.fromOffset(
+                        896,
+                        548
                     ),
 
                 Position =
                     UDim2.fromOffset(
                         12,
-                        72
+                        144
                     ),
             },
             window
@@ -105570,8 +105568,41 @@ function HolyMailCreateHud()
         window.Size
 
     local function applyMinimized()
-        content.Visible =
+        local expanded =
             not state.Minimized
+
+        if type(state.PageFrames) == "table" then
+            for pageName, pageFrame in pairs(
+                state.PageFrames
+            ) do
+                if typeof(pageFrame) == "Instance" then
+                    pageFrame.Visible =
+                        expanded
+                        and pageName
+                            == (
+                                state.ActiveTab
+                                or "Send"
+                            )
+                end
+            end
+        else
+            content.Visible =
+                expanded
+        end
+
+        if typeof(state.TabBar) == "Instance" then
+            state.TabBar.Visible =
+                expanded
+        end
+
+        if typeof(state.SendModeBar) == "Instance" then
+            state.SendModeBar.Visible =
+                expanded
+                and (
+                    state.ActiveTab
+                    or "Send"
+                ) == "Send"
+        end
 
         overlay.Visible =
             false
@@ -105969,6 +106000,217 @@ function HolyMailCreateHud()
     state.ExactQueues =
         {}
 
+    state.ActiveTab =
+        "Send"
+
+    local tabBar =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Header,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        0,
+                        0,
+                        38
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        64
+                    ),
+            },
+            window
+        )
+
+    create(
+        "Frame",
+        {
+            BackgroundColor3 =
+                color.Border,
+
+            BorderSizePixel =
+                0,
+
+            Size =
+                UDim2.new(
+                    1,
+                    0,
+                    0,
+                    1
+                ),
+
+            Position =
+                UDim2.new(
+                    0,
+                    0,
+                    1,
+                    -1
+                ),
+        },
+        tabBar
+    )
+
+    local tabButtons =
+        {}
+
+    local tabLines =
+        {}
+
+    local function addMainTab(
+        tabName,
+        label,
+        x
+    )
+        local tabButton =
+            create(
+                "TextButton",
+                {
+                    AutoButtonColor =
+                        false,
+
+                    BackgroundTransparency =
+                        1,
+
+                    Text =
+                        label,
+
+                    TextColor3 =
+                        color.Muted,
+
+                    TextSize =
+                        11,
+
+                    Font =
+                        Enum.Font.GothamSemibold,
+
+                    Size =
+                        UDim2.fromOffset(
+                            90,
+                            37
+                        ),
+
+                    Position =
+                        UDim2.fromOffset(
+                            x,
+                            0
+                        ),
+                },
+                tabBar
+            )
+
+        local selectedLine =
+            create(
+                "Frame",
+                {
+                    BackgroundColor3 =
+                        color.Accent,
+
+                    BorderSizePixel =
+                        0,
+
+                    Size =
+                        UDim2.fromOffset(
+                            58,
+                            3
+                        ),
+
+                    Position =
+                        UDim2.new(
+                            0.5,
+                            -29,
+                            1,
+                            -3
+                        ),
+
+                    Visible =
+                        false,
+                },
+                tabButton
+            )
+
+        round(
+            selectedLine,
+            3
+        )
+
+        tabButtons[tabName] =
+            tabButton
+
+        tabLines[tabName] =
+            selectedLine
+    end
+
+    addMainTab(
+        "Send",
+        "Send",
+        14
+    )
+
+    addMainTab(
+        "Inbox",
+        "Inbox",
+        104
+    )
+
+    addMainTab(
+        "History",
+        "History",
+        194
+    )
+
+    addMainTab(
+        "Settings",
+        "Settings",
+        284
+    )
+
+    local sendModeBar =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.fromOffset(
+                        896,
+                        30
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        106
+                    ),
+            },
+            window
+        )
+
+    text(
+        sendModeBar,
+        "SEND MODE",
+        UDim2.fromOffset(
+            82,
+            28
+        ),
+        UDim2.fromOffset(
+            2,
+            1
+        ),
+        9,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
     local modeSwitcher =
         create(
             "Frame",
@@ -105978,26 +106220,26 @@ function HolyMailCreateHud()
 
                 Size =
                     UDim2.fromOffset(
-                        260,
-                        34
+                        216,
+                        28
                     ),
 
                 Position =
                     UDim2.fromOffset(
-                        280,
-                        15
+                        88,
+                        1
                     ),
             },
-            header
+            sendModeBar
         )
 
     local valueModeButton =
         button(
             modeSwitcher,
-            "Send by Value",
+            "By Value",
             UDim2.fromOffset(
-                126,
-                34
+                104,
+                28
             ),
             UDim2.fromOffset(
                 0,
@@ -106011,11 +106253,11 @@ function HolyMailCreateHud()
             modeSwitcher,
             "Pick Items",
             UDim2.fromOffset(
-                126,
-                34
+                104,
+                28
             ),
             UDim2.fromOffset(
-                134,
+                112,
                 0
             ),
             false
@@ -106027,11 +106269,873 @@ function HolyMailCreateHud()
     itemModeButton.TextSize =
         10
 
-    subtitle.Size =
-        UDim2.fromOffset(
-            195,
-            18
+    local inboxPage =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.fromOffset(
+                        896,
+                        580
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        110
+                    ),
+
+                Visible =
+                    false,
+            },
+            window
         )
+
+    local inboxCard =
+        card(
+            inboxPage,
+            UDim2.fromOffset(
+                896,
+                580
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    text(
+        inboxCard,
+        "INBOX",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            18,
+            15
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local inboxCountLabel =
+        text(
+            inboxCard,
+            "0 / 100 mail",
+            UDim2.fromOffset(
+                340,
+                42
+            ),
+            UDim2.fromOffset(
+                18,
+                42
+            ),
+            27,
+            color.Text,
+            nil,
+            Enum.Font.GothamBold
+        )
+
+    local inboxStatusLabel =
+        text(
+            inboxCard,
+            "Checking inbox...",
+            UDim2.fromOffset(
+                600,
+                24
+            ),
+            UDim2.fromOffset(
+                18,
+                84
+            ),
+            11,
+            color.Muted
+        )
+
+    local inboxAutoButton =
+        button(
+            inboxCard,
+            "Auto Claim: OFF",
+            UDim2.fromOffset(
+                270,
+                46
+            ),
+            UDim2.fromOffset(
+                18,
+                126
+            ),
+            false
+        )
+
+    local inboxRefreshButton =
+        button(
+            inboxCard,
+            "Refresh Inbox",
+            UDim2.fromOffset(
+                270,
+                46
+            ),
+            UDim2.fromOffset(
+                306,
+                126
+            ),
+            false
+        )
+
+    local inboxClaimButton =
+        button(
+            inboxCard,
+            "Claim All Now",
+            UDim2.fromOffset(
+                270,
+                46
+            ),
+            UDim2.fromOffset(
+                594,
+                126
+            ),
+            true
+        )
+
+    text(
+        inboxCard,
+        "Mail is claimed one at a time automatically. Rapid claims do not need the 10-second sending cooldown.",
+        UDim2.new(
+            1,
+            -36,
+            0,
+            48
+        ),
+        UDim2.fromOffset(
+            18,
+            192
+        ),
+        11,
+        color.Muted
+    )
+
+    local inboxClaimedLabel =
+        text(
+            inboxCard,
+            "Claimed this session: 0",
+            UDim2.fromOffset(
+                400,
+                24
+            ),
+            UDim2.fromOffset(
+                18,
+                248
+            ),
+            12,
+            color.Text,
+            nil,
+            Enum.Font.GothamSemibold
+        )
+
+    local inboxInfo =
+        card(
+            inboxCard,
+            UDim2.new(
+                1,
+                -36,
+                0,
+                220
+            ),
+            UDim2.fromOffset(
+                18,
+                300
+            )
+        )
+
+    text(
+        inboxInfo,
+        "HOW AUTO CLAIM WORKS",
+        UDim2.fromOffset(
+            240,
+            20
+        ),
+        UDim2.fromOffset(
+            16,
+            14
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    text(
+        inboxInfo,
+        "When enabled, HOLY checks your mailbox using your selected interval and claims every item gift it finds.",
+        UDim2.new(
+            1,
+            -32,
+            0,
+            70
+        ),
+        UDim2.fromOffset(
+            16,
+            44
+        ),
+        12,
+        color.Text
+    )
+
+    text(
+        inboxInfo,
+        "Inbox capacity: 100 mail",
+        UDim2.fromOffset(
+            300,
+            24
+        ),
+        UDim2.fromOffset(
+            16,
+            130
+        ),
+        11,
+        color.Muted
+    )
+
+    text(
+        inboxInfo,
+        "Current check interval: "
+            .. tostring(
+                HOLY_MAIL_STATE.InboxInterval
+                or "2 seconds"
+            ),
+        UDim2.fromOffset(
+            400,
+            24
+        ),
+        UDim2.fromOffset(
+            16,
+            158
+        ),
+        11,
+        color.Muted
+    )
+
+    local historyPage =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.fromOffset(
+                        896,
+                        580
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        110
+                    ),
+
+                Visible =
+                    false,
+            },
+            window
+        )
+
+    local historyCard =
+        card(
+            historyPage,
+            UDim2.fromOffset(
+                896,
+                580
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    text(
+        historyCard,
+        "HISTORY",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            18,
+            15
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    text(
+        historyCard,
+        "No delivery history yet",
+        UDim2.new(
+            1,
+            -36,
+            0,
+            34
+        ),
+        UDim2.fromOffset(
+            18,
+            224
+        ),
+        18,
+        color.Text,
+        Enum.TextXAlignment.Center,
+        Enum.Font.GothamSemibold
+    )
+
+    text(
+        historyCard,
+        "Completed deliveries will appear here once history tracking is connected.",
+        UDim2.new(
+            1,
+            -36,
+            0,
+            26
+        ),
+        UDim2.fromOffset(
+            18,
+            262
+        ),
+        11,
+        color.Muted,
+        Enum.TextXAlignment.Center
+    )
+
+    local settingsPage =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.fromOffset(
+                        896,
+                        580
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        110
+                    ),
+
+                Visible =
+                    false,
+            },
+            window
+        )
+
+    local settingsCard =
+        card(
+            settingsPage,
+            UDim2.fromOffset(
+                896,
+                580
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    text(
+        settingsCard,
+        "SETTINGS",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            18,
+            15
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    text(
+        settingsCard,
+        "HUD",
+        UDim2.fromOffset(
+            120,
+            24
+        ),
+        UDim2.fromOffset(
+            18,
+            54
+        ),
+        14,
+        color.Text,
+        nil,
+        Enum.Font.GothamSemibold
+    )
+
+    local settingsScaleButton =
+        button(
+            settingsCard,
+            "HUD Scale: "
+                .. tostring(
+                    HOLY_MAIL_STATE.HudScale
+                    or "100%"
+                ),
+            UDim2.fromOffset(
+                270,
+                46
+            ),
+            UDim2.fromOffset(
+                18,
+                92
+            ),
+            false
+        )
+
+    local settingsMinimizedButton =
+        button(
+            settingsCard,
+            "Start Minimized: "
+                .. (
+                    HOLY_MAIL_STATE.StartMinimized
+                        and "ON"
+                        or "OFF"
+                ),
+            UDim2.fromOffset(
+                270,
+                46
+            ),
+            UDim2.fromOffset(
+                306,
+                92
+            ),
+            false
+        )
+
+    local settingsResetButton =
+        button(
+            settingsCard,
+            "Reset HUD Position",
+            UDim2.fromOffset(
+                270,
+                46
+            ),
+            UDim2.fromOffset(
+                594,
+                92
+            ),
+            false
+        )
+
+    text(
+        settingsCard,
+        "Click HUD Scale to cycle between 60%, 70%, 80%, 90%, 100%, and 110%.",
+        UDim2.new(
+            1,
+            -36,
+            0,
+            30
+        ),
+        UDim2.fromOffset(
+            18,
+            158
+        ),
+        11,
+        color.Muted
+    )
+
+    local settingsInfo =
+        card(
+            settingsCard,
+            UDim2.new(
+                1,
+                -36,
+                0,
+                250
+            ),
+            UDim2.fromOffset(
+                18,
+                214
+            )
+        )
+
+    text(
+        settingsInfo,
+        "MAIL LIMITS",
+        UDim2.fromOffset(
+            180,
+            20
+        ),
+        UDim2.fromOffset(
+            16,
+            14
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    text(
+        settingsInfo,
+        "20 items per send",
+        UDim2.fromOffset(
+            300,
+            26
+        ),
+        UDim2.fromOffset(
+            16,
+            50
+        ),
+        12,
+        color.Text
+    )
+
+    text(
+        settingsInfo,
+        "10.05 seconds between accepted sends",
+        UDim2.fromOffset(
+            400,
+            26
+        ),
+        UDim2.fromOffset(
+            16,
+            84
+        ),
+        12,
+        color.Text
+    )
+
+    text(
+        settingsInfo,
+        "50 accepted sends per day",
+        UDim2.fromOffset(
+            300,
+            26
+        ),
+        UDim2.fromOffset(
+            16,
+            118
+        ),
+        12,
+        color.Text
+    )
+
+    text(
+        settingsInfo,
+        "The daily counter is locally tracked because the game does not expose the sender's daily usage.",
+        UDim2.new(
+            1,
+            -32,
+            0,
+            48
+        ),
+        UDim2.fromOffset(
+            16,
+            166
+        ),
+        11,
+        color.Muted
+    )
+
+    local function refreshInboxPage()
+        local count =
+            math.max(
+                0,
+                math.floor(
+                    tonumber(
+                        HOLY_MAIL_RUNTIME.InboxCount
+                    )
+                    or 0
+                )
+            )
+
+        inboxCountLabel.Text =
+            tostring(count)
+            .. " / "
+            .. tostring(
+                HOLY_MAIL_INBOX_CAPACITY
+            )
+            .. " mail"
+
+        inboxStatusLabel.Text =
+            tostring(
+                HOLY_MAIL_RUNTIME.InboxStatus
+                or "Inbox ready"
+            )
+
+        inboxClaimedLabel.Text =
+            "Claimed this session: "
+            .. tostring(
+                HOLY_MAIL_RUNTIME.InboxClaimed
+                or 0
+            )
+
+        local autoClaim =
+            HOLY_MAIL_STATE.AutoClaim == true
+
+        inboxAutoButton.Text =
+            "Auto Claim: "
+            .. (
+                autoClaim
+                    and "ON"
+                    or "OFF"
+            )
+
+        inboxAutoButton.BackgroundColor3 =
+            autoClaim
+                and color.Accent
+                or color.Field
+    end
+
+    local function showMainPage(
+        tabName
+    )
+        if state.Running
+            and tabName ~= state.ActiveTab
+        then
+            return
+        end
+
+        local validTabs = {
+            Send = true,
+            Inbox = true,
+            History = true,
+            Settings = true,
+        }
+
+        if validTabs[tabName] ~= true then
+            tabName =
+                "Send"
+        end
+
+        state.ActiveTab =
+            tabName
+
+        local expanded =
+            not state.Minimized
+
+        content.Visible =
+            expanded
+            and tabName == "Send"
+
+        sendModeBar.Visible =
+            expanded
+            and tabName == "Send"
+
+        inboxPage.Visible =
+            expanded
+            and tabName == "Inbox"
+
+        historyPage.Visible =
+            expanded
+            and tabName == "History"
+
+        settingsPage.Visible =
+            expanded
+            and tabName == "Settings"
+
+        for currentName, currentButton in pairs(
+            tabButtons
+        ) do
+            local selected =
+                currentName == tabName
+
+            currentButton.TextColor3 =
+                selected
+                    and color.Accent
+                    or color.Muted
+
+            currentButton.Font =
+                selected
+                    and Enum.Font.GothamBold
+                    or Enum.Font.GothamSemibold
+
+            tabLines[currentName].Visible =
+                selected
+        end
+
+        if tabName == "Send" then
+            subtitle.Text =
+                state.MailMode == "Items"
+                    and "Pick exact items"
+                    or "Send fruits by value"
+        elseif tabName == "Inbox" then
+            subtitle.Text =
+                "Claim incoming mail"
+
+            refreshInboxPage()
+
+            task.spawn(function()
+                HolyMailRefreshInboxCount()
+
+                if inboxPage.Parent ~= nil then
+                    refreshInboxPage()
+                end
+            end)
+        elseif tabName == "History" then
+            subtitle.Text =
+                "Recent deliveries"
+        else
+            subtitle.Text =
+                "Mail preferences"
+        end
+    end
+
+    state.TabBar =
+        tabBar
+
+    state.SendModeBar =
+        sendModeBar
+
+    state.PageFrames = {
+        Send =
+            content,
+
+        Inbox =
+            inboxPage,
+
+        History =
+            historyPage,
+
+        Settings =
+            settingsPage,
+    }
+
+    for tabName, tabButton in pairs(
+        tabButtons
+    ) do
+        local selectedTab =
+            tabName
+
+        tabButton.MouseButton1Click:Connect(function()
+            showMainPage(
+                selectedTab
+            )
+        end)
+    end
+
+    inboxAutoButton.MouseButton1Click:Connect(function()
+        HolyMailSetAutoClaim(
+            HOLY_MAIL_STATE.AutoClaim
+                ~= true
+        )
+
+        refreshInboxPage()
+    end)
+
+    inboxRefreshButton.MouseButton1Click:Connect(function()
+        inboxStatusLabel.Text =
+            "Checking inbox..."
+
+        task.spawn(function()
+            HolyMailRefreshInboxCount()
+
+            if inboxPage.Parent ~= nil then
+                refreshInboxPage()
+            end
+        end)
+    end)
+
+    inboxClaimButton.MouseButton1Click:Connect(function()
+        inboxStatusLabel.Text =
+            "Claiming mail..."
+
+        task.spawn(function()
+            HolyMailClaimInbox(
+                true
+            )
+
+            if inboxPage.Parent ~= nil then
+                refreshInboxPage()
+            end
+        end)
+    end)
+
+    settingsScaleButton.MouseButton1Click:Connect(function()
+        local choices = {
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
+            "110%",
+        }
+
+        local current =
+            HolyMailNormalizeScale(
+                HOLY_MAIL_STATE.HudScale
+                or "100%"
+            )
+
+        local nextIndex =
+            1
+
+        for index, choice in ipairs(
+            choices
+        ) do
+            if choice == current then
+                nextIndex =
+                    index % #choices
+                    + 1
+
+                break
+            end
+        end
+
+        local newScale =
+            HolyMailSetHudScale(
+                choices[nextIndex]
+            )
+
+        settingsScaleButton.Text =
+            "HUD Scale: "
+            .. tostring(newScale)
+    end)
+
+    settingsMinimizedButton.MouseButton1Click:Connect(function()
+        HOLY_MAIL_STATE.StartMinimized =
+            HOLY_MAIL_STATE.StartMinimized
+                ~= true
+
+        settingsMinimizedButton.Text =
+            "Start Minimized: "
+            .. (
+                HOLY_MAIL_STATE.StartMinimized
+                    and "ON"
+                    or "OFF"
+            )
+
+        HolyMailSaveSettings()
+    end)
+
+    settingsResetButton.MouseButton1Click:Connect(function()
+        HolyMailResetPosition()
+
+        HolyNotify(
+            "HOLY Mail",
+            "HUD position reset.",
+            3
+        )
+    end)
+
+    refreshInboxPage()
+
+    showMainPage(
+        "Send"
+    )
 
     local itemPanel =
         create(
@@ -109763,10 +110867,12 @@ function HolyMailCreateHud()
             itemMode
         )
 
-        subtitle.Text =
-            itemMode
-                and "Pick exact items"
-                or "Send fruits by value"
+        if state.ActiveTab == "Send" then
+            subtitle.Text =
+                itemMode
+                    and "Pick exact items"
+                    or "Send fruits by value"
+        end
 
         if itemMode then
             state.ExactView =
@@ -109888,15 +110994,12 @@ function HolyMailCreateHud()
         )
     end)
 
-    content:GetPropertyChangedSignal(
-        "Visible"
-    ):Connect(function()
-        modeSwitcher.Visible =
-            content.Visible
-    end)
-
     applyMailMode(
         "Value"
+    )
+
+    showMainPage(
+        state.ActiveTab
     )
 
     updateQuota()
