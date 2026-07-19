@@ -105935,6 +105935,3907 @@ function HolyMailCreateHud()
         end)
     end
 
+    ------------------------------------------------------------------------
+    -- PICK ITEMS MODE
+    ------------------------------------------------------------------------
+
+    state.MailMode =
+        "Value"
+
+    state.ExactRecipients =
+        {}
+
+    state.ExactSelectedUserId =
+        nil
+
+    state.ExactCategory =
+        "Fruits"
+
+    state.ExactSearch =
+        ""
+
+    state.ExactProtect =
+        true
+
+    state.ExactView =
+        "Owned"
+
+    state.ExactRecords =
+        {}
+
+    state.ExactRecordMap =
+        {}
+
+    state.ExactQueues =
+        {}
+
+    local modeSwitcher =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.fromOffset(
+                        260,
+                        34
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        280,
+                        15
+                    ),
+            },
+            header
+        )
+
+    local valueModeButton =
+        button(
+            modeSwitcher,
+            "Send by Value",
+            UDim2.fromOffset(
+                126,
+                34
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            ),
+            true
+        )
+
+    local itemModeButton =
+        button(
+            modeSwitcher,
+            "Pick Items",
+            UDim2.fromOffset(
+                126,
+                34
+            ),
+            UDim2.fromOffset(
+                134,
+                0
+            ),
+            false
+        )
+
+    valueModeButton.TextSize =
+        10
+
+    itemModeButton.TextSize =
+        10
+
+    subtitle.Size =
+        UDim2.fromOffset(
+            195,
+            18
+        )
+
+    local itemPanel =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Back,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.fromScale(
+                        1,
+                        1
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                Active =
+                    true,
+
+                Visible =
+                    false,
+
+                ZIndex =
+                    10,
+            },
+            content
+        )
+
+    local itemRecipientCard =
+        card(
+            itemPanel,
+            UDim2.fromOffset(
+                430,
+                212
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    text(
+        itemRecipientCard,
+        "RECIPIENTS",
+        UDim2.fromOffset(
+            150,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local itemRecipientCount =
+        text(
+            itemRecipientCard,
+            "0 recipients",
+            UDim2.fromOffset(
+                130,
+                20
+            ),
+            UDim2.new(
+                1,
+                -144,
+                0,
+                9
+            ),
+            10,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local itemRecipientBox =
+        box(
+            itemRecipientCard,
+            "Username or User ID",
+            UDim2.fromOffset(
+                306,
+                40
+            ),
+            UDim2.fromOffset(
+                14,
+                35
+            )
+        )
+
+    local itemRecipientAdd =
+        button(
+            itemRecipientCard,
+            "+ Add",
+            UDim2.fromOffset(
+                88,
+                40
+            ),
+            UDim2.fromOffset(
+                328,
+                35
+            ),
+            true
+        )
+
+    local itemRecipientList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        0,
+                        123
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        82
+                    ),
+
+                CanvasSize =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                AutomaticCanvasSize =
+                    Enum.AutomaticSize.Y,
+
+                ScrollBarThickness =
+                    3,
+
+                ScrollBarImageColor3 =
+                    color.Border,
+            },
+            itemRecipientCard
+        )
+
+    local itemRecipientLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding =
+                    UDim.new(
+                        0,
+                        5
+                    ),
+            },
+            itemRecipientList
+        )
+
+    local itemOptionsCard =
+        card(
+            itemPanel,
+            UDim2.fromOffset(
+                454,
+                212
+            ),
+            UDim2.fromOffset(
+                442,
+                0
+            )
+        )
+
+    text(
+        itemOptionsCard,
+        "CHOOSE ITEMS",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local itemInventoryCount =
+        text(
+            itemOptionsCard,
+            "Not scanned",
+            UDim2.fromOffset(
+                220,
+                20
+            ),
+            UDim2.new(
+                1,
+                -234,
+                0,
+                9
+            ),
+            10,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local itemCategoryNames = {
+        "Fruits",
+        "Seeds",
+        "Gear",
+        "Props",
+        "Pets",
+    }
+
+    local itemCategoryButtons =
+        {}
+
+    for index, categoryName in ipairs(
+        itemCategoryNames
+    ) do
+        local categoryButton =
+            button(
+                itemOptionsCard,
+                categoryName,
+                UDim2.fromOffset(
+                    80,
+                    30
+                ),
+                UDim2.fromOffset(
+                    14 + (
+                        index - 1
+                    ) * 85,
+                    36
+                ),
+                categoryName == state.ExactCategory
+            )
+
+        categoryButton.TextSize =
+            9
+
+        itemCategoryButtons[categoryName] =
+            categoryButton
+    end
+
+    local itemSearchBox =
+        box(
+            itemOptionsCard,
+            "Search owned items",
+            UDim2.fromOffset(
+                292,
+                38
+            ),
+            UDim2.fromOffset(
+                14,
+                75
+            )
+        )
+
+    local itemRefreshButton =
+        button(
+            itemOptionsCard,
+            "Refresh",
+            UDim2.fromOffset(
+                126,
+                38
+            ),
+            UDim2.fromOffset(
+                314,
+                75
+            ),
+            true
+        )
+
+    local itemProtectButton =
+        button(
+            itemOptionsCard,
+            "Skip favorites: ON",
+            UDim2.fromOffset(
+                208,
+                40
+            ),
+            UDim2.fromOffset(
+                14,
+                122
+            ),
+            false
+        )
+
+    local itemQueueButton =
+        button(
+            itemOptionsCard,
+            "Show selected",
+            UDim2.fromOffset(
+                210,
+                40
+            ),
+            UDim2.fromOffset(
+                230,
+                122
+            ),
+            false
+        )
+
+    local itemOptionsInfo =
+        text(
+            itemOptionsCard,
+            "Only owned items are shown. Eggs will be added later.",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                28
+            ),
+            UDim2.fromOffset(
+                14,
+                171
+            ),
+            9,
+            color.Muted
+        )
+
+    itemOptionsInfo.TextWrapped =
+        true
+
+    local itemBrowseCard =
+        card(
+            itemPanel,
+            UDim2.fromOffset(
+                594,
+                324
+            ),
+            UDim2.fromOffset(
+                0,
+                224
+            )
+        )
+
+    local itemBrowseTitle =
+        text(
+            itemBrowseCard,
+            "OWNED ITEMS",
+            UDim2.fromOffset(
+                180,
+                20
+            ),
+            UDim2.fromOffset(
+                14,
+                9
+            ),
+            10,
+            color.Muted,
+            nil,
+            Enum.Font.GothamBold
+        )
+
+    local itemBrowseCount =
+        text(
+            itemBrowseCard,
+            "0 items",
+            UDim2.fromOffset(
+                220,
+                20
+            ),
+            UDim2.new(
+                1,
+                -234,
+                0,
+                9
+            ),
+            10,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local itemBrowseList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        1,
+                        -42
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        35
+                    ),
+
+                CanvasSize =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                AutomaticCanvasSize =
+                    Enum.AutomaticSize.Y,
+
+                ScrollBarThickness =
+                    3,
+
+                ScrollBarImageColor3 =
+                    color.Border,
+            },
+            itemBrowseCard
+        )
+
+    local itemBrowseLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding =
+                    UDim.new(
+                        0,
+                        6
+                    ),
+            },
+            itemBrowseList
+        )
+
+    local itemSummaryCard =
+        card(
+            itemPanel,
+            UDim2.fromOffset(
+                290,
+                324
+            ),
+            UDim2.fromOffset(
+                606,
+                224
+            )
+        )
+
+    text(
+        itemSummaryCard,
+        "SUMMARY",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local itemSummaryText =
+        text(
+            itemSummaryCard,
+            "People: 0\nItems: 0\nSends: 0\nKnown sendable: 0\nTime: Ready",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                125
+            ),
+            UDim2.fromOffset(
+                14,
+                39
+            ),
+            11,
+            color.Text
+        )
+
+    itemSummaryText.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    local itemMessageText =
+        text(
+            itemSummaryCard,
+            "Add a recipient, choose them, then add items.",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                57
+            ),
+            UDim2.fromOffset(
+                14,
+                171
+            ),
+            10,
+            color.Muted
+        )
+
+    itemMessageText.TextWrapped =
+        true
+
+    itemMessageText.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    local itemProgressTrack =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Hover,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        0,
+                        6
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        237
+                    ),
+            },
+            itemSummaryCard
+        )
+
+    round(
+        itemProgressTrack,
+        3
+    )
+
+    local itemProgressFill =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Accent,
+
+                Size =
+                    UDim2.fromScale(
+                        0,
+                        1
+                    ),
+            },
+            itemProgressTrack
+        )
+
+    round(
+        itemProgressFill,
+        3
+    )
+
+    local itemSendButton =
+        button(
+            itemSummaryCard,
+            "Review and send",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                58
+            ),
+            UDim2.fromOffset(
+                14,
+                252
+            ),
+            true
+        )
+
+    local function setSelectedButton(
+        targetButton,
+        selected
+    )
+        targetButton.BackgroundColor3 =
+            selected
+                and color.Accent
+                or color.Field
+
+        local stroke =
+            targetButton:FindFirstChildOfClass(
+                "UIStroke"
+            )
+
+        if stroke then
+            stroke.Color =
+                selected
+                    and Color3.fromRGB(
+                        83,
+                        148,
+                        247
+                    )
+                    or color.Border
+        end
+    end
+
+    local function cleanItemKey(value)
+        return tostring(
+            value or ""
+        )
+            :lower()
+            :gsub(
+                "[%s%p_]",
+                ""
+            )
+    end
+
+    local function cleanItemName(value)
+        local result =
+            tostring(
+                value or ""
+            )
+
+        result =
+            result:gsub(
+                "%s*%[%s*[xX]%d+%s*%]%s*$",
+                ""
+            )
+
+        result =
+            result:gsub(
+                "%s+[xX]%d+%s*$",
+                ""
+            )
+
+        result =
+            result:gsub(
+                "^%s+",
+                ""
+            )
+
+        result =
+            result:gsub(
+                "%s+$",
+                ""
+            )
+
+        return result
+    end
+
+    local function firstText(...)
+        for index = 1, select("#", ...) do
+            local value =
+                select(
+                    index,
+                    ...
+                )
+
+            if type(value) == "string" then
+                local cleaned =
+                    cleanItemName(
+                        value
+                    )
+
+                if cleaned ~= "" then
+                    return cleaned
+                end
+            end
+        end
+
+        return ""
+    end
+
+    local function walkCatalog(
+        value,
+        callback,
+        depth,
+        seen
+    )
+        if type(value) ~= "table" then
+            return
+        end
+
+        depth =
+            depth or 0
+
+        if depth > 6 then
+            return
+        end
+
+        seen =
+            seen or {}
+
+        if seen[value] then
+            return
+        end
+
+        seen[value] =
+            true
+
+        callback(value)
+
+        for _, child in pairs(value) do
+            if type(child) == "table" then
+                walkCatalog(
+                    child,
+                    callback,
+                    depth + 1,
+                    seen
+                )
+            end
+        end
+    end
+
+    local function loadOwnedCatalogs()
+        local catalogs = {
+            Seeds = {},
+            SeedPacks = {},
+            Gear = {},
+            Props = {},
+            Crates = {},
+        }
+
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        if not sharedModules then
+            return catalogs
+        end
+
+        local function loadModule(
+            moduleName,
+            callback
+        )
+            local module =
+                sharedModules:FindFirstChild(
+                    moduleName
+                )
+
+            if not module
+                or not module:IsA(
+                    "ModuleScript"
+                )
+            then
+                return
+            end
+
+            local ok,
+                result =
+                pcall(
+                    require,
+                    module
+                )
+
+            if not ok
+                or type(result) ~= "table"
+            then
+                return
+            end
+
+            walkCatalog(
+                result,
+                callback
+            )
+        end
+
+        loadModule(
+            "SeedData",
+            function(row)
+                local name =
+                    firstText(
+                        row.SeedName,
+                        row.ItemName,
+                        row.DisplayName,
+                        row.Name
+                    )
+
+                if name ~= "" then
+                    catalogs.Seeds[
+                        cleanItemKey(name)
+                    ] =
+                        name
+                end
+            end
+        )
+
+        loadModule(
+            "SeedPackData",
+            function(row)
+                local name =
+                    firstText(
+                        row.SeedPackName,
+                        row.PackName,
+                        row.ItemName,
+                        row.DisplayName,
+                        row.Name
+                    )
+
+                if name ~= "" then
+                    catalogs.SeedPacks[
+                        cleanItemKey(name)
+                    ] =
+                        name
+                end
+            end
+        )
+
+        loadModule(
+            "GearShopData",
+            function(row)
+                local name =
+                    firstText(
+                        row.ItemName
+                    )
+
+                if name ~= "" then
+                    catalogs.Gear[
+                        cleanItemKey(name)
+                    ] =
+                        row
+                end
+            end
+        )
+
+        loadModule(
+            "PropData",
+            function(row)
+                local name =
+                    firstText(
+                        row.PropName
+                    )
+
+                if name ~= "" then
+                    catalogs.Props[
+                        cleanItemKey(name)
+                    ] =
+                        row
+                end
+            end
+        )
+
+        loadModule(
+            "CrateData",
+            function(row)
+                local name =
+                    firstText(
+                        row.CrateName,
+                        row.ItemName
+                    )
+
+                if name ~= "" then
+                    catalogs.Crates[
+                        cleanItemKey(name)
+                    ] =
+                        row
+                end
+            end
+        )
+
+        local crateFolder =
+            sharedModules:FindFirstChild(
+                "CrateData"
+            )
+
+        if crateFolder then
+            for _, child in ipairs(
+                crateFolder:GetChildren()
+            ) do
+                if child:IsA(
+                    "ModuleScript"
+                ) then
+                    catalogs.Crates[
+                        cleanItemKey(
+                            child.Name
+                        )
+                    ] = {
+                        CrateName =
+                            child.Name,
+                    }
+                end
+            end
+        end
+
+        return catalogs
+    end
+
+    local function readOwnedCount(
+        item,
+        unique
+    )
+        if unique then
+            return 1
+        end
+
+        local count =
+            tonumber(
+                item:GetAttribute(
+                    "Count"
+                )
+                or item:GetAttribute(
+                    "Amount"
+                )
+                or item:GetAttribute(
+                    "Quantity"
+                )
+                or item:GetAttribute(
+                    "Stack"
+                )
+                or item:GetAttribute(
+                    "Uses"
+                )
+            )
+            or 1
+
+        return math.max(
+            1,
+            math.floor(
+                count
+            )
+        )
+    end
+
+    local function readOwnedFavorite(item)
+        return item:GetAttribute(
+            "IsFavorite"
+        ) == true
+            or item:GetAttribute(
+                "Favorite"
+            ) == true
+            or item:GetAttribute(
+                "Favorited"
+            ) == true
+    end
+
+    local function classifyOwnedItem(
+        item,
+        catalogs
+    )
+        if not (
+            item:IsA("Tool")
+            or item:IsA("Configuration")
+        ) then
+            return nil
+        end
+
+        local attributes =
+            item:GetAttributes()
+
+        local mainCategory =
+            firstText(
+                attributes.MainCategory,
+                attributes.Category
+            )
+
+        local itemType =
+            firstText(
+                attributes.ItemType,
+                attributes.Type
+            )
+
+        local mainKey =
+            cleanItemKey(
+                mainCategory
+            )
+
+        local typeKey =
+            cleanItemKey(
+                itemType
+            )
+
+        if attributes.HarvestedFruit == true then
+            local itemKey =
+                firstText(
+                    attributes.Id,
+                    attributes.FruitId,
+                    attributes.FruitID,
+                    attributes.UUID,
+                    attributes.Guid
+                )
+
+            if itemKey == "" then
+                return nil
+            end
+
+            local name =
+                firstText(
+                    attributes.FruitName,
+                    attributes.Fruit,
+                    attributes.ItemName,
+                    item.Name
+                )
+
+            local mutation =
+                firstText(
+                    attributes.Mutation,
+                    attributes.Variant,
+                    attributes.Mutations
+                )
+
+            if mutation == "" then
+                mutation =
+                    "Normal"
+            end
+
+            return {
+                Group =
+                    "Fruits",
+
+                Category =
+                    "HarvestedFruits",
+
+                ItemKey =
+                    itemKey,
+
+                Name =
+                    name,
+
+                Details =
+                    mutation,
+
+                Unique =
+                    true,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    1,
+
+                Instance =
+                    item,
+            }
+        end
+
+        local petId =
+            firstText(
+                attributes.PetId,
+                attributes.PetID
+            )
+
+        local petName =
+            firstText(
+                attributes.Pet,
+                attributes.PetName
+            )
+
+        if petId ~= ""
+            and petName ~= ""
+        then
+            local petDetails = {}
+
+            local size =
+                firstText(
+                    attributes.Size,
+                    attributes.PetSize,
+                    attributes.SizeName
+                )
+
+            local variant =
+                firstText(
+                    attributes.Variant,
+                    attributes.PetType,
+                    attributes.TypeName
+                )
+
+            if size ~= ""
+                and size ~= "Normal"
+            then
+                table.insert(
+                    petDetails,
+                    size
+                )
+            end
+
+            if variant ~= ""
+                and variant ~= "Normal"
+            then
+                table.insert(
+                    petDetails,
+                    variant
+                )
+            end
+
+            return {
+                Group =
+                    "Pets",
+
+                Category =
+                    "Pets",
+
+                ItemKey =
+                    petId,
+
+                Name =
+                    petName,
+
+                Details =
+                    #petDetails > 0
+                        and table.concat(
+                            petDetails,
+                            " · "
+                        )
+                        or "Normal",
+
+                Unique =
+                    true,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    1,
+
+                Instance =
+                    item,
+            }
+        end
+
+        local name =
+            firstText(
+                attributes.PropName,
+                attributes.SeedPackName,
+                attributes.SeedName,
+                attributes.Seed,
+                attributes.GearName,
+                attributes.ItemName,
+                item.Name
+            )
+
+        if name == "" then
+            return nil
+        end
+
+        local nameKey =
+            cleanItemKey(
+                name
+            )
+
+        if mainKey:find(
+            "egg",
+            1,
+            true
+        )
+            or typeKey:find(
+                "egg",
+                1,
+                true
+            )
+            or attributes.Egg ~= nil
+        then
+            return nil
+        end
+
+        if mainKey:find(
+            "seedpack",
+            1,
+            true
+        )
+            or typeKey:find(
+                "seedpack",
+                1,
+                true
+            )
+            or catalogs.SeedPacks[nameKey] ~= nil
+        then
+            return {
+                Group =
+                    "Seeds",
+
+                Category =
+                    "SeedPacks",
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Seed Pack",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        if mainKey == "seed"
+            or mainKey == "seeds"
+            or catalogs.Seeds[nameKey] ~= nil
+        then
+            return {
+                Group =
+                    "Seeds",
+
+                Category =
+                    "Seeds",
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Seed",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        if mainKey:find(
+            "prop",
+            1,
+            true
+        )
+            or catalogs.Props[nameKey] ~= nil
+        then
+            return {
+                Group =
+                    "Props",
+
+                Category =
+                    "Props",
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Prop",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        if catalogs.Crates[nameKey] ~= nil
+            or mainKey:find(
+                "crate",
+                1,
+                true
+            )
+        then
+            return {
+                Group =
+                    "Props",
+
+                Category =
+                    nil,
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Crate · needs a mail test",
+
+                Unique =
+                    false,
+
+                Supported =
+                    false,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        local gearData =
+            catalogs.Gear[nameKey]
+
+        local gearType =
+            firstText(
+                attributes.ItemType,
+                gearData
+                    and gearData.ItemType,
+                name
+            )
+
+        local gearKey =
+            cleanItemKey(
+                gearType
+            )
+
+        if gearKey:find(
+            "wateringcan",
+            1,
+            true
+        ) then
+            return {
+                Group =
+                    "Gear",
+
+                Category =
+                    "WateringCans",
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Watering Can",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        if gearKey:find(
+            "trowel",
+            1,
+            true
+        ) then
+            return {
+                Group =
+                    "Gear",
+
+                Category =
+                    "Trowels",
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Trowel",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        if gearKey:find(
+            "sprinkler",
+            1,
+            true
+        ) then
+            return {
+                Group =
+                    "Gear",
+
+                Category =
+                    "Sprinklers",
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Sprinkler",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        if gearData ~= nil
+            or mainKey:find(
+                "gear",
+                1,
+                true
+            )
+        then
+            return {
+                Group =
+                    "Gear",
+
+                Category =
+                    nil,
+
+                ItemKey =
+                    name,
+
+                Name =
+                    name,
+
+                Details =
+                    "Gear · needs a mail test",
+
+                Unique =
+                    false,
+
+                Supported =
+                    false,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
+        end
+
+        return nil
+    end
+
+    local function scanExactItems()
+        local catalogs =
+            loadOwnedCatalogs()
+
+        local grouped = {}
+        local seenInstances = {}
+
+        local roots = {
+            player.Character,
+            player:FindFirstChildOfClass(
+                "Backpack"
+            ),
+        }
+
+        for _, root in ipairs(roots) do
+            if typeof(root) == "Instance" then
+                for _, item in ipairs(
+                    root:GetChildren()
+                ) do
+                    if not seenInstances[item] then
+                        seenInstances[item] =
+                            true
+
+                        local record =
+                            classifyOwnedItem(
+                                item,
+                                catalogs
+                            )
+
+                        if record
+                            and not (
+                                state.ExactProtect
+                                and record.Favorite
+                            )
+                        then
+                            local recordKey =
+                                table.concat(
+                                    {
+                                        record.Group,
+                                        record.Category
+                                            or "Unknown",
+                                        cleanItemKey(
+                                            record.Name
+                                        ),
+                                        cleanItemKey(
+                                            record.Details
+                                        ),
+                                    },
+                                    "|"
+                                )
+
+                            local group =
+                                grouped[recordKey]
+
+                            if not group then
+                                group = {
+                                    Key =
+                                        recordKey,
+
+                                    Group =
+                                        record.Group,
+
+                                    Category =
+                                        record.Category,
+
+                                    ItemKey =
+                                        record.ItemKey,
+
+                                    Name =
+                                        record.Name,
+
+                                    Details =
+                                        record.Details,
+
+                                    Unique =
+                                        record.Unique,
+
+                                    Supported =
+                                        record.Supported,
+
+                                    Count =
+                                        0,
+
+                                    Sources =
+                                        {},
+                                }
+
+                                grouped[recordKey] =
+                                    group
+                            end
+
+                            group.Count +=
+                                record.Count
+
+                            table.insert(
+                                group.Sources,
+                                {
+                                    ItemKey =
+                                        record.ItemKey,
+
+                                    Count =
+                                        record.Count,
+
+                                    Instance =
+                                        record.Instance,
+                                }
+                            )
+                        end
+                    end
+                end
+            end
+        end
+
+        local records = {}
+        local recordMap = {}
+
+        for key, record in pairs(
+            grouped
+        ) do
+            recordMap[key] =
+                record
+
+            table.insert(
+                records,
+                record
+            )
+        end
+
+        table.sort(
+            records,
+            function(left, right)
+                if left.Group ~= right.Group then
+                    return left.Group < right.Group
+                end
+
+                if left.Name ~= right.Name then
+                    return left.Name:lower()
+                        < right.Name:lower()
+                end
+
+                return tostring(
+                    left.Details
+                ):lower()
+                    < tostring(
+                        right.Details
+                    ):lower()
+            end
+        )
+
+        state.ExactRecords =
+            records
+
+        state.ExactRecordMap =
+            recordMap
+
+        return records
+    end
+
+    local function selectedExactRecipient()
+        for _, recipient in ipairs(
+            state.ExactRecipients
+        ) do
+            if recipient.UserId
+                == state.ExactSelectedUserId
+            then
+                return recipient
+            end
+        end
+
+        return nil
+    end
+
+    local function exactQueueFor(userId)
+        local queue =
+            state.ExactQueues[userId]
+
+        if type(queue) ~= "table" then
+            queue = {}
+
+            state.ExactQueues[userId] =
+                queue
+        end
+
+        return queue
+    end
+
+    local function totalQueuedForKey(
+        recordKey
+    )
+        local total = 0
+
+        for _, queue in pairs(
+            state.ExactQueues
+        ) do
+            local entry =
+                queue[recordKey]
+
+            if type(entry) == "table" then
+                total +=
+                    tonumber(
+                        entry.Count
+                    )
+                    or 0
+            end
+        end
+
+        return total
+    end
+
+    local renderExactRecipients
+    local renderExactItems
+    local updateExactSummary
+    local refreshExactItems
+
+    renderExactRecipients =
+        function()
+            clearRows(
+                itemRecipientList,
+                itemRecipientLayout
+            )
+
+            itemRecipientCount.Text =
+                tostring(
+                    #state.ExactRecipients
+                )
+                .. (
+                    #state.ExactRecipients == 1
+                        and " recipient"
+                        or " recipients"
+                )
+
+            if #state.ExactRecipients == 0 then
+                local empty =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Field,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -2,
+                                    0,
+                                    52
+                                ),
+                        },
+                        itemRecipientList
+                    )
+
+                round(
+                    empty,
+                    10
+                )
+
+                text(
+                    empty,
+                    "No recipients yet",
+                    UDim2.new(
+                        1,
+                        -20,
+                        0,
+                        20
+                    ),
+                    UDim2.fromOffset(
+                        10,
+                        6
+                    ),
+                    11,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamSemibold
+                )
+
+                text(
+                    empty,
+                    "Enter a username or User ID above.",
+                    UDim2.new(
+                        1,
+                        -20,
+                        0,
+                        18
+                    ),
+                    UDim2.fromOffset(
+                        10,
+                        27
+                    ),
+                    9,
+                    color.Muted
+                )
+
+                return
+            end
+
+            for index, recipient in ipairs(
+                state.ExactRecipients
+            ) do
+                local selected =
+                    recipient.UserId
+                    == state.ExactSelectedUserId
+
+                local row =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                selected
+                                    and color.Hover
+                                    or color.Field,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -2,
+                                    0,
+                                    58
+                                ),
+
+                            LayoutOrder =
+                                index,
+                        },
+                        itemRecipientList
+                    )
+
+                round(
+                    row,
+                    10
+                )
+
+                local rowStroke =
+                    outline(
+                        row,
+                        selected
+                            and color.Accent
+                            or color.Border
+                    )
+
+                rowStroke.Thickness =
+                    selected
+                        and 2
+                        or 1
+
+                addAvatar(
+                    row,
+                    recipient.UserId,
+                    UDim2.fromOffset(
+                        38,
+                        38
+                    ),
+                    UDim2.fromOffset(
+                        9,
+                        10
+                    )
+                )
+
+                text(
+                    row,
+                    "@"
+                        .. recipient.Name,
+                    UDim2.new(
+                        1,
+                        -205,
+                        0,
+                        19
+                    ),
+                    UDim2.fromOffset(
+                        56,
+                        8
+                    ),
+                    10,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamSemibold
+                )
+
+                local queued = 0
+
+                for _, entry in pairs(
+                    exactQueueFor(
+                        recipient.UserId
+                    )
+                ) do
+                    queued +=
+                        tonumber(
+                            entry.Count
+                        )
+                        or 0
+                end
+
+                text(
+                    row,
+                    selected
+                            and tostring(
+                                queued
+                            )
+                                .. " selected · currently choosing"
+                        or tostring(
+                            queued
+                        )
+                            .. " selected",
+                    UDim2.new(
+                        1,
+                        -205,
+                        0,
+                        17
+                    ),
+                    UDim2.fromOffset(
+                        56,
+                        31
+                    ),
+                    9,
+                    selected
+                            and color.Accent
+                        or color.Muted
+                )
+
+                local useButton =
+                    button(
+                        row,
+                        selected
+                                and "Using"
+                            or "Choose",
+                        UDim2.fromOffset(
+                            58,
+                            29
+                        ),
+                        UDim2.new(
+                            1,
+                            -104,
+                            0,
+                            15
+                        ),
+                        selected
+                    )
+
+                local removeButton =
+                    button(
+                        row,
+                        "X",
+                        UDim2.fromOffset(
+                            29,
+                            29
+                        ),
+                        UDim2.new(
+                            1,
+                            -39,
+                            0,
+                            15
+                        ),
+                        false
+                    )
+
+                useButton.TextSize =
+                    8
+
+                removeButton.TextSize =
+                    10
+
+                useButton.MouseButton1Click:Connect(function()
+                    if state.Running then
+                        return
+                    end
+
+                    state.ExactSelectedUserId =
+                        recipient.UserId
+
+                    renderExactRecipients()
+                    renderExactItems()
+                    updateExactSummary()
+                end)
+
+                removeButton.MouseButton1Click:Connect(function()
+                    if state.Running then
+                        return
+                    end
+
+                    state.ExactQueues[
+                        recipient.UserId
+                    ] =
+                        nil
+
+                    table.remove(
+                        state.ExactRecipients,
+                        index
+                    )
+
+                    if state.ExactSelectedUserId
+                        == recipient.UserId
+                    then
+                        local nextRecipient =
+                            state.ExactRecipients[
+                                math.min(
+                                    index,
+                                    #state.ExactRecipients
+                                )
+                            ]
+
+                        state.ExactSelectedUserId =
+                            nextRecipient
+                                and nextRecipient.UserId
+                                or nil
+                    end
+
+                    renderExactRecipients()
+                    renderExactItems()
+                    updateExactSummary()
+                end)
+            end
+        end
+
+    updateExactSummary =
+        function()
+            local people = 0
+            local items = 0
+            local sendable = 0
+            local sends = 0
+
+            for _, recipient in ipairs(
+                state.ExactRecipients
+            ) do
+                local queue =
+                    exactQueueFor(
+                        recipient.UserId
+                    )
+
+                local recipientEntries = 0
+                local hasItems = false
+
+                for _, entry in pairs(
+                    queue
+                ) do
+                    local count =
+                        tonumber(
+                            entry.Count
+                        )
+                        or 0
+
+                    if count > 0 then
+                        hasItems =
+                            true
+
+                        items +=
+                            count
+
+                        if entry.Supported then
+                            sendable +=
+                                count
+
+                            recipientEntries +=
+                                entry.Unique
+                                    and count
+                                    or 1
+                        end
+                    end
+                end
+
+                if hasItems then
+                    people +=
+                        1
+                end
+
+                if recipientEntries > 0 then
+                    sends +=
+                        math.ceil(
+                            recipientEntries
+                            / BATCH_LIMIT
+                        )
+                end
+            end
+
+            local seconds =
+                sends <= 1
+                    and 0
+                    or (
+                        sends - 1
+                    ) * COOLDOWN
+
+            itemSummaryText.Text =
+                string.format(
+                    "People: %d\nItems: %d\nSends: %d\nKnown sendable: %d\nTime: %s",
+                    people,
+                    items,
+                    sends,
+                    sendable,
+                    seconds <= 0
+                            and "Immediate"
+                        or "about "
+                            .. tostring(
+                                math.ceil(
+                                    seconds
+                                )
+                            )
+                            .. "s"
+                )
+
+            if not selectedExactRecipient() then
+                itemMessageText.Text =
+                    "Choose a recipient before adding items."
+            elseif items <= 0 then
+                itemMessageText.Text =
+                    "Choose an owned item and enter an amount."
+            elseif items ~= sendable then
+                itemMessageText.Text =
+                    "Some selected items still need a confirmed mail category."
+            else
+                itemMessageText.Text =
+                    tostring(
+                        items
+                    )
+                    .. " items are ready for review."
+            end
+
+            itemSendButton.Active =
+                sendable > 0
+                and items == sendable
+                and not state.Running
+
+            itemSendButton.BackgroundColor3 =
+                itemSendButton.Active
+                    and color.Accent
+                    or color.Hover
+
+            return people,
+                items,
+                sends,
+                sendable
+        end
+
+    renderExactItems =
+        function()
+            clearRows(
+                itemBrowseList,
+                itemBrowseLayout
+            )
+
+            if state.ExactView == "Selected" then
+                itemBrowseTitle.Text =
+                    "SELECTED ITEMS"
+
+                itemQueueButton.Text =
+                    "Show owned"
+
+                local rows = {}
+
+                for _, recipient in ipairs(
+                    state.ExactRecipients
+                ) do
+                    for recordKey, entry in pairs(
+                        exactQueueFor(
+                            recipient.UserId
+                        )
+                    ) do
+                        if (
+                            tonumber(
+                                entry.Count
+                            )
+                            or 0
+                        ) > 0 then
+                            table.insert(
+                                rows,
+                                {
+                                    Recipient =
+                                        recipient,
+
+                                    RecordKey =
+                                        recordKey,
+
+                                    Entry =
+                                        entry,
+                                }
+                            )
+                        end
+                    end
+                end
+
+                table.sort(
+                    rows,
+                    function(left, right)
+                        if left.Recipient.Name
+                            ~= right.Recipient.Name
+                        then
+                            return left.Recipient.Name:lower()
+                                < right.Recipient.Name:lower()
+                        end
+
+                        return left.Entry.Name:lower()
+                            < right.Entry.Name:lower()
+                    end
+                )
+
+                itemBrowseCount.Text =
+                    tostring(
+                        #rows
+                    )
+                    .. (
+                        #rows == 1
+                            and " selection"
+                            or " selections"
+                    )
+
+                if #rows == 0 then
+                    local empty =
+                        create(
+                            "Frame",
+                            {
+                                BackgroundColor3 =
+                                    color.Field,
+
+                                Size =
+                                    UDim2.new(
+                                        1,
+                                        -2,
+                                        0,
+                                        70
+                                    ),
+                            },
+                            itemBrowseList
+                        )
+
+                    round(
+                        empty,
+                        10
+                    )
+
+                    text(
+                        empty,
+                        "Nothing selected yet",
+                        UDim2.new(
+                            1,
+                            -24,
+                            0,
+                            22
+                        ),
+                        UDim2.fromOffset(
+                            12,
+                            12
+                        ),
+                        11,
+                        color.Text,
+                        nil,
+                        Enum.Font.GothamSemibold
+                    )
+
+                    text(
+                        empty,
+                        "Switch back to owned items and add something.",
+                        UDim2.new(
+                            1,
+                            -24,
+                            0,
+                            18
+                        ),
+                        UDim2.fromOffset(
+                            12,
+                            38
+                        ),
+                        9,
+                        color.Muted
+                    )
+
+                    return
+                end
+
+                for index, rowData in ipairs(
+                    rows
+                ) do
+                    local entry =
+                        rowData.Entry
+
+                    local row =
+                        create(
+                            "Frame",
+                            {
+                                BackgroundColor3 =
+                                    color.Field,
+
+                                Size =
+                                    UDim2.new(
+                                        1,
+                                        -2,
+                                        0,
+                                        58
+                                    ),
+
+                                LayoutOrder =
+                                    index,
+                            },
+                            itemBrowseList
+                        )
+
+                    round(
+                        row,
+                        10
+                    )
+
+                    text(
+                        row,
+                        entry.Name,
+                        UDim2.new(
+                            1,
+                            -170,
+                            0,
+                            20
+                        ),
+                        UDim2.fromOffset(
+                            12,
+                            8
+                        ),
+                        10,
+                        color.Text,
+                        nil,
+                        Enum.Font.GothamSemibold
+                    )
+
+                    text(
+                        row,
+                        "@"
+                            .. rowData.Recipient.Name
+                            .. " · "
+                            .. entry.Details
+                            .. " · x"
+                            .. tostring(
+                                entry.Count
+                            ),
+                        UDim2.new(
+                            1,
+                            -170,
+                            0,
+                            18
+                        ),
+                        UDim2.fromOffset(
+                            12,
+                            31
+                        ),
+                        9,
+                        entry.Supported
+                                and color.Muted
+                            or color.Red
+                    )
+
+                    local removeButton =
+                        button(
+                            row,
+                            "Remove",
+                            UDim2.fromOffset(
+                                88,
+                                34
+                            ),
+                            UDim2.new(
+                                1,
+                                -100,
+                                0,
+                                12
+                            ),
+                            false
+                        )
+
+                    removeButton.TextSize =
+                        9
+
+                    removeButton.MouseButton1Click:Connect(function()
+                        exactQueueFor(
+                            rowData.Recipient.UserId
+                        )[
+                            rowData.RecordKey
+                        ] =
+                            nil
+
+                        renderExactRecipients()
+                        renderExactItems()
+                        updateExactSummary()
+                    end)
+                end
+
+                return
+            end
+
+            itemBrowseTitle.Text =
+                "OWNED ITEMS"
+
+            itemQueueButton.Text =
+                "Show selected"
+
+            local search =
+                tostring(
+                    state.ExactSearch
+                    or ""
+                ):lower()
+
+            local visibleRecords = {}
+
+            for _, record in ipairs(
+                state.ExactRecords
+            ) do
+                local matchesCategory =
+                    record.Group
+                    == state.ExactCategory
+
+                local matchesSearch =
+                    search == ""
+                    or record.Name:lower():find(
+                        search,
+                        1,
+                        true
+                    ) ~= nil
+                    or tostring(
+                        record.Details
+                    ):lower():find(
+                        search,
+                        1,
+                        true
+                    ) ~= nil
+
+                if matchesCategory
+                    and matchesSearch
+                then
+                    table.insert(
+                        visibleRecords,
+                        record
+                    )
+                end
+            end
+
+            itemBrowseCount.Text =
+                tostring(
+                    #visibleRecords
+                )
+                .. (
+                    #visibleRecords == 1
+                        and " item type"
+                        or " item types"
+                )
+
+            if #visibleRecords == 0 then
+                local empty =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Field,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -2,
+                                    0,
+                                    70
+                                ),
+                        },
+                        itemBrowseList
+                    )
+
+                round(
+                    empty,
+                    10
+                )
+
+                text(
+                    empty,
+                    "Nothing found",
+                    UDim2.new(
+                        1,
+                        -24,
+                        0,
+                        22
+                    ),
+                    UDim2.fromOffset(
+                        12,
+                        12
+                    ),
+                    11,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamSemibold
+                )
+
+                text(
+                    empty,
+                    "Try another category, search, or refresh.",
+                    UDim2.new(
+                        1,
+                        -24,
+                        0,
+                        18
+                    ),
+                    UDim2.fromOffset(
+                        12,
+                        38
+                    ),
+                    9,
+                    color.Muted
+                )
+
+                return
+            end
+
+            for index, record in ipairs(
+                visibleRecords
+            ) do
+                local queued =
+                    totalQueuedForKey(
+                        record.Key
+                    )
+
+                local available =
+                    math.max(
+                        0,
+                        record.Count
+                            - queued
+                    )
+
+                local row =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Field,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -2,
+                                    0,
+                                    58
+                                ),
+
+                            LayoutOrder =
+                                index,
+                        },
+                        itemBrowseList
+                    )
+
+                round(
+                    row,
+                    10
+                )
+
+                local icon =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Hover,
+
+                            Size =
+                                UDim2.fromOffset(
+                                    38,
+                                    38
+                                ),
+
+                            Position =
+                                UDim2.fromOffset(
+                                    9,
+                                    10
+                                ),
+                        },
+                        row
+                    )
+
+                round(
+                    icon,
+                    10
+                )
+
+                text(
+                    icon,
+                    record.Name:sub(
+                        1,
+                        1
+                    ):upper(),
+                    UDim2.fromScale(
+                        1,
+                        1
+                    ),
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+                    14,
+                    color.Text,
+                    Enum.TextXAlignment.Center,
+                    Enum.Font.GothamBold
+                )
+
+                text(
+                    row,
+                    record.Name,
+                    UDim2.new(
+                        1,
+                        -250,
+                        0,
+                        20
+                    ),
+                    UDim2.fromOffset(
+                        56,
+                        8
+                    ),
+                    10,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamSemibold
+                )
+
+                local details =
+                    record.Details
+                    .. " · "
+                    .. tostring(
+                        available
+                    )
+                    .. " available"
+
+                if not record.Supported then
+                    details =
+                        details
+                        .. " · not ready"
+                elseif queued > 0 then
+                    details =
+                        details
+                        .. " · "
+                        .. tostring(
+                            queued
+                        )
+                        .. " selected"
+                end
+
+                text(
+                    row,
+                    details,
+                    UDim2.new(
+                        1,
+                        -250,
+                        0,
+                        18
+                    ),
+                    UDim2.fromOffset(
+                        56,
+                        31
+                    ),
+                    9,
+                    record.Supported
+                            and color.Muted
+                        or color.Red
+                )
+
+                local amountBox =
+                    box(
+                        row,
+                        "1",
+                        UDim2.fromOffset(
+                            66,
+                            34
+                        ),
+                        UDim2.new(
+                            1,
+                            -172,
+                            0,
+                            12
+                        )
+                    )
+
+                amountBox.TextXAlignment =
+                    Enum.TextXAlignment.Center
+
+                local addItemButton =
+                    button(
+                        row,
+                        record.Supported
+                                and "+ Add"
+                            or "Not ready",
+                        UDim2.fromOffset(
+                            88,
+                            34
+                        ),
+                        UDim2.new(
+                            1,
+                            -100,
+                            0,
+                            12
+                        ),
+                        record.Supported
+                    )
+
+                addItemButton.TextSize =
+                    record.Supported
+                            and 9
+                        or 8
+
+                addItemButton.Active =
+                    record.Supported
+                    and available > 0
+
+                if not addItemButton.Active then
+                    addItemButton.BackgroundColor3 =
+                        color.Hover
+                end
+
+                addItemButton.MouseButton1Click:Connect(function()
+                    if state.Running
+                        or not addItemButton.Active
+                    then
+                        return
+                    end
+
+                    local recipient =
+                        selectedExactRecipient()
+
+                    if not recipient then
+                        itemMessageText.Text =
+                            "Choose a recipient first."
+
+                        return
+                    end
+
+                    local rawAmount =
+                        tostring(
+                            amountBox.Text
+                        ):lower():gsub(
+                            "%s+",
+                            ""
+                        )
+
+                    local wanted
+
+                    if rawAmount == "all" then
+                        wanted =
+                            available
+                    else
+                        wanted =
+                            math.floor(
+                                tonumber(
+                                    rawAmount
+                                )
+                                or 1
+                            )
+                    end
+
+                    wanted =
+                        math.clamp(
+                            wanted,
+                            1,
+                            available
+                        )
+
+                    local queue =
+                        exactQueueFor(
+                            recipient.UserId
+                        )
+
+                    local entry =
+                        queue[
+                            record.Key
+                        ]
+
+                    if not entry then
+                        entry = {
+                            Key =
+                                record.Key,
+
+                            Name =
+                                record.Name,
+
+                            Details =
+                                record.Details,
+
+                            Group =
+                                record.Group,
+
+                            Category =
+                                record.Category,
+
+                            ItemKey =
+                                record.ItemKey,
+
+                            Unique =
+                                record.Unique,
+
+                            Supported =
+                                record.Supported,
+
+                            Count =
+                                0,
+                        }
+
+                        queue[
+                            record.Key
+                        ] =
+                            entry
+                    end
+
+                    entry.Count +=
+                        wanted
+
+                    amountBox.Text =
+                        ""
+
+                    renderExactRecipients()
+                    renderExactItems()
+                    updateExactSummary()
+                end)
+            end
+        end
+
+    refreshExactItems =
+        function()
+            local records =
+                scanExactItems()
+
+            local total = 0
+            local protectedCount = 0
+
+            for _, record in ipairs(
+                records
+            ) do
+                total +=
+                    record.Count
+            end
+
+            if state.ExactProtect then
+                protectedCount =
+                    1
+            end
+
+            itemInventoryCount.Text =
+                tostring(
+                    total
+                )
+                .. " owned"
+                .. (
+                    protectedCount > 0
+                        and " · favorites skipped"
+                        or ""
+                )
+
+            renderExactItems()
+            renderExactRecipients()
+            updateExactSummary()
+        end
+
+    local function addExactRecipient()
+        if state.Running then
+            return
+        end
+
+        local raw =
+            tostring(
+                itemRecipientBox.Text
+            )
+                :gsub(
+                    "^%s+",
+                    ""
+                )
+                :gsub(
+                    "%s+$",
+                    ""
+                )
+
+        if raw == "" then
+            itemRecipientBox.PlaceholderText =
+                "Enter a recipient"
+
+            return
+        end
+
+        itemRecipientAdd.Text =
+            "Checking..."
+
+        local userId
+        local username
+        local numeric =
+            tonumber(
+                raw
+            )
+
+        if numeric then
+            local ok,
+                result =
+                pcall(
+                    Players.GetNameFromUserIdAsync,
+                    Players,
+                    math.floor(
+                        numeric
+                    )
+                )
+
+            if ok then
+                userId =
+                    math.floor(
+                        numeric
+                    )
+
+                username =
+                    result
+            end
+        else
+            local ok,
+                result =
+                pcall(
+                    Players.GetUserIdFromNameAsync,
+                    Players,
+                    raw
+                )
+
+            if ok then
+                userId =
+                    result
+
+                local nameOk,
+                    name =
+                    pcall(
+                        Players.GetNameFromUserIdAsync,
+                        Players,
+                        userId
+                    )
+
+                username =
+                    nameOk
+                        and name
+                        or raw
+            end
+        end
+
+        if not userId
+            or not username
+            or userId == player.UserId
+        then
+            itemRecipientBox.Text =
+                ""
+
+            itemRecipientBox.PlaceholderText =
+                "Recipient not found"
+
+            itemRecipientAdd.Text =
+                "+ Add"
+
+            return
+        end
+
+        for _, recipient in ipairs(
+            state.ExactRecipients
+        ) do
+            if recipient.UserId
+                == userId
+            then
+                state.ExactSelectedUserId =
+                    userId
+
+                itemRecipientBox.Text =
+                    ""
+
+                itemRecipientAdd.Text =
+                    "+ Add"
+
+                renderExactRecipients()
+                renderExactItems()
+                updateExactSummary()
+
+                return
+            end
+        end
+
+        table.insert(
+            state.ExactRecipients,
+            {
+                UserId =
+                    userId,
+
+                Name =
+                    username,
+            }
+        )
+
+        state.ExactSelectedUserId =
+            userId
+
+        itemRecipientBox.Text =
+            ""
+
+        itemRecipientBox.PlaceholderText =
+            "Username or User ID"
+
+        itemRecipientAdd.Text =
+            "+ Add"
+
+        renderExactRecipients()
+        renderExactItems()
+        updateExactSummary()
+    end
+
+    local function buildExactRoutes()
+        scanExactItems()
+
+        local usedUnique = {}
+        local usedStacked = {}
+        local routes = {}
+        local totalItems = 0
+        local totalMails = 0
+        local missing = 0
+
+        for _, recipient in ipairs(
+            state.ExactRecipients
+        ) do
+            local payloads = {}
+            local recipientItems = 0
+            local queue =
+                exactQueueFor(
+                    recipient.UserId
+                )
+
+            for recordKey, queued in pairs(
+                queue
+            ) do
+                local wanted =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(
+                                queued.Count
+                            )
+                            or 0
+                        )
+                    )
+
+                if wanted > 0 then
+                    local record =
+                        state.ExactRecordMap[
+                            recordKey
+                        ]
+
+                    if not record
+                        or not record.Supported
+                        or not record.Category
+                    then
+                        missing +=
+                            wanted
+                    elseif record.Unique then
+                        local added = 0
+
+                        for _, source in ipairs(
+                            record.Sources
+                        ) do
+                            if added >= wanted then
+                                break
+                            end
+
+                            if not usedUnique[
+                                source.ItemKey
+                            ] then
+                                usedUnique[
+                                    source.ItemKey
+                                ] =
+                                    true
+
+                                table.insert(
+                                    payloads,
+                                    {
+                                        ItemKey =
+                                            source.ItemKey,
+
+                                        Count =
+                                            1,
+
+                                        Category =
+                                            record.Category,
+                                    }
+                                )
+
+                                added +=
+                                    1
+                            end
+                        end
+
+                        recipientItems +=
+                            added
+
+                        totalItems +=
+                            added
+
+                        if added < wanted then
+                            missing +=
+                                wanted - added
+                        end
+                    else
+                        local alreadyUsed =
+                            usedStacked[
+                                recordKey
+                            ]
+                            or 0
+
+                        local available =
+                            math.max(
+                                0,
+                                record.Count
+                                    - alreadyUsed
+                            )
+
+                        local added =
+                            math.min(
+                                wanted,
+                                available
+                            )
+
+                        if added > 0 then
+                            usedStacked[
+                                recordKey
+                            ] =
+                                alreadyUsed
+                                + added
+
+                            table.insert(
+                                payloads,
+                                {
+                                    ItemKey =
+                                        record.ItemKey,
+
+                                    Count =
+                                        added,
+
+                                    Category =
+                                        record.Category,
+                                }
+                            )
+
+                            recipientItems +=
+                                added
+
+                            totalItems +=
+                                added
+                        end
+
+                        if added < wanted then
+                            missing +=
+                                wanted - added
+                        end
+                    end
+                end
+            end
+
+            if #payloads > 0 then
+                local mails =
+                    math.ceil(
+                        #payloads
+                        / BATCH_LIMIT
+                    )
+
+                totalMails +=
+                    mails
+
+                table.insert(
+                    routes,
+                    {
+                        Recipient =
+                            recipient,
+
+                        Payloads =
+                            payloads,
+
+                        Items =
+                            recipientItems,
+
+                        Mails =
+                            mails,
+                    }
+                )
+            end
+        end
+
+        return routes,
+            totalItems,
+            totalMails,
+            missing
+    end
+
+    local function sendExactPayload(
+        packet,
+        recipient,
+        payload
+    )
+        while not state.Stop do
+            if not waitForCooldown() then
+                return false,
+                    "Stopped",
+                    "STOPPED"
+            end
+
+            local started =
+                workspace:GetServerTimeNow()
+
+            setStatus(
+                "Sending",
+                color.Yellow
+            )
+
+            local ok,
+                first,
+                second =
+                pcall(function()
+                    return packet:Fire(
+                        recipient.UserId,
+                        payload,
+                        ""
+                    )
+                end)
+
+            if not ok then
+                return false,
+                    tostring(
+                        first
+                    ),
+                    "ERROR"
+            end
+
+            local message =
+                tostring(
+                    second or ""
+                )
+
+            if first == true then
+                state.LastAccepted =
+                    started
+
+                tracker.Used =
+                    math.min(
+                        DAILY_LIMIT,
+                        tracker.Used + 1
+                    )
+
+                HOLY_MAIL_STATE.TrackerDay =
+                    HolyMailToday()
+
+                HOLY_MAIL_STATE.TrackerUsed =
+                    tracker.Used
+
+                updateQuota()
+                HolyMailSaveSettings()
+
+                return true,
+                    message,
+                    "ACCEPTED"
+            end
+
+            local lower =
+                message:lower()
+
+            local seconds =
+                tonumber(
+                    lower:match(
+                        "wait%s+(%d+)%s*s"
+                    )
+                )
+
+            if seconds then
+                task.wait(
+                    seconds + 0.25
+                )
+            elseif lower:find(
+                "daily gift limit",
+                1,
+                true
+            ) then
+                tracker.Used =
+                    DAILY_LIMIT
+
+                HOLY_MAIL_STATE.TrackerDay =
+                    HolyMailToday()
+
+                HOLY_MAIL_STATE.TrackerUsed =
+                    DAILY_LIMIT
+
+                updateQuota()
+                HolyMailSaveSettings()
+
+                return false,
+                    message,
+                    "DAILY"
+            else
+                return false,
+                    message ~= ""
+                            and message
+                        or tostring(
+                            first
+                        ),
+                    "REJECTED"
+            end
+        end
+
+        return false,
+            "Stopped",
+            "STOPPED"
+    end
+
+    local function runExactDelivery(
+        routes,
+        totalItems,
+        totalMails
+    )
+        protectedCall(
+            "Item delivery",
+            function()
+                local packet,
+                    packetError =
+                    getSendPacket()
+
+                if not packet then
+                    itemMessageText.Text =
+                        tostring(
+                            packetError
+                        )
+
+                    return
+                end
+
+                state.Running =
+                    true
+
+                state.Stop =
+                    false
+
+                itemProgressFill.Size =
+                    UDim2.fromScale(
+                        0,
+                        1
+                    )
+
+                local completedMails = 0
+                local completedItems = 0
+                local completedPeople = 0
+                local failure
+                local failureType
+
+                renderExactRecipients()
+                updateExactSummary()
+
+                for _, route in ipairs(
+                    routes
+                ) do
+                    local recipientComplete =
+                        true
+
+                    for firstIndex = 1,
+                        #route.Payloads,
+                        BATCH_LIMIT
+                    do
+                        if state.Stop then
+                            recipientComplete =
+                                false
+
+                            break
+                        end
+
+                        local payload = {}
+                        local batchItems = 0
+
+                        for payloadIndex = firstIndex,
+                            math.min(
+                                firstIndex
+                                    + BATCH_LIMIT
+                                    - 1,
+                                #route.Payloads
+                            )
+                        do
+                            local entry =
+                                route.Payloads[
+                                    payloadIndex
+                                ]
+
+                            table.insert(
+                                payload,
+                                entry
+                            )
+
+                            batchItems +=
+                                tonumber(
+                                    entry.Count
+                                )
+                                or 1
+                        end
+
+                        itemSendButton.Text =
+                            string.format(
+                                "@%s · %d/%d",
+                                route.Recipient.Name,
+                                completedMails + 1,
+                                totalMails
+                            )
+
+                        local accepted,
+                            response,
+                            responseType =
+                            sendExactPayload(
+                                packet,
+                                route.Recipient,
+                                payload
+                            )
+
+                        if not accepted then
+                            recipientComplete =
+                                false
+
+                            failure =
+                                response
+
+                            failureType =
+                                responseType
+
+                            break
+                        end
+
+                        completedMails +=
+                            1
+
+                        completedItems +=
+                            batchItems
+
+                        itemProgressFill.Size =
+                            UDim2.fromScale(
+                                completedMails
+                                    / math.max(
+                                        totalMails,
+                                        1
+                                    ),
+                                1
+                            )
+
+                        itemMessageText.Text =
+                            string.format(
+                                "Sent %d of %d items.",
+                                completedItems,
+                                totalItems
+                            )
+                    end
+
+                    if recipientComplete then
+                        completedPeople +=
+                            1
+
+                        state.ExactQueues[
+                            route.Recipient.UserId
+                        ] =
+                            {}
+                    else
+                        break
+                    end
+                end
+
+                local stopped =
+                    state.Stop
+                    and not failure
+
+                local complete =
+                    completedMails == totalMails
+                    and not failure
+                    and not stopped
+
+                state.Running =
+                    false
+
+                state.Stop =
+                    false
+
+                itemSendButton.Text =
+                    "Review and send"
+
+                setStatus(
+                    complete
+                            and "Complete"
+                        or stopped
+                                and "Stopped"
+                            or "Paused",
+                    complete
+                            and color.Green
+                        or color.Yellow
+                )
+
+                showModal(
+                    complete
+                            and "Delivery complete"
+                        or failureType == "DAILY"
+                                and "Daily limit reached"
+                            or stopped
+                                    and "Delivery stopped"
+                                or "Delivery paused",
+                    (
+                        failure
+                            and tostring(
+                                failure
+                            )
+                                .. "\n\n"
+                            or ""
+                    )
+                    .. string.format(
+                        "People completed: %d\nItems sent: %d\nSends used: %d",
+                        completedPeople,
+                        completedItems,
+                        completedMails
+                    ),
+                    nil,
+                    nil,
+                    not complete
+                )
+
+                task.wait(
+                    0.35
+                )
+
+                refreshExactItems()
+            end
+        )
+    end
+
+    local function requestExactDelivery()
+        if state.Running then
+            state.Stop =
+                true
+
+            itemSendButton.Text =
+                "Stopping after this mail..."
+
+            return
+        end
+
+        local routes,
+            totalItems,
+            totalMails,
+            missing =
+            buildExactRoutes()
+
+        if missing > 0 then
+            itemMessageText.Text =
+                tostring(
+                    missing
+                )
+                .. " selected items are unavailable or still need a mail test."
+
+            refreshExactItems()
+
+            return
+        end
+
+        if #routes == 0
+            or totalItems <= 0
+            or totalMails <= 0
+        then
+            itemMessageText.Text =
+                "Select at least one supported item."
+
+            return
+        end
+
+        local remaining =
+            DAILY_LIMIT
+            - tracker.Used
+
+        if totalMails > remaining then
+            itemMessageText.Text =
+                "This needs "
+                .. tostring(
+                    totalMails
+                )
+                .. " sends, but only "
+                .. tostring(
+                    remaining
+                )
+                .. " remain today."
+
+            return
+        end
+
+        local seconds =
+            totalMails <= 1
+                and 0
+                or (
+                    totalMails - 1
+                ) * COOLDOWN
+
+        showModal(
+            "Review before sending",
+            string.format(
+                "People: %d\nItems: %d\nSends: %d\nTime: about %ds",
+                #routes,
+                totalItems,
+                totalMails,
+                math.ceil(
+                    seconds
+                )
+            ),
+            "Send now",
+            function()
+                task.spawn(
+                    runExactDelivery,
+                    routes,
+                    totalItems,
+                    totalMails
+                )
+            end,
+            true
+        )
+    end
+
+    local function applyMailMode(
+        selectedMode
+    )
+        if state.Running then
+            return
+        end
+
+        state.MailMode =
+            selectedMode == "Items"
+                and "Items"
+                or "Value"
+
+        local itemMode =
+            state.MailMode == "Items"
+
+        itemPanel.Visible =
+            itemMode
+
+        setSelectedButton(
+            valueModeButton,
+            not itemMode
+        )
+
+        setSelectedButton(
+            itemModeButton,
+            itemMode
+        )
+
+        subtitle.Text =
+            itemMode
+                and "Pick exact items"
+                or "Send fruits by value"
+
+        if itemMode then
+            state.ExactView =
+                "Owned"
+
+            refreshExactItems()
+        else
+            task.spawn(function()
+                protectedCall(
+                    "Value mode refresh",
+                    rebuildPlan
+                )
+            end)
+        end
+    end
+
+    valueModeButton.MouseButton1Click:Connect(function()
+        applyMailMode(
+            "Value"
+        )
+    end)
+
+    itemModeButton.MouseButton1Click:Connect(function()
+        applyMailMode(
+            "Items"
+        )
+    end)
+
+    itemRecipientAdd.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Add item recipient",
+            addExactRecipient
+        )
+    end)
+
+    itemRecipientBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            protectedCall(
+                "Add item recipient",
+                addExactRecipient
+            )
+        end
+    end)
+
+    for categoryName, categoryButton in pairs(
+        itemCategoryButtons
+    ) do
+        categoryButton.MouseButton1Click:Connect(function()
+            state.ExactCategory =
+                categoryName
+
+            state.ExactView =
+                "Owned"
+
+            for otherName, otherButton in pairs(
+                itemCategoryButtons
+            ) do
+                setSelectedButton(
+                    otherButton,
+                    otherName
+                        == state.ExactCategory
+                )
+            end
+
+            renderExactItems()
+        end)
+    end
+
+    itemSearchBox:GetPropertyChangedSignal(
+        "Text"
+    ):Connect(function()
+        state.ExactSearch =
+            itemSearchBox.Text
+
+        if state.ExactView == "Owned" then
+            renderExactItems()
+        end
+    end)
+
+    itemRefreshButton.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Refresh owned items",
+            refreshExactItems
+        )
+    end)
+
+    itemProtectButton.MouseButton1Click:Connect(function()
+        if state.Running then
+            return
+        end
+
+        state.ExactProtect =
+            not state.ExactProtect
+
+        itemProtectButton.Text =
+            "Skip favorites: "
+            .. (
+                state.ExactProtect
+                    and "ON"
+                    or "OFF"
+            )
+
+        refreshExactItems()
+    end)
+
+    itemQueueButton.MouseButton1Click:Connect(function()
+        state.ExactView =
+            state.ExactView == "Owned"
+                and "Selected"
+                or "Owned"
+
+        renderExactItems()
+    end)
+
+    itemSendButton.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Exact item send",
+            requestExactDelivery
+        )
+    end)
+
+    content:GetPropertyChangedSignal(
+        "Visible"
+    ):Connect(function()
+        modeSwitcher.Visible =
+            content.Visible
+    end)
+
+    applyMailMode(
+        "Value"
+    )
+
     updateQuota()
     renderRecipients()
 
