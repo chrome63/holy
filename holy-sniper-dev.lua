@@ -100323,6 +100323,12 @@ local HOLY_MAIL_INBOX_CAPACITY = 100
 local HOLY_MAIL_SETTINGS_FILE =
     UI_SETTINGS_FOLDER .. "/HolyPremiumMailSettings.json"
 
+local HOLY_MAIL_HISTORY_FILE =
+    UI_SETTINGS_FOLDER .. "/HolyPremiumMailHistory.json"
+
+local HOLY_MAIL_HISTORY_LIMIT =
+    200
+
 local HolyMailTweenService =
     game:GetService("TweenService")
 
@@ -100367,7 +100373,381 @@ HOLY_MAIL_RUNTIME = {
 
     StopInboxWorker = nil,
     Stop = nil,
+
+    RefreshHistory = nil,
+    HistoryFilter = "All",
+    HistorySearch = "",
+    ExpandedHistory = {},
 }
+
+HOLY_MAIL_HISTORY = {
+    Version = 1,
+    Records = {},
+}
+
+function HolyMailHistoryNormalizeIcon(value)
+    if type(value) == "number" then
+        if value <= 0 then
+            return ""
+        end
+
+        return "rbxassetid://"
+            .. tostring(
+                math.floor(value)
+            )
+    end
+
+    if type(value) ~= "string" then
+        return ""
+    end
+
+    local result =
+        value:gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if result == "" then
+        return ""
+    end
+
+    if result:match("^%d+$") then
+        return "rbxassetid://"
+            .. result
+    end
+
+    return result
+end
+
+function HolyMailHistorySave()
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local encodeOk, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(
+                HOLY_MAIL_HISTORY
+            )
+        end)
+
+    if encodeOk ~= true
+        or type(encoded) ~= "string"
+    then
+        return false
+    end
+
+    return pcall(function()
+        writefile(
+            HOLY_MAIL_HISTORY_FILE,
+            encoded
+        )
+    end)
+end
+
+function HolyMailHistoryLoad()
+    HOLY_MAIL_HISTORY = {
+        Version = 1,
+        Records = {},
+    }
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists = false
+
+    pcall(function()
+        exists =
+            isfile(
+                HOLY_MAIL_HISTORY_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(
+                HOLY_MAIL_HISTORY_FILE
+            )
+        end)
+
+    if readOk ~= true
+        or type(raw) ~= "string"
+        or raw == ""
+    then
+        return false
+    end
+
+    local decodeOk, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+        or type(decoded) ~= "table"
+        or type(decoded.Records) ~= "table"
+    then
+        return false
+    end
+
+    for _, record in ipairs(
+        decoded.Records
+    ) do
+        if type(record) == "table" then
+            table.insert(
+                HOLY_MAIL_HISTORY.Records,
+                record
+            )
+
+            if #HOLY_MAIL_HISTORY.Records
+                >= HOLY_MAIL_HISTORY_LIMIT
+            then
+                break
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyMailHistoryAdd(record)
+    if type(record) ~= "table" then
+        return false
+    end
+
+    record.Id =
+        tostring(
+            record.Id
+                or (
+                    tostring(os.time())
+                    .. "-"
+                    .. tostring(
+                        math.floor(
+                            os.clock() * 1000
+                        )
+                    )
+                    .. "-"
+                    .. tostring(
+                        math.random(
+                            1000,
+                            9999
+                        )
+                    )
+                )
+        )
+
+    record.Timestamp =
+        math.floor(
+            tonumber(record.Timestamp)
+                or os.time()
+        )
+
+    record.Items =
+        type(record.Items) == "table"
+            and record.Items
+            or {}
+
+    table.insert(
+        HOLY_MAIL_HISTORY.Records,
+        1,
+        record
+    )
+
+    while #HOLY_MAIL_HISTORY.Records
+        > HOLY_MAIL_HISTORY_LIMIT
+    do
+        table.remove(
+            HOLY_MAIL_HISTORY.Records
+        )
+    end
+
+    HolyMailHistorySave()
+
+    if type(
+        HOLY_MAIL_RUNTIME.RefreshHistory
+    ) == "function" then
+        pcall(
+            HOLY_MAIL_RUNTIME.RefreshHistory
+        )
+    end
+
+    return true
+end
+
+function HolyMailHistoryClear()
+    HOLY_MAIL_HISTORY.Records =
+        {}
+
+    HOLY_MAIL_RUNTIME.ExpandedHistory =
+        {}
+
+    HolyMailHistorySave()
+
+    if type(
+        HOLY_MAIL_RUNTIME.RefreshHistory
+    ) == "function" then
+        pcall(
+            HOLY_MAIL_RUNTIME.RefreshHistory
+        )
+    end
+
+    return true
+end
+
+function HolyMailHistoryRecordClaim(mail)
+    if type(mail) ~= "table"
+        or type(mail.Data) ~= "table"
+    then
+        return false
+    end
+
+    local data =
+        mail.Data
+
+    local items = {}
+    local itemCount = 0
+    local knownValue = 0
+
+    for itemKey, itemData in pairs(
+        type(data.Items) == "table"
+            and data.Items
+            or {}
+    ) do
+        local item =
+            type(itemData) == "table"
+                and itemData
+                or {}
+
+        local count =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(
+                        item.Count
+                            or item.Amount
+                            or item.Quantity
+                            or (
+                                type(itemData) == "number"
+                                    and itemData
+                                    or 1
+                            )
+                    )
+                    or 1
+                )
+            )
+
+        local name =
+            tostring(
+                item.ItemName
+                    or item.DisplayName
+                    or item.Name
+                    or item.FruitName
+                    or itemKey
+                    or "Unknown item"
+            )
+
+        local details =
+            tostring(
+                item.Mutation
+                    or item.Variant
+                    or item.Category
+                    or item.ItemType
+                    or "Mail item"
+            )
+
+        local icon =
+            HolyMailHistoryNormalizeIcon(
+                item.IMG
+                    or item.Icon
+                    or item.Image
+                    or item.ImageId
+                    or item.TextureId
+            )
+
+        local value =
+            math.max(
+                0,
+                tonumber(
+                    item.Value
+                        or item.SellValue
+                        or item.Price
+                )
+                or 0
+            )
+
+        itemCount +=
+            count
+
+        knownValue +=
+            value * count
+
+        table.insert(
+            items,
+            {
+                Name = name,
+                Details = details,
+                Icon = icon,
+                Count = count,
+                Sent = count,
+                Value = value * count,
+            }
+        )
+    end
+
+    local senderId =
+        tonumber(
+            data.SenderUserId
+                or data.FromUserId
+                or data.SenderId
+                or data.UserId
+        )
+        or 0
+
+    local senderName =
+        tostring(
+            data.SenderName
+                or data.FromName
+                or data.Username
+                or (
+                    senderId > 0
+                        and (
+                            "User "
+                            .. tostring(senderId)
+                        )
+                        or "Unknown sender"
+                )
+        )
+
+    return HolyMailHistoryAdd({
+        Direction = "Received",
+        Mode = "Inbox",
+        Status = "Received",
+
+        OtherUserId = senderId,
+        OtherName = senderName,
+
+        AttemptedMails = 1,
+        AcceptedMails = 1,
+
+        PlannedItems = itemCount,
+        SentItems = itemCount,
+
+        TargetValue = knownValue,
+        AcceptedValue = knownValue,
+
+        Items = items,
+
+        Timestamp =
+            tonumber(data.SentAt)
+                or os.time(),
+    })
+end
 
 HOLY_MAIL_UI = {
     HudToggle = nil,
@@ -101277,6 +101657,10 @@ function HolyMailClaimInbox(manual)
                     HOLY_MAIL_RUNTIME.InboxClaimed +=
                         1
 
+                    HolyMailHistoryRecordClaim(
+                        mail
+                    )
+
                     HOLY_MAIL_RUNTIME.InboxCount =
                         math.max(
                             0,
@@ -101532,6 +101916,7 @@ function HolyMailSetAutoClaim(value)
 end
 
 HolyMailLoadSettings()
+HolyMailHistoryLoad()
 
 function HolyMailCreateHud()
     if typeof(HOLY_MAIL_RUNTIME.Gui) == "Instance"
@@ -105427,6 +105812,37 @@ function HolyMailCreateHud()
                     local recipientFinished =
                         true
 
+                    local historyRecord = {
+                        Direction = "Sent",
+                        Mode = "By Value",
+                        Status = "Failed",
+
+                        OtherUserId =
+                            entry.Recipient.UserId,
+
+                        OtherName =
+                            entry.Recipient.Name,
+
+                        AttemptedMails =
+                            entry.Mails,
+
+                        AcceptedMails = 0,
+
+                        PlannedItems =
+                            #entry.Fruits,
+
+                        SentItems = 0,
+
+                        TargetValue =
+                            entry.Value,
+
+                        AcceptedValue = 0,
+
+                        Items = {},
+                    }
+
+                    local historyItemMap = {}
+
                     for firstIndex = 1,
                         #entry.Fruits,
                         BATCH_LIMIT
@@ -105509,6 +105925,98 @@ function HolyMailCreateHud()
                         valueSent +=
                             batchValue
 
+                        historyRecord.AcceptedMails +=
+                            1
+
+                        historyRecord.SentItems +=
+                            #batch
+
+                        historyRecord.AcceptedValue +=
+                            batchValue
+
+                        for _, fruit in ipairs(batch) do
+                            local source =
+                                fruit.Item
+
+                            local icon = ""
+
+                            if typeof(source) == "Instance" then
+                                icon =
+                                    HolyMailHistoryNormalizeIcon(
+                                        source:GetAttribute("IMG")
+                                            or source:GetAttribute("Icon")
+                                            or source:GetAttribute("Image")
+                                            or source:GetAttribute("TextureId")
+                                            or (
+                                                source:IsA("Tool")
+                                                and source.TextureId
+                                                or ""
+                                            )
+                                    )
+                            end
+
+                            local itemKey =
+                                tostring(
+                                    fruit.Name
+                                        or "Unknown fruit"
+                                )
+                                .. "|"
+                                .. tostring(
+                                    fruit.Mutation
+                                        or "Normal"
+                                )
+                                .. "|"
+                                .. icon
+
+                            local historyItem =
+                                historyItemMap[
+                                    itemKey
+                                ]
+
+                            if not historyItem then
+                                historyItem = {
+                                    Name =
+                                        tostring(
+                                            fruit.Name
+                                                or "Unknown fruit"
+                                        ),
+
+                                    Details =
+                                        tostring(
+                                            fruit.Mutation
+                                                or "Normal"
+                                        ),
+
+                                    Icon = icon,
+                                    Count = 0,
+                                    Sent = 0,
+                                    Value = 0,
+                                }
+
+                                historyItemMap[
+                                    itemKey
+                                ] =
+                                    historyItem
+
+                                table.insert(
+                                    historyRecord.Items,
+                                    historyItem
+                                )
+                            end
+
+                            historyItem.Count +=
+                                1
+
+                            historyItem.Sent +=
+                                1
+
+                            historyItem.Value +=
+                                tonumber(
+                                    fruit.Value
+                                )
+                                or 0
+                        end
+
                         progressFill.Size =
                             UDim2.fromScale(
                                 completedMails
@@ -105526,6 +106034,31 @@ function HolyMailCreateHud()
                                 formatValue(valueSent)
                             )
                     end
+
+                    if recipientFinished then
+                        historyRecord.Status =
+                            "Sent"
+                    elseif historyRecord.AcceptedMails > 0
+                        or state.Stop
+                    then
+                        historyRecord.Status =
+                            "Partial"
+                    else
+                        historyRecord.Status =
+                            "Failed"
+                    end
+
+                    historyRecord.Error =
+                        failure
+                        or (
+                            state.Stop
+                            and "Stopped by user"
+                            or ""
+                        )
+
+                    HolyMailHistoryAdd(
+                        historyRecord
+                    )
 
                     if recipientFinished then
                         completedRecipients +=
@@ -106923,23 +107456,10 @@ function HolyMailCreateHud()
         create(
             "Frame",
             {
-                BackgroundTransparency =
-                    1,
-
-                Size =
-                    UDim2.fromOffset(
-                        896,
-                        580
-                    ),
-
-                Position =
-                    UDim2.fromOffset(
-                        12,
-                        110
-                    ),
-
-                Visible =
-                    false,
+                BackgroundTransparency = 1,
+                Size = UDim2.fromOffset(896, 580),
+                Position = UDim2.fromOffset(12, 110),
+                Visible = false,
             },
             window
         )
@@ -106947,69 +107467,999 @@ function HolyMailCreateHud()
     local historyCard =
         card(
             historyPage,
-            UDim2.fromOffset(
-                896,
-                580
-            ),
-            UDim2.fromOffset(
-                0,
-                0
-            )
+            UDim2.fromOffset(896, 580),
+            UDim2.fromOffset(0, 0)
         )
 
     text(
         historyCard,
         "HISTORY",
-        UDim2.fromOffset(
-            160,
-            20
-        ),
-        UDim2.fromOffset(
-            18,
-            15
-        ),
+        UDim2.fromOffset(160, 20),
+        UDim2.fromOffset(18, 13),
         10,
         color.Muted,
         nil,
         Enum.Font.GothamBold
     )
 
-    text(
-        historyCard,
-        "No delivery history yet",
-        UDim2.new(
-            1,
-            -36,
-            0,
-            34
-        ),
-        UDim2.fromOffset(
-            18,
-            224
-        ),
-        18,
-        color.Text,
-        Enum.TextXAlignment.Center,
-        Enum.Font.GothamSemibold
+    local historyStatLabels = {}
+
+    local function createHistoryStat(
+        title,
+        position
+    )
+        local statCard =
+            create(
+                "Frame",
+                {
+                    BackgroundColor3 = color.Field,
+                    Size = UDim2.fromOffset(211, 60),
+                    Position = position,
+                },
+                historyCard
+            )
+
+        round(statCard, 11)
+        outline(statCard, color.Border)
+
+        text(
+            statCard,
+            title,
+            UDim2.new(1, -20, 0, 16),
+            UDim2.fromOffset(10, 8),
+            9,
+            color.Muted,
+            nil,
+            Enum.Font.GothamBold
+        )
+
+        local valueLabel =
+            text(
+                statCard,
+                "0",
+                UDim2.new(1, -20, 0, 25),
+                UDim2.fromOffset(10, 27),
+                16,
+                color.Text,
+                nil,
+                Enum.Font.GothamBold
+            )
+
+        historyStatLabels[title] =
+            valueLabel
+    end
+
+    createHistoryStat(
+        "DELIVERIES",
+        UDim2.fromOffset(14, 38)
     )
 
-    text(
-        historyCard,
-        "Completed deliveries will appear here once history tracking is connected.",
-        UDim2.new(
-            1,
-            -36,
-            0,
-            26
-        ),
-        UDim2.fromOffset(
-            18,
-            262
-        ),
-        11,
-        color.Muted,
-        Enum.TextXAlignment.Center
+    createHistoryStat(
+        "ACCEPTED MAIL",
+        UDim2.fromOffset(233, 38)
     )
+
+    createHistoryStat(
+        "ITEMS MOVED",
+        UDim2.fromOffset(452, 38)
+    )
+
+    createHistoryStat(
+        "KNOWN VALUE",
+        UDim2.fromOffset(671, 38)
+    )
+
+    local historySearch =
+        box(
+            historyCard,
+            "Search people or items",
+            UDim2.fromOffset(354, 38),
+            UDim2.fromOffset(14, 110)
+        )
+
+    historySearch.TextSize =
+        10
+
+    local historyFilterButtons = {}
+
+    local function createHistoryFilter(
+        filterName,
+        width,
+        x
+    )
+        local filterButton =
+            button(
+                historyCard,
+                filterName,
+                UDim2.fromOffset(width, 38),
+                UDim2.fromOffset(x, 110),
+                false
+            )
+
+        filterButton.TextSize =
+            10
+
+        historyFilterButtons[filterName] =
+            filterButton
+
+        return filterButton
+    end
+
+    createHistoryFilter(
+        "All",
+        62,
+        378
+    )
+
+    createHistoryFilter(
+        "Sent",
+        70,
+        446
+    )
+
+    createHistoryFilter(
+        "Received",
+        88,
+        522
+    )
+
+    createHistoryFilter(
+        "Partial",
+        78,
+        616
+    )
+
+    local historyClearButton =
+        button(
+            historyCard,
+            "Clear history",
+            UDim2.fromOffset(124, 38),
+            UDim2.fromOffset(758, 110),
+            false
+        )
+
+    historyClearButton.TextSize =
+        10
+
+    local historyList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+
+                Size = UDim2.fromOffset(868, 404),
+                Position = UDim2.fromOffset(14, 162),
+
+                CanvasSize = UDim2.fromOffset(0, 0),
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+
+                ScrollBarThickness = 3,
+                ScrollBarImageColor3 = color.Border,
+
+                ScrollingDirection = Enum.ScrollingDirection.Y,
+            },
+            historyCard
+        )
+
+    local historyLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding = UDim.new(0, 8),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+            },
+            historyList
+        )
+
+    local function historyStatusColor(status)
+        if status == "Sent" then
+            return color.Accent
+        elseif status == "Received" then
+            return color.Green
+        elseif status == "Partial"
+            or status == "Stopped"
+        then
+            return color.Yellow
+        end
+
+        return color.Red
+    end
+
+    local function historyFormatTime(timestamp)
+        local ok, result =
+            pcall(
+                os.date,
+                "%d %b %Y  ·  %H:%M",
+                math.floor(
+                    tonumber(timestamp)
+                        or os.time()
+                )
+            )
+
+        return ok
+                and result
+            or "Unknown time"
+    end
+
+    local function historyMatchesSearch(
+        record,
+        query
+    )
+        if query == "" then
+            return true
+        end
+
+        local searchable =
+            tostring(
+                record.OtherName
+                    or ""
+            )
+            .. " "
+            .. tostring(
+                record.Mode
+                    or ""
+            )
+            .. " "
+            .. tostring(
+                record.Status
+                    or ""
+            )
+
+        for _, item in ipairs(
+            type(record.Items) == "table"
+                and record.Items
+                or {}
+        ) do
+            searchable ..=
+                " "
+                .. tostring(
+                    item.Name
+                        or ""
+                )
+                .. " "
+                .. tostring(
+                    item.Details
+                        or ""
+                )
+        end
+
+        return searchable
+            :lower()
+            :find(
+                query,
+                1,
+                true
+            ) ~= nil
+    end
+
+    local function refreshHistoryFilters()
+        for filterName, filterButton in pairs(
+            historyFilterButtons
+        ) do
+            local selected =
+                HOLY_MAIL_RUNTIME.HistoryFilter
+                    == filterName
+
+            filterButton.BackgroundColor3 =
+                selected
+                    and color.Accent
+                    or color.Field
+
+            filterButton.TextColor3 =
+                selected
+                    and color.White
+                    or color.Secondary
+
+            local stroke =
+                filterButton:FindFirstChildOfClass(
+                    "UIStroke"
+                )
+
+            if stroke then
+                stroke.Color =
+                    selected
+                        and Color3.fromRGB(
+                            83,
+                            148,
+                            247
+                        )
+                        or color.Border
+            end
+        end
+    end
+
+    local function refreshHistoryPage()
+        for _, child in ipairs(
+            historyList:GetChildren()
+        ) do
+            if child ~= historyLayout then
+                child:Destroy()
+            end
+        end
+
+        local records =
+            type(HOLY_MAIL_HISTORY) == "table"
+            and type(HOLY_MAIL_HISTORY.Records) == "table"
+            and HOLY_MAIL_HISTORY.Records
+            or {}
+
+        local deliveries = 0
+        local acceptedMails = 0
+        local movedItems = 0
+        local knownValue = 0
+
+        for _, record in ipairs(records) do
+            deliveries +=
+                1
+
+            acceptedMails +=
+                tonumber(
+                    record.AcceptedMails
+                )
+                or 0
+
+            movedItems +=
+                tonumber(
+                    record.SentItems
+                )
+                or 0
+
+            knownValue +=
+                tonumber(
+                    record.AcceptedValue
+                )
+                or 0
+        end
+
+        historyStatLabels[
+            "DELIVERIES"
+        ].Text =
+            tostring(deliveries)
+
+        historyStatLabels[
+            "ACCEPTED MAIL"
+        ].Text =
+            tostring(acceptedMails)
+
+        historyStatLabels[
+            "ITEMS MOVED"
+        ].Text =
+            tostring(movedItems)
+
+        historyStatLabels[
+            "KNOWN VALUE"
+        ].Text =
+            formatValue(knownValue)
+
+        refreshHistoryFilters()
+
+        local query =
+            tostring(
+                HOLY_MAIL_RUNTIME.HistorySearch
+                    or ""
+            )
+                :lower()
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        local selectedFilter =
+            tostring(
+                HOLY_MAIL_RUNTIME.HistoryFilter
+                    or "All"
+            )
+
+        local visibleRecords = {}
+
+        for _, record in ipairs(records) do
+            local status =
+                tostring(
+                    record.Status
+                        or "Failed"
+                )
+
+            local direction =
+                tostring(
+                    record.Direction
+                        or "Sent"
+                )
+
+            local filterMatches =
+                selectedFilter == "All"
+                or (
+                    selectedFilter == "Sent"
+                    and status == "Sent"
+                )
+                or (
+                    selectedFilter == "Received"
+                    and (
+                        status == "Received"
+                        or direction == "Received"
+                    )
+                )
+                or (
+                    selectedFilter == "Partial"
+                    and (
+                        status == "Partial"
+                        or status == "Stopped"
+                    )
+                )
+
+            if filterMatches
+                and historyMatchesSearch(
+                    record,
+                    query
+                )
+            then
+                table.insert(
+                    visibleRecords,
+                    record
+                )
+            end
+        end
+
+        if #visibleRecords == 0 then
+            local empty =
+                create(
+                    "Frame",
+                    {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(
+                            1,
+                            -2,
+                            0,
+                            330
+                        ),
+                        LayoutOrder = 1,
+                    },
+                    historyList
+                )
+
+            text(
+                empty,
+                #records == 0
+                    and "No delivery history yet"
+                    or "No matching deliveries",
+                UDim2.new(1, -30, 0, 30),
+                UDim2.fromOffset(15, 116),
+                16,
+                color.Text,
+                Enum.TextXAlignment.Center,
+                Enum.Font.GothamSemibold
+            )
+
+            text(
+                empty,
+                #records == 0
+                    and "Accepted sends and claimed mail will appear here."
+                    or "Try another search or filter.",
+                UDim2.new(1, -30, 0, 24),
+                UDim2.fromOffset(15, 151),
+                10,
+                color.Muted,
+                Enum.TextXAlignment.Center
+            )
+
+            return
+        end
+
+        for recordIndex, record in ipairs(
+            visibleRecords
+        ) do
+            local recordId =
+                tostring(
+                    record.Id
+                        or recordIndex
+                )
+
+            local expanded =
+                HOLY_MAIL_RUNTIME.ExpandedHistory[
+                    recordId
+                ] == true
+
+            local items =
+                type(record.Items) == "table"
+                    and record.Items
+                    or {}
+
+            local itemAreaHeight =
+                expanded
+                    and (
+                        math.max(
+                            1,
+                            #items
+                        ) * 48
+                        + 14
+                    )
+                    or 0
+
+            local recordHeight =
+                74 + itemAreaHeight
+
+            local status =
+                tostring(
+                    record.Status
+                        or "Failed"
+                )
+
+            local direction =
+                tostring(
+                    record.Direction
+                        or "Sent"
+                )
+
+            local statusColor =
+                historyStatusColor(
+                    status
+                )
+
+            local recordCard =
+                create(
+                    "Frame",
+                    {
+                        BackgroundColor3 = color.Field,
+                        Size = UDim2.new(
+                            1,
+                            -2,
+                            0,
+                            recordHeight
+                        ),
+                        LayoutOrder = recordIndex,
+                    },
+                    historyList
+                )
+
+            round(recordCard, 12)
+            outline(recordCard, color.Border)
+
+            local accentLine =
+                create(
+                    "Frame",
+                    {
+                        BackgroundColor3 = statusColor,
+                        Size = UDim2.fromOffset(
+                            4,
+                            recordHeight
+                        ),
+                        Position = UDim2.fromOffset(
+                            0,
+                            0
+                        ),
+                    },
+                    recordCard
+                )
+
+            round(accentLine, 4)
+
+            local userId =
+                tonumber(
+                    record.OtherUserId
+                )
+                or 0
+
+            if userId > 0 then
+                addAvatar(
+                    recordCard,
+                    userId,
+                    UDim2.fromOffset(42, 42),
+                    UDim2.fromOffset(14, 14)
+                )
+            else
+                local avatarPlaceholder =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 = color.Hover,
+                            Size = UDim2.fromOffset(42, 42),
+                            Position = UDim2.fromOffset(14, 14),
+                        },
+                        recordCard
+                    )
+
+                round(avatarPlaceholder, 999)
+            end
+
+            local otherName =
+                tostring(
+                    record.OtherName
+                        or "Unknown user"
+                )
+
+            local title =
+                direction == "Received"
+                    and (
+                        "From @"
+                        .. otherName
+                    )
+                    or (
+                        "To @"
+                        .. otherName
+                    )
+
+            text(
+                recordCard,
+                title,
+                UDim2.new(1, -340, 0, 22),
+                UDim2.fromOffset(66, 11),
+                12,
+                color.Text,
+                nil,
+                Enum.Font.GothamBold
+            )
+
+            local acceptedMails =
+                tonumber(
+                    record.AcceptedMails
+                )
+                or 0
+
+            local attemptedMails =
+                tonumber(
+                    record.AttemptedMails
+                )
+                or acceptedMails
+
+            local sentItems =
+                tonumber(
+                    record.SentItems
+                )
+                or 0
+
+            local plannedItems =
+                tonumber(
+                    record.PlannedItems
+                )
+                or sentItems
+
+            local summary =
+                historyFormatTime(
+                    record.Timestamp
+                )
+                .. "  ·  "
+                .. tostring(
+                    record.Mode
+                        or "Mail"
+                )
+                .. "  ·  "
+                .. tostring(acceptedMails)
+                .. "/"
+                .. tostring(attemptedMails)
+                .. " mail  ·  "
+                .. tostring(sentItems)
+                .. "/"
+                .. tostring(plannedItems)
+                .. " items"
+
+            text(
+                recordCard,
+                summary,
+                UDim2.new(1, -250, 0, 20),
+                UDim2.fromOffset(66, 36),
+                9,
+                color.Muted
+            )
+
+            local value =
+                tonumber(
+                    record.AcceptedValue
+                )
+                or 0
+
+            if value > 0 then
+                text(
+                    recordCard,
+                    formatValue(value),
+                    UDim2.fromOffset(120, 20),
+                    UDim2.new(
+                        1,
+                        -250,
+                        0,
+                        13
+                    ),
+                    11,
+                    color.Text,
+                    Enum.TextXAlignment.Right,
+                    Enum.Font.GothamSemibold
+                )
+            end
+
+            text(
+                recordCard,
+                status,
+                UDim2.fromOffset(92, 22),
+                UDim2.new(
+                    1,
+                    -122,
+                    0,
+                    12
+                ),
+                10,
+                statusColor,
+                Enum.TextXAlignment.Center,
+                Enum.Font.GothamBold
+            )
+
+            text(
+                recordCard,
+                expanded
+                    and "−"
+                    or "+",
+                UDim2.fromOffset(24, 24),
+                UDim2.new(
+                    1,
+                    -34,
+                    0,
+                    23
+                ),
+                15,
+                color.Muted,
+                Enum.TextXAlignment.Center,
+                Enum.Font.GothamBold
+            )
+
+            local expandButton =
+                create(
+                    "TextButton",
+                    {
+                        BackgroundTransparency = 1,
+                        Text = "",
+                        AutoButtonColor = false,
+                        Size = UDim2.new(
+                            1,
+                            0,
+                            0,
+                            72
+                        ),
+                    },
+                    recordCard
+                )
+
+            expandButton.MouseButton1Click:Connect(function()
+                HOLY_MAIL_RUNTIME.ExpandedHistory[
+                    recordId
+                ] =
+                    not expanded
+
+                refreshHistoryPage()
+            end)
+
+            if expanded then
+                create(
+                    "Frame",
+                    {
+                        BackgroundColor3 = color.Border,
+                        BackgroundTransparency = 0.2,
+                        Size = UDim2.new(
+                            1,
+                            -28,
+                            0,
+                            1
+                        ),
+                        Position = UDim2.fromOffset(
+                            14,
+                            72
+                        ),
+                    },
+                    recordCard
+                )
+
+                if #items == 0 then
+                    text(
+                        recordCard,
+                        "No item details were provided by this mail.",
+                        UDim2.new(1, -32, 0, 46),
+                        UDim2.fromOffset(16, 82),
+                        10,
+                        color.Muted,
+                        Enum.TextXAlignment.Center
+                    )
+                else
+                    for itemIndex, item in ipairs(
+                        items
+                    ) do
+                        local itemY =
+                            80
+                            + (
+                                itemIndex - 1
+                            ) * 48
+
+                        local itemRow =
+                            create(
+                                "Frame",
+                                {
+                                    BackgroundColor3 = color.Hover,
+                                    Size = UDim2.new(
+                                        1,
+                                        -28,
+                                        0,
+                                        40
+                                    ),
+                                    Position = UDim2.fromOffset(
+                                        14,
+                                        itemY
+                                    ),
+                                },
+                                recordCard
+                            )
+
+                        round(itemRow, 9)
+
+                        create(
+                            "ImageLabel",
+                            {
+                                BackgroundTransparency = 1,
+                                Image = HolyMailHistoryNormalizeIcon(
+                                    item.Icon
+                                ),
+                                Size = UDim2.fromOffset(30, 30),
+                                Position = UDim2.fromOffset(7, 5),
+                                ScaleType = Enum.ScaleType.Fit,
+                            },
+                            itemRow
+                        )
+
+                        text(
+                            itemRow,
+                            tostring(
+                                item.Name
+                                    or "Unknown item"
+                            ),
+                            UDim2.new(1, -280, 0, 18),
+                            UDim2.fromOffset(46, 3),
+                            10,
+                            color.Text,
+                            nil,
+                            Enum.Font.GothamSemibold
+                        )
+
+                        local count =
+                            math.max(
+                                0,
+                                math.floor(
+                                    tonumber(
+                                        item.Count
+                                    )
+                                    or 0
+                                )
+                            )
+
+                        local sent =
+                            math.max(
+                                0,
+                                math.floor(
+                                    tonumber(
+                                        item.Sent
+                                    )
+                                    or count
+                                )
+                            )
+
+                        local details =
+                            tostring(
+                                item.Details
+                                    or "Item"
+                            )
+                            .. "  ·  x"
+                            .. tostring(count)
+
+                        local itemValue =
+                            tonumber(
+                                item.Value
+                            )
+                            or 0
+
+                        if itemValue > 0 then
+                            details ..=
+                                "  ·  "
+                                .. formatValue(
+                                    itemValue
+                                )
+                        end
+
+                        text(
+                            itemRow,
+                            details,
+                            UDim2.new(1, -280, 0, 16),
+                            UDim2.fromOffset(46, 21),
+                            8,
+                            color.Muted
+                        )
+
+                        local itemStatus
+                        local itemStatusColor
+
+                        if direction == "Received" then
+                            itemStatus =
+                                "Received x"
+                                .. tostring(sent)
+
+                            itemStatusColor =
+                                color.Green
+                        elseif sent >= count then
+                            itemStatus =
+                                "Sent x"
+                                .. tostring(sent)
+
+                            itemStatusColor =
+                                color.Green
+                        elseif sent > 0 then
+                            itemStatus =
+                                tostring(sent)
+                                .. "/"
+                                .. tostring(count)
+                                .. " sent"
+
+                            itemStatusColor =
+                                color.Yellow
+                        else
+                            itemStatus =
+                                "Not sent"
+
+                            itemStatusColor =
+                                color.Red
+                        end
+
+                        text(
+                            itemRow,
+                            itemStatus,
+                            UDim2.fromOffset(150, 40),
+                            UDim2.new(
+                                1,
+                                -162,
+                                0,
+                                0
+                            ),
+                            9,
+                            itemStatusColor,
+                            Enum.TextXAlignment.Right,
+                            Enum.Font.GothamBold
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    HOLY_MAIL_RUNTIME.RefreshHistory =
+        refreshHistoryPage
+
+    for filterName, filterButton in pairs(
+        historyFilterButtons
+    ) do
+        filterButton.MouseButton1Click:Connect(function()
+            HOLY_MAIL_RUNTIME.HistoryFilter =
+                filterName
+
+            refreshHistoryPage()
+        end)
+    end
+
+    historySearch:GetPropertyChangedSignal(
+        "Text"
+    ):Connect(function()
+        HOLY_MAIL_RUNTIME.HistorySearch =
+            historySearch.Text
+
+        refreshHistoryPage()
+    end)
+
+    historyClearButton.MouseButton1Click:Connect(function()
+        if #HOLY_MAIL_HISTORY.Records == 0 then
+            return
+        end
+
+        showModal(
+            "Clear delivery history?",
+            "This removes all locally saved mail history. This cannot be undone.",
+            "Clear history",
+            function()
+                HolyMailHistoryClear()
+            end,
+            true
+        )
+    end)
+
+    refreshHistoryPage()
 
     local settingsPage =
         create(
@@ -107386,6 +108836,8 @@ function HolyMailCreateHud()
         elseif tabName == "History" then
             subtitle.Text =
                 "Recent deliveries"
+
+            refreshHistoryPage()
         else
             subtitle.Text =
                 "Mail preferences"
@@ -111291,6 +112743,76 @@ function HolyMailCreateHud()
             state.ExactRecipients
         ) do
             local payloads = {}
+            local payloadHistoryKeys = {}
+
+            local historyItems = {}
+            local historyItemMap = {}
+
+            local function addHistoryItem(
+                recordKey,
+                record,
+                count
+            )
+                count =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(count)
+                                or 0
+                        )
+                    )
+
+                if count <= 0 then
+                    return
+                end
+
+                local key =
+                    tostring(recordKey)
+
+                local historyItem =
+                    historyItemMap[key]
+
+                if not historyItem then
+                    historyItem = {
+                        Key = key,
+
+                        Name =
+                            tostring(
+                                record.Name
+                                    or "Unknown item"
+                            ),
+
+                        Details =
+                            tostring(
+                                record.Details
+                                    or record.Group
+                                    or "Item"
+                            ),
+
+                        Icon =
+                            tostring(
+                                record.Icon
+                                    or ""
+                            ),
+
+                        Count = 0,
+                        Sent = 0,
+                        Value = 0,
+                    }
+
+                    historyItemMap[key] =
+                        historyItem
+
+                    table.insert(
+                        historyItems,
+                        historyItem
+                    )
+                end
+
+                historyItem.Count +=
+                    count
+            end
+
             local recipientItems = 0
             local queue =
                 exactQueueFor(
@@ -111355,6 +112877,19 @@ function HolyMailCreateHud()
                                     }
                                 )
 
+                                payloadHistoryKeys[
+                                    #payloads
+                                ] =
+                                    tostring(
+                                        recordKey
+                                    )
+
+                                addHistoryItem(
+                                    recordKey,
+                                    record,
+                                    1
+                                )
+
                                 added +=
                                     1
                             end
@@ -111411,6 +112946,19 @@ function HolyMailCreateHud()
                                 }
                             )
 
+                            payloadHistoryKeys[
+                                #payloads
+                            ] =
+                                tostring(
+                                    recordKey
+                                )
+
+                            addHistoryItem(
+                                recordKey,
+                                record,
+                                added
+                            )
+
                             recipientItems +=
                                 added
 
@@ -111450,6 +112998,12 @@ function HolyMailCreateHud()
 
                         Mails =
                             mails,
+
+                        HistoryItems =
+                            historyItems,
+
+                        PayloadHistoryKeys =
+                            payloadHistoryKeys,
                     }
                 )
             end
@@ -111627,6 +113181,85 @@ function HolyMailCreateHud()
                     local recipientComplete =
                         true
 
+                    local historyRecord = {
+                        Direction = "Sent",
+                        Mode = "Pick Items",
+                        Status = "Failed",
+
+                        OtherUserId =
+                            route.Recipient.UserId,
+
+                        OtherName =
+                            route.Recipient.Name,
+
+                        AttemptedMails =
+                            route.Mails,
+
+                        AcceptedMails = 0,
+
+                        PlannedItems =
+                            route.Items,
+
+                        SentItems = 0,
+
+                        TargetValue = 0,
+                        AcceptedValue = 0,
+
+                        Items = {},
+                    }
+
+                    local historyItemMap = {}
+
+                    for _, historyItem in ipairs(
+                        route.HistoryItems
+                            or {}
+                    ) do
+                        local copy = {
+                            Key =
+                                tostring(
+                                    historyItem.Key
+                                        or ""
+                                ),
+
+                            Name =
+                                tostring(
+                                    historyItem.Name
+                                        or "Unknown item"
+                                ),
+
+                            Details =
+                                tostring(
+                                    historyItem.Details
+                                        or "Item"
+                                ),
+
+                            Icon =
+                                tostring(
+                                    historyItem.Icon
+                                        or ""
+                                ),
+
+                            Count =
+                                tonumber(
+                                    historyItem.Count
+                                )
+                                or 0,
+
+                            Sent = 0,
+                            Value = 0,
+                        }
+
+                        table.insert(
+                            historyRecord.Items,
+                            copy
+                        )
+
+                        historyItemMap[
+                            copy.Key
+                        ] =
+                            copy
+                    end
+
                     for firstIndex = 1,
                         #route.Payloads,
                         BATCH_LIMIT
@@ -111640,6 +113273,7 @@ function HolyMailCreateHud()
 
                         local payload = {}
                         local batchItems = 0
+                        local batchHistory = {}
 
                         for payloadIndex = firstIndex,
                             math.min(
@@ -111657,6 +113291,25 @@ function HolyMailCreateHud()
                             table.insert(
                                 payload,
                                 entry
+                            )
+
+                            table.insert(
+                                batchHistory,
+                                {
+                                    Key =
+                                        tostring(
+                                            route.PayloadHistoryKeys[
+                                                payloadIndex
+                                            ]
+                                            or ""
+                                        ),
+
+                                    Count =
+                                        tonumber(
+                                            entry.Count
+                                        )
+                                        or 1,
+                                }
                             )
 
                             batchItems +=
@@ -111702,6 +113355,26 @@ function HolyMailCreateHud()
                         completedItems +=
                             batchItems
 
+                        historyRecord.AcceptedMails +=
+                            1
+
+                        historyRecord.SentItems +=
+                            batchItems
+
+                        for _, acceptedItem in ipairs(
+                            batchHistory
+                        ) do
+                            local historyItem =
+                                historyItemMap[
+                                    acceptedItem.Key
+                                ]
+
+                            if historyItem then
+                                historyItem.Sent +=
+                                    acceptedItem.Count
+                            end
+                        end
+
                         itemProgressFill.Size =
                             UDim2.fromScale(
                                 completedMails
@@ -111719,6 +113392,31 @@ function HolyMailCreateHud()
                                 totalItems
                             )
                     end
+
+                    if recipientComplete then
+                        historyRecord.Status =
+                            "Sent"
+                    elseif historyRecord.AcceptedMails > 0
+                        or state.Stop
+                    then
+                        historyRecord.Status =
+                            "Partial"
+                    else
+                        historyRecord.Status =
+                            "Failed"
+                    end
+
+                    historyRecord.Error =
+                        failure
+                        or (
+                            state.Stop
+                            and "Stopped by user"
+                            or ""
+                        )
+
+                    HolyMailHistoryAdd(
+                        historyRecord
+                    )
 
                     if recipientComplete then
                         completedPeople +=
