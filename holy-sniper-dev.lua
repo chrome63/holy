@@ -106255,6 +106255,7 @@ function HolyMailCreateHud()
         "Gear",
         "Props",
         "Pets",
+        "Eggs",
     }
 
     local itemCategoryButtons =
@@ -106268,13 +106269,13 @@ function HolyMailCreateHud()
                 itemOptionsCard,
                 categoryName,
                 UDim2.fromOffset(
-                    80,
+                    66,
                     30
                 ),
                 UDim2.fromOffset(
                     14 + (
                         index - 1
-                    ) * 85,
+                    ) * 71,
                     36
                 ),
                 categoryName == state.ExactCategory
@@ -106349,7 +106350,7 @@ function HolyMailCreateHud()
     local itemOptionsInfo =
         text(
             itemOptionsCard,
-            "Only owned items are shown. Eggs will be added later.",
+            "Only owned items are shown. Stacked eggs use their live inventory count.",
             UDim2.new(
                 1,
                 -28,
@@ -106752,6 +106753,7 @@ function HolyMailCreateHud()
         local catalogs = {
             Seeds = {},
             SeedPacks = {},
+            Eggs = {},
             Gear = {},
             Props = {},
             Crates = {},
@@ -106839,6 +106841,25 @@ function HolyMailCreateHud()
                         cleanItemKey(name)
                     ] =
                         name
+                end
+            end
+        )
+
+        loadModule(
+            "EggData",
+            function(row)
+                local name =
+                    firstText(
+                        row.EggName,
+                        row.ItemName,
+                        row.DisplayName
+                    )
+
+                if name ~= "" then
+                    catalogs.Eggs[
+                        cleanItemKey(name)
+                    ] =
+                        row
                 end
             end
         )
@@ -107166,6 +107187,7 @@ function HolyMailCreateHud()
 
         local name =
             firstText(
+                attributes.Egg,
                 attributes.PropName,
                 attributes.SeedPackName,
                 attributes.SeedName,
@@ -107184,19 +107206,60 @@ function HolyMailCreateHud()
                 name
             )
 
-        if mainKey:find(
-            "egg",
-            1,
-            true
-        )
-            or typeKey:find(
-                "egg",
-                1,
-                true
+        local eggName =
+            firstText(
+                attributes.Egg,
+                name
             )
+
+        local eggKey =
+            cleanItemKey(
+                eggName
+            )
+
+        local isEgg =
+            mainKey == "egg"
+            or mainKey == "eggs"
             or attributes.Egg ~= nil
-        then
-            return nil
+            or catalogs.Eggs[eggKey] ~= nil
+
+        if isEgg then
+            return {
+                Group =
+                    "Eggs",
+
+                Category =
+                    "Eggs",
+
+                ItemKey =
+                    eggName,
+
+                Name =
+                    eggName,
+
+                Details =
+                    "Egg",
+
+                Unique =
+                    false,
+
+                Supported =
+                    true,
+
+                Favorite =
+                    readOwnedFavorite(
+                        item
+                    ),
+
+                Count =
+                    readOwnedCount(
+                        item,
+                        false
+                    ),
+
+                Instance =
+                    item,
+            }
         end
 
         if mainKey:find(
