@@ -100294,6 +100294,12 @@ HOLY_MOON_PREDICTOR_RUNTIME.Stop =
 --==================================================
 
 if type(HOLY_MAIL_RUNTIME) == "table" then
+    if type(HOLY_MAIL_RUNTIME.StopInboxWorker) == "function" then
+        pcall(function()
+            HOLY_MAIL_RUNTIME.StopInboxWorker()
+        end)
+    end
+
     if type(HOLY_MAIL_RUNTIME.DeliveryState) == "table" then
         HOLY_MAIL_RUNTIME.DeliveryState.Stop = true
     end
@@ -100312,6 +100318,7 @@ end
 local HOLY_MAIL_DAILY_LIMIT = 50
 local HOLY_MAIL_BATCH_LIMIT = 20
 local HOLY_MAIL_COOLDOWN = 10.05
+local HOLY_MAIL_INBOX_CAPACITY = 100
 
 local HOLY_MAIL_SETTINGS_FILE =
     UI_SETTINGS_FOLDER .. "/HolyPremiumMailSettings.json"
@@ -100325,6 +100332,9 @@ HOLY_MAIL_STATE = {
     HudScale = "100%",
     HudPosition = nil,
 
+    AutoClaim = false,
+    InboxInterval = "2 seconds",
+
     TrackerDay = os.date("!%Y-%m-%d"),
     TrackerUsed = 0,
 }
@@ -100337,13 +100347,25 @@ HOLY_MAIL_RUNTIME = {
     Status = "Closed",
     LastError = "",
 
+    InboxCount = 0,
+    InboxKnown = false,
+    InboxClaimed = 0,
+    InboxStatus = "Auto Claim is off",
+    InboxLastError = "",
+
+    InboxClaiming = false,
+    InboxWorkerRunning = false,
+    InboxWorkerToken = 0,
+
     SetMinimized = nil,
     ApplyScale = nil,
     UpdateQuota = nil,
 
     SyncingToggle = false,
+    SyncingInboxToggle = false,
     DestroyPending = false,
 
+    StopInboxWorker = nil,
     Stop = nil,
 }
 
@@ -100352,6 +100374,13 @@ HOLY_MAIL_UI = {
     StartMinimizedToggle = nil,
     ScaleDropdown = nil,
     UsedInput = nil,
+
+    InboxToggle = nil,
+    InboxIntervalDropdown = nil,
+
+    InboxCountLabel = nil,
+    InboxClaimedLabel = nil,
+    InboxStatusLabel = nil,
 
     UsageLabel = nil,
 }
@@ -100384,6 +100413,44 @@ function HolyMailNormalizeScale(value)
 
     return tostring(scale) .. "%",
         scale / 100
+end
+
+function HolyMailNormalizeInboxInterval(value)
+    local seconds =
+        tonumber(
+            tostring(
+                value or "2 seconds"
+            ):match("%d+")
+        )
+        or 2
+
+    local allowed = {
+        [1] = true,
+        [2] = true,
+        [5] = true,
+        [10] = true,
+    }
+
+    seconds =
+        math.floor(
+            seconds
+        )
+
+    if allowed[seconds] ~= true then
+        seconds =
+            2
+    end
+
+    local formatted =
+        tostring(seconds)
+        .. (
+            seconds == 1
+                and " second"
+                or " seconds"
+        )
+
+    return formatted,
+        seconds
 end
 
 function HolyMailSetHudScale(value)
@@ -100477,6 +100544,15 @@ function HolyMailSaveSettings()
             HolyMailNormalizeScale(
                 HOLY_MAIL_STATE.HudScale
                 or "100%"
+            ),
+
+        AutoClaim =
+            HOLY_MAIL_STATE.AutoClaim == true,
+
+        InboxInterval =
+            HolyMailNormalizeInboxInterval(
+                HOLY_MAIL_STATE.InboxInterval
+                or "2 seconds"
             ),
 
         HudPosition =
@@ -100576,6 +100652,16 @@ function HolyMailLoadSettings()
             data.HudScale
             or HOLY_MAIL_STATE.HudScale
             or "100%"
+        )
+
+    HOLY_MAIL_STATE.AutoClaim =
+        data.AutoClaim == true
+
+    HOLY_MAIL_STATE.InboxInterval =
+        HolyMailNormalizeInboxInterval(
+            data.InboxInterval
+            or HOLY_MAIL_STATE.InboxInterval
+            or "2 seconds"
         )
 
     HOLY_MAIL_STATE.TrackerDay =
@@ -100679,6 +100765,44 @@ function HolyMailRefreshControlUI()
             )
     )
 
+    local inboxText
+
+    if HOLY_MAIL_RUNTIME.InboxKnown == true then
+        inboxText =
+            "Inbox: "
+            .. tostring(
+                HOLY_MAIL_RUNTIME.InboxCount
+            )
+            .. " / "
+            .. tostring(
+                HOLY_MAIL_INBOX_CAPACITY
+            )
+    else
+        inboxText =
+            "Inbox: Checking..."
+    end
+
+    HolySniperSetLabel(
+        HOLY_MAIL_UI.InboxCountLabel,
+        inboxText
+    )
+
+    HolySniperSetLabel(
+        HOLY_MAIL_UI.InboxClaimedLabel,
+        "Claimed this session: "
+            .. tostring(
+                HOLY_MAIL_RUNTIME.InboxClaimed
+            )
+    )
+
+    HolySniperSetLabel(
+        HOLY_MAIL_UI.InboxStatusLabel,
+        tostring(
+            HOLY_MAIL_RUNTIME.InboxStatus
+            or "Waiting for mail"
+        )
+    )
+
     return true
 end
 
@@ -100705,6 +100829,706 @@ function HolyMailSetTrackedUsed(value)
     HolyMailRefreshControlUI()
 
     return HOLY_MAIL_STATE.TrackerUsed
+end
+
+function HolyMailGetInboxPackets()
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local networkingModule =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "Networking"
+        )
+
+    if not networkingModule
+        or not networkingModule:IsA("ModuleScript")
+    then
+        return nil,
+            nil,
+            "SharedModules.Networking was not found"
+    end
+
+    local requireOk, networking =
+        pcall(
+            require,
+            networkingModule
+        )
+
+    if requireOk ~= true
+        or type(networking) ~= "table"
+        or type(networking.Mailbox) ~= "table"
+    then
+        return nil,
+            nil,
+            "Networking.Mailbox could not be loaded"
+    end
+
+    local listPacket =
+        networking.Mailbox.List
+
+    local claimPacket =
+        networking.Mailbox.Claim
+
+    if type(listPacket) ~= "table"
+        or type(listPacket.Fire) ~= "function"
+    then
+        return nil,
+            nil,
+            "Mailbox.List is unavailable"
+    end
+
+    if type(claimPacket) ~= "table"
+        or type(claimPacket.Fire) ~= "function"
+    then
+        return nil,
+            nil,
+            "Mailbox.Claim is unavailable"
+    end
+
+    return listPacket,
+        claimPacket,
+        nil
+end
+
+function HolyMailListInbox(listPacket)
+    if type(listPacket) ~= "table"
+        or type(listPacket.Fire) ~= "function"
+    then
+        return nil,
+            "Mailbox.List is unavailable"
+    end
+
+    local callOk, inbox =
+        pcall(function()
+            return listPacket:Fire()
+        end)
+
+    if callOk ~= true then
+        return nil,
+            tostring(inbox)
+    end
+
+    if type(inbox) ~= "table" then
+        return nil,
+            "Mailbox.List returned invalid data"
+    end
+
+    return inbox,
+        nil
+end
+
+function HolyMailCountInbox(inbox)
+    local count =
+        0
+
+    for _ in pairs(
+        type(inbox) == "table"
+            and inbox
+            or {}
+    ) do
+        count +=
+            1
+    end
+
+    return count
+end
+
+function HolyMailApplyInbox(inbox)
+    HOLY_MAIL_RUNTIME.InboxCount =
+        HolyMailCountInbox(
+            inbox
+        )
+
+    HOLY_MAIL_RUNTIME.InboxKnown =
+        true
+
+    HolyMailRefreshControlUI()
+
+    return HOLY_MAIL_RUNTIME.InboxCount
+end
+
+function HolyMailCollectClaimableMails(inbox)
+    local claimable =
+        {}
+
+    for mailId, mailData in pairs(
+        type(inbox) == "table"
+            and inbox
+            or {}
+    ) do
+        if type(mailId) == "string"
+        and type(mailData) == "table"
+        and type(mailData.Items) == "table"
+        and next(mailData.Items) ~= nil
+        then
+            table.insert(
+                claimable,
+                {
+                    Id =
+                        mailId,
+
+                    SentAt =
+                        tonumber(
+                            mailData.SentAt
+                        ) or 0,
+
+                    Data =
+                        mailData,
+                }
+            )
+        end
+    end
+
+    table.sort(
+        claimable,
+        function(first, second)
+            if first.SentAt == second.SentAt then
+                return first.Id < second.Id
+            end
+
+            return first.SentAt < second.SentAt
+        end
+    )
+
+    return claimable
+end
+
+function HolyMailCleanInboxMessage(value)
+    local message =
+        tostring(
+            value or ""
+        ):gsub(
+            "[%c]+",
+            " "
+        )
+
+    if message == "" then
+        message =
+            "The server rejected the claim"
+    end
+
+    if #message > 110 then
+        message =
+            message:sub(
+                1,
+                107
+            )
+            .. "..."
+    end
+
+    return message
+end
+
+function HolyMailSyncInboxToggle(value)
+    local toggle =
+        type(Toggles) == "table"
+        and Toggles.HolyMailAutoClaim
+        or nil
+
+    if type(toggle) ~= "table"
+        or type(toggle.SetValue) ~= "function"
+        or toggle.Value == (value == true)
+    then
+        return false
+    end
+
+    HOLY_MAIL_RUNTIME.SyncingInboxToggle =
+        true
+
+    pcall(function()
+        toggle:SetValue(
+            value == true
+        )
+    end)
+
+    HOLY_MAIL_RUNTIME.SyncingInboxToggle =
+        false
+
+    return true
+end
+
+function HolyMailStopInboxWorker()
+    HOLY_MAIL_RUNTIME.InboxWorkerToken =
+        (
+            tonumber(
+                HOLY_MAIL_RUNTIME.InboxWorkerToken
+            )
+            or 0
+        )
+        + 1
+
+    HOLY_MAIL_RUNTIME.InboxWorkerRunning =
+        false
+
+    return true
+end
+
+HOLY_MAIL_RUNTIME.StopInboxWorker =
+    HolyMailStopInboxWorker
+
+function HolyMailRefreshInboxCount()
+    if HOLY_MAIL_RUNTIME.InboxClaiming == true then
+        return false,
+            "Mail is currently being claimed"
+    end
+
+    HOLY_MAIL_RUNTIME.InboxStatus =
+        "Checking inbox..."
+
+    HolyMailRefreshControlUI()
+
+    local listPacket, _, packetError =
+        HolyMailGetInboxPackets()
+
+    if not listPacket then
+        HOLY_MAIL_RUNTIME.InboxKnown =
+            false
+
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Could not check inbox"
+
+        HOLY_MAIL_RUNTIME.InboxLastError =
+            tostring(
+                packetError
+            )
+
+        HolyMailRefreshControlUI()
+
+        return false,
+            packetError
+    end
+
+    local inbox, listError =
+        HolyMailListInbox(
+            listPacket
+        )
+
+    if not inbox then
+        HOLY_MAIL_RUNTIME.InboxKnown =
+            false
+
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Could not check inbox"
+
+        HOLY_MAIL_RUNTIME.InboxLastError =
+            tostring(
+                listError
+            )
+
+        HolyMailRefreshControlUI()
+
+        return false,
+            listError
+    end
+
+    HolyMailApplyInbox(
+        inbox
+    )
+
+    if HOLY_MAIL_STATE.AutoClaim == true then
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Watching for new mail..."
+    elseif HOLY_MAIL_RUNTIME.InboxCount == 0 then
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Inbox is empty"
+    else
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Auto Claim is off"
+    end
+
+    HolyMailRefreshControlUI()
+
+    return true,
+        inbox
+end
+
+function HolyMailClaimInbox(manual)
+    if HOLY_MAIL_RUNTIME.InboxClaiming == true then
+        if manual == true then
+            HolyNotify(
+                "HOLY Mail",
+                "Mail is already being claimed.",
+                3
+            )
+        end
+
+        return false,
+            "Mail is already being claimed",
+            0
+    end
+
+    HOLY_MAIL_RUNTIME.InboxClaiming =
+        true
+
+    HOLY_MAIL_RUNTIME.InboxStatus =
+        "Checking inbox..."
+
+    HOLY_MAIL_RUNTIME.InboxLastError =
+        ""
+
+    HolyMailRefreshControlUI()
+
+    local executionOk,
+        successful,
+        resultMessage,
+        claimedCount =
+        xpcall(
+            function()
+                local listPacket,
+                    claimPacket,
+                    packetError =
+                    HolyMailGetInboxPackets()
+
+                if not listPacket
+                    or not claimPacket
+                then
+                    return false,
+                        packetError,
+                        0
+                end
+
+                local inbox, listError =
+                    HolyMailListInbox(
+                        listPacket
+                    )
+
+                if not inbox then
+                    return false,
+                        listError,
+                        0
+                end
+
+                HolyMailApplyInbox(
+                    inbox
+                )
+
+                local claimable =
+                    HolyMailCollectClaimableMails(
+                        inbox
+                    )
+
+                if #claimable == 0 then
+                    if HOLY_MAIL_RUNTIME.InboxCount == 0 then
+                        return true,
+                            HOLY_MAIL_STATE.AutoClaim == true
+                                and "Watching for new mail..."
+                                or "Inbox is empty",
+                            0
+                    end
+
+                    return true,
+                        "No item gifts to claim",
+                        0
+                end
+
+                local claimed =
+                    0
+
+                for index, mail in ipairs(
+                    claimable
+                ) do
+                    if manual ~= true
+                    and HOLY_MAIL_STATE.AutoClaim ~= true
+                    then
+                        break
+                    end
+
+                    HOLY_MAIL_RUNTIME.InboxStatus =
+                        "Claiming "
+                        .. tostring(index)
+                        .. " of "
+                        .. tostring(
+                            #claimable
+                        )
+                        .. "..."
+
+                    HolyMailRefreshControlUI()
+
+                    local callOk,
+                        accepted,
+                        claimMessage =
+                        pcall(function()
+                            return claimPacket:Fire(
+                                mail.Id
+                            )
+                        end)
+
+                    if callOk ~= true then
+                        return false,
+                            tostring(accepted),
+                            claimed
+                    end
+
+                    if accepted ~= true then
+                        return false,
+                            tostring(
+                                claimMessage
+                                or accepted
+                            ),
+                            claimed
+                    end
+
+                    claimed +=
+                        1
+
+                    HOLY_MAIL_RUNTIME.InboxClaimed +=
+                        1
+
+                    HOLY_MAIL_RUNTIME.InboxCount =
+                        math.max(
+                            0,
+                            HOLY_MAIL_RUNTIME.InboxCount
+                                - 1
+                        )
+
+                    HolyMailRefreshControlUI()
+                end
+
+                local finalInbox,
+                    finalListError =
+                    HolyMailListInbox(
+                        listPacket
+                    )
+
+                if not finalInbox then
+                    return false,
+                        "Inbox refresh failed: "
+                            .. tostring(
+                                finalListError
+                            ),
+                        claimed
+                end
+
+                HolyMailApplyInbox(
+                    finalInbox
+                )
+
+                if HOLY_MAIL_STATE.AutoClaim == true then
+                    return true,
+                        "Watching for new mail...",
+                        claimed
+                end
+
+                if manual == true
+                and claimed > 0
+                then
+                    return true,
+                        "All item mail claimed",
+                        claimed
+                end
+
+                return true,
+                    "Auto Claim is off",
+                    claimed
+            end,
+            function(message)
+                return tostring(message)
+                    .. "\n"
+                    .. debug.traceback()
+            end
+        )
+
+    HOLY_MAIL_RUNTIME.InboxClaiming =
+        false
+
+    if executionOk ~= true then
+        resultMessage =
+            tostring(
+                successful
+            )
+
+        successful =
+            false
+
+        claimedCount =
+            0
+    end
+
+    claimedCount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(
+                    claimedCount
+                )
+                or 0
+            )
+        )
+
+    if successful == true then
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            tostring(
+                resultMessage
+                or "Inbox checked"
+            )
+
+        if manual == true then
+            HolyNotify(
+                "HOLY Mail",
+                claimedCount > 0
+                    and (
+                        "Claimed "
+                        .. tostring(claimedCount)
+                        .. (
+                            claimedCount == 1
+                                and " mail."
+                                or " mails."
+                        )
+                    )
+                    or tostring(
+                        resultMessage
+                        or "No item mail to claim."
+                    ),
+                4
+            )
+        end
+    else
+        local cleanMessage =
+            HolyMailCleanInboxMessage(
+                resultMessage
+            )
+
+        HOLY_MAIL_RUNTIME.InboxLastError =
+            cleanMessage
+
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Stopped: "
+            .. cleanMessage
+
+        if HOLY_MAIL_STATE.AutoClaim == true then
+            HOLY_MAIL_STATE.AutoClaim =
+                false
+
+            HolyMailStopInboxWorker()
+
+            HolyMailSyncInboxToggle(
+                false
+            )
+
+            HolyMailSaveSettings()
+        end
+
+        HolyNotify(
+            "HOLY Mail",
+            "Auto Claim stopped: "
+                .. cleanMessage,
+            5
+        )
+    end
+
+    HolyMailRefreshControlUI()
+
+    return successful == true,
+        resultMessage,
+        claimedCount
+end
+
+function HolyMailStartInboxWorker()
+    if HOLY_MAIL_STATE.AutoClaim ~= true then
+        return false
+    end
+
+    if HOLY_MAIL_RUNTIME.InboxWorkerRunning == true then
+        return true
+    end
+
+    HOLY_MAIL_RUNTIME.InboxWorkerToken =
+        (
+            tonumber(
+                HOLY_MAIL_RUNTIME.InboxWorkerToken
+            )
+            or 0
+        )
+        + 1
+
+    local token =
+        HOLY_MAIL_RUNTIME.InboxWorkerToken
+
+    HOLY_MAIL_RUNTIME.InboxWorkerRunning =
+        true
+
+    HOLY_MAIL_RUNTIME.InboxStatus =
+        "Watching for new mail..."
+
+    HolyMailRefreshControlUI()
+
+    task.spawn(function()
+        while HOLY_MAIL_STATE.AutoClaim == true
+        and HOLY_MAIL_RUNTIME.InboxWorkerToken == token
+        do
+            HolyMailClaimInbox(
+                false
+            )
+
+            if HOLY_MAIL_STATE.AutoClaim ~= true
+            or HOLY_MAIL_RUNTIME.InboxWorkerToken ~= token
+            then
+                break
+            end
+
+            local _, interval =
+                HolyMailNormalizeInboxInterval(
+                    HOLY_MAIL_STATE.InboxInterval
+                )
+
+            local deadline =
+                os.clock()
+                + interval
+
+            while HOLY_MAIL_STATE.AutoClaim == true
+            and HOLY_MAIL_RUNTIME.InboxWorkerToken == token
+            and os.clock() < deadline
+            do
+                task.wait(
+                    math.min(
+                        0.1,
+                        math.max(
+                            0,
+                            deadline - os.clock()
+                        )
+                    )
+                )
+            end
+        end
+
+        if HOLY_MAIL_RUNTIME.InboxWorkerToken == token then
+            HOLY_MAIL_RUNTIME.InboxWorkerRunning =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyMailSetAutoClaim(value)
+    local enabled =
+        value == true
+
+    HOLY_MAIL_STATE.AutoClaim =
+        enabled
+
+    HOLY_MAIL_RUNTIME.InboxLastError =
+        ""
+
+    if enabled == true then
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Watching for new mail..."
+
+        HolyMailStartInboxWorker()
+    else
+        HolyMailStopInboxWorker()
+
+        HOLY_MAIL_RUNTIME.InboxStatus =
+            "Auto Claim is off"
+    end
+
+    HolyMailSaveSettings()
+    HolyMailRefreshControlUI()
+
+    return enabled
 end
 
 HolyMailLoadSettings()
@@ -105337,6 +106161,8 @@ end
 
 HOLY_MAIL_RUNTIME.Stop =
     function(reason)
+        HolyMailStopInboxWorker()
+
         HOLY_MAIL_STATE.HudEnabled =
             false
 
@@ -105567,6 +106393,14 @@ local MailHudBox =
         "Mail.Hud",
         "Mail HUD",
         "mail"
+    )
+
+local MailInboxBox =
+    HolyAddLeftGroupbox(
+        Tabs.Mail,
+        "Mail.Inbox",
+        "Inbox",
+        "inbox"
     )
 
 local MailUsageBox =
@@ -115192,6 +116026,112 @@ HolyMailOpenButton:AddButton({
         end,
 })
 
+HOLY_MAIL_UI.InboxCountLabel =
+    HolySniperAddLabel(
+        MailInboxBox,
+        "Inbox: Checking..."
+    )
+
+HOLY_MAIL_UI.InboxToggle =
+    MailInboxBox:AddToggle(
+        "HolyMailAutoClaim",
+        {
+            Text =
+                "Auto Claim",
+
+            Default =
+                HOLY_MAIL_STATE.AutoClaim == true,
+
+            Tooltip =
+                "Automatically claims item gifts from your mailbox.",
+        }
+    )
+
+HOLY_MAIL_UI.InboxToggle:OnChanged(function(value)
+
+    if HOLY_MAIL_RUNTIME.SyncingInboxToggle == true then
+        return
+    end
+
+    HolyMailSetAutoClaim(
+        value
+    )
+end)
+
+HOLY_MAIL_UI.InboxIntervalDropdown =
+    MailInboxBox:AddDropdown(
+        "HolyMailInboxInterval",
+        {
+            Text =
+                "Check Every",
+
+            Values = {
+                "1 second",
+                "2 seconds",
+                "5 seconds",
+                "10 seconds",
+            },
+
+            Default =
+                HolyMailNormalizeInboxInterval(
+                    HOLY_MAIL_STATE.InboxInterval
+                    or "2 seconds"
+                ),
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                4,
+
+            Tooltip =
+                "How often Auto Claim checks for new item mail.",
+        }
+    )
+
+HOLY_MAIL_UI.InboxIntervalDropdown:OnChanged(function(value)
+
+    HOLY_MAIL_STATE.InboxInterval =
+        HolyMailNormalizeInboxInterval(
+            value
+        )
+
+    HolyMailSaveSettings()
+end)
+
+MailInboxBox:AddButton({
+    Text =
+        "Claim All Now",
+
+    Tooltip =
+        "Claims every item gift currently in your mailbox.",
+
+    Func =
+        function()
+
+            task.spawn(function()
+                HolyMailClaimInbox(
+                    true
+                )
+            end)
+        end,
+})
+
+HOLY_MAIL_UI.InboxClaimedLabel =
+    HolySniperAddLabel(
+        MailInboxBox,
+        "Claimed this session: 0"
+    )
+
+HOLY_MAIL_UI.InboxStatusLabel =
+    HolySniperAddLabel(
+        MailInboxBox,
+        "Auto Claim is off"
+    )
+
 HOLY_MAIL_UI.UsedInput =
     MailUsageBox:AddInput(
         "HolyMailTrackedUsed",
@@ -115292,6 +116232,17 @@ task.defer(function()
             true,
             true
         )
+    end
+end)
+
+task.defer(function()
+
+    if HOLY_MAIL_STATE.AutoClaim == true then
+
+        HolyMailStartInboxWorker()
+    else
+
+        HolyMailRefreshInboxCount()
     end
 end)
 
