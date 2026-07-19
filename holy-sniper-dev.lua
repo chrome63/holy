@@ -100322,6 +100322,7 @@ local HolyMailTweenService =
 HOLY_MAIL_STATE = {
     HudEnabled = false,
     StartMinimized = false,
+    HudScale = "100%",
     HudPosition = nil,
 
     TrackerDay = os.date("!%Y-%m-%d"),
@@ -100337,6 +100338,7 @@ HOLY_MAIL_RUNTIME = {
     LastError = "",
 
     SetMinimized = nil,
+    ApplyScale = nil,
     UpdateQuota = nil,
 
     SyncingToggle = false,
@@ -100348,14 +100350,59 @@ HOLY_MAIL_RUNTIME = {
 HOLY_MAIL_UI = {
     HudToggle = nil,
     StartMinimizedToggle = nil,
+    ScaleDropdown = nil,
     UsedInput = nil,
 
-    StatusLabel = nil,
     UsageLabel = nil,
 }
 
 function HolyMailToday()
     return os.date("!%Y-%m-%d")
+end
+
+function HolyMailNormalizeScale(value)
+    local cleanedValue =
+        tostring(
+            value or "100%"
+        ):gsub(
+            "%%",
+            ""
+        )
+
+    local scale =
+        tonumber(cleanedValue)
+        or 100
+
+    scale =
+        math.clamp(
+            math.floor(
+                scale + 0.5
+            ),
+            60,
+            110
+        )
+
+    return tostring(scale) .. "%",
+        scale / 100
+end
+
+function HolyMailSetHudScale(value)
+    local formattedScale =
+        HolyMailNormalizeScale(value)
+
+    HOLY_MAIL_STATE.HudScale =
+        formattedScale
+
+    if type(HOLY_MAIL_RUNTIME.ApplyScale) == "function" then
+
+        pcall(
+            HOLY_MAIL_RUNTIME.ApplyScale
+        )
+    end
+
+    HolyMailSaveSettings()
+
+    return formattedScale
 end
 
 function HolyMailCheckDay()
@@ -100425,6 +100472,12 @@ function HolyMailSaveSettings()
 
         StartMinimized =
             HOLY_MAIL_STATE.StartMinimized == true,
+
+        HudScale =
+            HolyMailNormalizeScale(
+                HOLY_MAIL_STATE.HudScale
+                or "100%"
+            ),
 
         HudPosition =
             position,
@@ -100518,6 +100571,13 @@ function HolyMailLoadSettings()
     HOLY_MAIL_STATE.StartMinimized =
         data.StartMinimized == true
 
+    HOLY_MAIL_STATE.HudScale =
+        HolyMailNormalizeScale(
+            data.HudScale
+            or HOLY_MAIL_STATE.HudScale
+            or "100%"
+        )
+
     HOLY_MAIL_STATE.TrackerDay =
         tostring(
             data.TrackerDay
@@ -100606,15 +100666,6 @@ end
 
 function HolyMailRefreshControlUI()
     HolyMailCheckDay()
-
-    HolySniperSetLabel(
-        HOLY_MAIL_UI.StatusLabel,
-        "HUD: "
-            .. tostring(
-                HOLY_MAIL_RUNTIME.Status
-                    or "Closed"
-            )
-    )
 
     HolySniperSetLabel(
         HOLY_MAIL_UI.UsageLabel,
@@ -101082,6 +101133,27 @@ function HolyMailCreateHud()
             window
         )
 
+    local responsiveScale =
+        1
+
+    local function applyHudScale()
+        local _,
+            selectedScale =
+            HolyMailNormalizeScale(
+                HOLY_MAIL_STATE.HudScale
+                or "100%"
+            )
+
+        windowScale.Scale =
+            responsiveScale
+            * selectedScale
+
+        return true
+    end
+
+    HOLY_MAIL_RUNTIME.ApplyScale =
+        applyHudScale
+
     local function resize()
         local camera =
             workspace.CurrentCamera
@@ -101094,7 +101166,7 @@ function HolyMailCreateHud()
                     1080
                 )
 
-        windowScale.Scale =
+        responsiveScale =
             math.clamp(
                 math.min(
                     viewport.X / 980,
@@ -101103,6 +101175,8 @@ function HolyMailCreateHud()
                 0.62,
                 1
             )
+
+        applyHudScale()
     end
 
     resize()
@@ -105120,6 +105194,9 @@ function HolyMailDestroyHud(reason)
         nil
 
     HOLY_MAIL_RUNTIME.SetMinimized =
+        nil
+
+    HOLY_MAIL_RUNTIME.ApplyScale =
         nil
 
     HOLY_MAIL_RUNTIME.UpdateQuota =
@@ -115037,6 +115114,49 @@ HOLY_MAIL_UI.StartMinimizedToggle:OnChanged(function(value)
     HolyMailSaveSettings()
 end)
 
+HOLY_MAIL_UI.ScaleDropdown =
+    MailHudBox:AddDropdown(
+        "HolyMailHudScale",
+        {
+            Text =
+                "HUD Scale",
+
+            Values = {
+                "60%",
+                "70%",
+                "80%",
+                "90%",
+                "100%",
+                "110%",
+            },
+
+            Default =
+                HolyMailNormalizeScale(
+                    HOLY_MAIL_STATE.HudScale
+                    or "100%"
+                ),
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                6,
+
+            Tooltip =
+                "Changes the size of the floating Mail HUD.",
+        }
+    )
+
+HOLY_MAIL_UI.ScaleDropdown:OnChanged(function(value)
+
+    HolyMailSetHudScale(
+        value
+    )
+end)
+
 local HolyMailOpenButton =
     MailHudBox:AddButton({
         Text =
@@ -115071,12 +115191,6 @@ HolyMailOpenButton:AddButton({
             )
         end,
 })
-
-HOLY_MAIL_UI.StatusLabel =
-    HolySniperAddLabel(
-        MailHudBox,
-        "HUD: Closed"
-    )
 
 HOLY_MAIL_UI.UsedInput =
     MailUsageBox:AddInput(
