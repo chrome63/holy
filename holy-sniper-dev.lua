@@ -106372,8 +106372,10 @@ function HolyMailCreateHud()
     state.ExactSelectedUserId =
         nil
 
-    state.ExactCategory =
-        "Fruits"
+    state.ExactCategories = {
+        Fruits =
+            true,
+    }
 
     state.ExactSearch =
         ""
@@ -107776,7 +107778,9 @@ function HolyMailCreateHud()
                     ) * 71,
                     36
                 ),
-                categoryName == state.ExactCategory
+                state.ExactCategories[
+                    categoryName
+                ] == true
             )
 
         categoryButton.TextSize =
@@ -108247,6 +108251,328 @@ function HolyMailCreateHud()
         end
     end
 
+    local imageAssetId =
+        nil
+
+    do
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local imageModule =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "ImageAssetId"
+            )
+
+        if imageModule
+            and imageModule:IsA(
+                "ModuleScript"
+            )
+        then
+            local ok,
+                result =
+                pcall(
+                    require,
+                    imageModule
+                )
+
+            if ok
+                and type(result) == "table"
+            then
+                imageAssetId =
+                    result
+            end
+        end
+    end
+
+    local function coerceOwnedImage(
+        value
+    )
+        if typeof(value) == "Instance" then
+            if value:IsA(
+                "StringValue"
+            ) or value:IsA(
+                "NumberValue"
+            ) or value:IsA(
+                "IntValue"
+            ) then
+                value =
+                    value.Value
+            elseif value:IsA(
+                "ImageLabel"
+            ) or value:IsA(
+                "ImageButton"
+            ) then
+                value =
+                    value.Image
+            elseif value:IsA(
+                "Decal"
+            ) or value:IsA(
+                "Texture"
+            ) then
+                value =
+                    value.Texture
+            elseif value:IsA(
+                "Tool"
+            ) then
+                value =
+                    value.TextureId
+            else
+                return ""
+            end
+        end
+
+        if type(value) == "number" then
+            if value <= 0 then
+                return ""
+            end
+
+            return "rbxassetid://"
+                .. tostring(
+                    math.floor(value)
+                )
+        end
+
+        if type(value) ~= "string" then
+            return ""
+        end
+
+        local result =
+            value:gsub(
+                "^%s+",
+                ""
+            ):gsub(
+                "%s+$",
+                ""
+            )
+
+        if result == "" then
+            return ""
+        end
+
+        if result:match(
+            "^%d+$"
+        ) then
+            return "rbxassetid://"
+                .. result
+        end
+
+        return result
+    end
+
+    local function normalizeOwnedImage(
+        value
+    )
+        local direct =
+            coerceOwnedImage(
+                value
+            )
+
+        local resolver =
+            type(imageAssetId) == "table"
+            and imageAssetId.ResolveForDisplay
+            or nil
+
+        if type(resolver) == "function" then
+            local candidates = {
+                value,
+            }
+
+            if direct ~= "" then
+                table.insert(
+                    candidates,
+                    direct
+                )
+            end
+
+            for _, candidate in ipairs(
+                candidates
+            ) do
+                local ok,
+                    result =
+                    pcall(
+                        resolver,
+                        candidate
+                    )
+
+                if not ok then
+                    ok,
+                    result =
+                        pcall(
+                            resolver,
+                            imageAssetId,
+                            candidate
+                        )
+                end
+
+                if ok then
+                    local resolved =
+                        coerceOwnedImage(
+                            result
+                        )
+
+                    if resolved ~= "" then
+                        return resolved
+                    end
+                end
+            end
+        end
+
+        return direct
+    end
+
+    local ownedImageFields = {
+        "IMG",
+        "Icon",
+        "Image",
+        "ImageId",
+        "ImageID",
+        "IconId",
+        "IconID",
+        "DisplayImage",
+        "DisplayIcon",
+        "ShopImage",
+        "Thumbnail",
+        "ThumbnailId",
+        "ThumbnailImage",
+        "Texture",
+        "TextureId",
+        "TextureID",
+        "FruitImage",
+        "FruitIcon",
+        "SeedImage",
+        "SeedIcon",
+        "SeedPackImage",
+        "SeedPackIcon",
+        "PackImage",
+        "EggImage",
+        "EggIcon",
+        "PetImage",
+        "PetIcon",
+        "PropImage",
+        "PropIcon",
+        "CrateImage",
+        "CrateIcon",
+    }
+
+    local function readOwnedIconCandidate(
+        value,
+        seen
+    )
+        local valueType =
+            typeof(value)
+
+        if valueType == "Instance" then
+            local direct =
+                normalizeOwnedImage(
+                    value
+                )
+
+            if direct ~= "" then
+                return direct
+            end
+
+            for _, descendant in ipairs(
+                value:GetDescendants()
+            ) do
+                local descendantName =
+                    cleanItemKey(
+                        descendant.Name
+                    )
+
+                local looksLikeImage =
+                    descendantName:find(
+                        "image",
+                        1,
+                        true
+                    ) ~= nil
+                    or descendantName:find(
+                        "icon",
+                        1,
+                        true
+                    ) ~= nil
+                    or descendantName:find(
+                        "texture",
+                        1,
+                        true
+                    ) ~= nil
+
+                if looksLikeImage then
+                    local resolved =
+                        normalizeOwnedImage(
+                            descendant
+                        )
+
+                    if resolved ~= "" then
+                        return resolved
+                    end
+                end
+            end
+
+            return ""
+        end
+
+        if valueType ~= "table" then
+            return normalizeOwnedImage(
+                value
+            )
+        end
+
+        seen =
+            seen or {}
+
+        if seen[value] then
+            return ""
+        end
+
+        seen[value] =
+            true
+
+        for _, fieldName in ipairs(
+            ownedImageFields
+        ) do
+            local fieldValue =
+                value[fieldName]
+
+            if fieldValue ~= nil then
+                local resolved =
+                    readOwnedIconCandidate(
+                        fieldValue,
+                        seen
+                    )
+
+                if resolved ~= "" then
+                    return resolved
+                end
+            end
+        end
+
+        return ""
+    end
+
+    local function firstOwnedIcon(...)
+        for index = 1, select(
+            "#",
+            ...
+        ) do
+            local resolved =
+                readOwnedIconCandidate(
+                    select(
+                        index,
+                        ...
+                    )
+                )
+
+            if resolved ~= "" then
+                return resolved
+            end
+        end
+
+        return ""
+    end
+
     local function loadOwnedCatalogs()
         local catalogs = {
             Seeds = {},
@@ -108255,6 +108581,7 @@ function HolyMailCreateHud()
             Gear = {},
             Props = {},
             Crates = {},
+            Pets = {},
         }
 
         local sharedModules =
@@ -108317,7 +108644,7 @@ function HolyMailCreateHud()
                     catalogs.Seeds[
                         cleanItemKey(name)
                     ] =
-                        name
+                        row
                 end
             end
         )
@@ -108338,7 +108665,7 @@ function HolyMailCreateHud()
                     catalogs.SeedPacks[
                         cleanItemKey(name)
                     ] =
-                        name
+                        row
                 end
             end
         )
@@ -108350,7 +108677,8 @@ function HolyMailCreateHud()
                     firstText(
                         row.EggName,
                         row.ItemName,
-                        row.DisplayName
+                        row.DisplayName,
+                        row.Name
                     )
 
                 if name ~= "" then
@@ -108367,7 +108695,9 @@ function HolyMailCreateHud()
             function(row)
                 local name =
                     firstText(
-                        row.ItemName
+                        row.ItemName,
+                        row.DisplayName,
+                        row.Name
                     )
 
                 if name ~= "" then
@@ -108384,7 +108714,10 @@ function HolyMailCreateHud()
             function(row)
                 local name =
                     firstText(
-                        row.PropName
+                        row.PropName,
+                        row.ItemName,
+                        row.DisplayName,
+                        row.Name
                     )
 
                 if name ~= "" then
@@ -108402,7 +108735,9 @@ function HolyMailCreateHud()
                 local name =
                     firstText(
                         row.CrateName,
-                        row.ItemName
+                        row.ItemName,
+                        row.DisplayName,
+                        row.Name
                     )
 
                 if name ~= "" then
@@ -108414,31 +108749,225 @@ function HolyMailCreateHud()
             end
         )
 
+        loadModule(
+            "PetData",
+            function(row)
+                local name =
+                    firstText(
+                        row.DisplayName,
+                        row.PetName,
+                        row.ItemName,
+                        row.Name
+                    )
+
+                if name ~= "" then
+                    catalogs.Pets[
+                        cleanItemKey(name)
+                    ] =
+                        row
+                end
+            end
+        )
+
+        if type(
+            HolySniperGetPetData
+        ) == "function" then
+            local ok,
+                petData =
+                pcall(
+                    HolySniperGetPetData
+                )
+
+            if ok
+                and type(petData) == "table"
+            then
+                for key, row in pairs(
+                    petData
+                ) do
+                    if type(row) == "table" then
+                        local name =
+                            firstText(
+                                row.DisplayName,
+                                row.PetName,
+                                row.ItemName,
+                                row.Name,
+                                type(key) == "string"
+                                    and key
+                                    or nil
+                            )
+
+                        if name ~= "" then
+                            catalogs.Pets[
+                                cleanItemKey(name)
+                            ] =
+                                row
+                        end
+                    end
+                end
+            end
+        end
+
         local crateFolder =
             sharedModules:FindFirstChild(
                 "CrateData"
             )
 
-        if crateFolder then
+        if crateFolder
+            and not crateFolder:IsA(
+                "ModuleScript"
+            )
+        then
             for _, child in ipairs(
                 crateFolder:GetChildren()
             ) do
                 if child:IsA(
                     "ModuleScript"
                 ) then
+                    local crateRow = {
+                        CrateName =
+                            child.Name,
+                    }
+
+                    local ok,
+                        result =
+                        pcall(
+                            require,
+                            child
+                        )
+
+                    if ok
+                        and type(result) == "table"
+                    then
+                        crateRow =
+                            result
+                    end
+
                     catalogs.Crates[
                         cleanItemKey(
                             child.Name
                         )
-                    ] = {
-                        CrateName =
-                            child.Name,
-                    }
+                    ] =
+                        crateRow
                 end
             end
         end
 
         return catalogs
+    end
+
+    local function resolveOwnedRecordIcon(
+        record,
+        catalogs
+    )
+        if type(record) ~= "table" then
+            return ""
+        end
+
+        local nameKey =
+            cleanItemKey(
+                record.Name
+            )
+
+        local icon =
+            ""
+
+        if record.Group == "Fruits" then
+            local seedData =
+                catalogs.Seeds[
+                    nameKey
+                ]
+
+            icon =
+                firstOwnedIcon(
+                    seedData
+                        and seedData.FruitImage,
+                    seedData
+                        and seedData.FruitIcon,
+                    seedData
+                )
+        elseif record.Group == "Seeds" then
+            if record.Category == "SeedPacks" then
+                icon =
+                    firstOwnedIcon(
+                        catalogs.SeedPacks[
+                            nameKey
+                        ]
+                    )
+            else
+                local seedData =
+                    catalogs.Seeds[
+                        nameKey
+                    ]
+
+                icon =
+                    firstOwnedIcon(
+                        seedData
+                            and seedData.SeedImage,
+                        seedData
+                            and seedData.SeedIcon,
+                        seedData
+                    )
+            end
+        elseif record.Group == "Gear" then
+            icon =
+                firstOwnedIcon(
+                    catalogs.Gear[
+                        nameKey
+                    ]
+                )
+        elseif record.Group == "Props" then
+            icon =
+                firstOwnedIcon(
+                    catalogs.Props[
+                        nameKey
+                    ],
+                    catalogs.Crates[
+                        nameKey
+                    ]
+                )
+        elseif record.Group == "Eggs" then
+            icon =
+                firstOwnedIcon(
+                    catalogs.Eggs[
+                        nameKey
+                    ]
+                )
+        elseif record.Group == "Pets" then
+            icon =
+                firstOwnedIcon(
+                    catalogs.Pets[
+                        nameKey
+                    ]
+                )
+        end
+
+        if icon ~= "" then
+            return icon
+        end
+
+        local instance =
+            record.Instance
+
+        if typeof(instance) == "Instance" then
+            icon =
+                firstOwnedIcon(
+                    instance:GetAttribute(
+                        "IMG"
+                    ),
+                    instance:GetAttribute(
+                        "Image"
+                    ),
+                    instance:GetAttribute(
+                        "Icon"
+                    ),
+                    instance:GetAttribute(
+                        "TextureId"
+                    ),
+                    instance
+                )
+        end
+
+        return icon
     end
 
     local function readOwnedCount(
@@ -109164,6 +109693,14 @@ function HolyMailCreateHud()
                                 catalogs
                             )
 
+                        if record then
+                            record.Icon =
+                                resolveOwnedRecordIcon(
+                                    record,
+                                    catalogs
+                                )
+                        end
+
                         if record
                             and not (
                                 state.ExactProtect
@@ -109209,6 +109746,9 @@ function HolyMailCreateHud()
                                     Details =
                                         record.Details,
 
+                                    Icon =
+                                        record.Icon,
+
                                     Unique =
                                         record.Unique,
 
@@ -109224,6 +109764,17 @@ function HolyMailCreateHud()
 
                                 grouped[recordKey] =
                                     group
+                            end
+
+                            if (
+                                type(group.Icon) ~= "string"
+                                or group.Icon == ""
+                            )
+                                and type(record.Icon) == "string"
+                                and record.Icon ~= ""
+                            then
+                                group.Icon =
+                                    record.Icon
                             end
 
                             group.Count +=
@@ -109930,17 +110481,82 @@ function HolyMailCreateHud()
                         10
                     )
 
+                    local selectedIcon =
+                        create(
+                            "Frame",
+                            {
+                                BackgroundColor3 =
+                                    color.Hover,
+
+                                Size =
+                                    UDim2.fromOffset(
+                                        38,
+                                        38
+                                    ),
+
+                                Position =
+                                    UDim2.fromOffset(
+                                        9,
+                                        10
+                                    ),
+                            },
+                            row
+                        )
+
+                    round(
+                        selectedIcon,
+                        10
+                    )
+
+                    local selectedIconImage =
+                        create(
+                            "ImageLabel",
+                            {
+                                BackgroundTransparency =
+                                    1,
+
+                                Image =
+                                    tostring(
+                                        entry.Icon
+                                        or ""
+                                    ),
+
+                                Size =
+                                    UDim2.new(
+                                        1,
+                                        -6,
+                                        1,
+                                        -6
+                                    ),
+
+                                Position =
+                                    UDim2.fromOffset(
+                                        3,
+                                        3
+                                    ),
+
+                                ScaleType =
+                                    Enum.ScaleType.Fit,
+                            },
+                            selectedIcon
+                        )
+
+                    round(
+                        selectedIconImage,
+                        8
+                    )
+
                     text(
                         row,
                         entry.Name,
                         UDim2.new(
                             1,
-                            -170,
+                            -214,
                             0,
                             20
                         ),
                         UDim2.fromOffset(
-                            12,
+                            56,
                             8
                         ),
                         10,
@@ -109961,12 +110577,12 @@ function HolyMailCreateHud()
                             ),
                         UDim2.new(
                             1,
-                            -170,
+                            -214,
                             0,
                             18
                         ),
                         UDim2.fromOffset(
-                            12,
+                            56,
                             31
                         ),
                         9,
@@ -110024,14 +110640,27 @@ function HolyMailCreateHud()
                     or ""
                 ):lower()
 
+            local selectedCategories =
+                type(
+                    state.ExactCategories
+                ) == "table"
+                    and state.ExactCategories
+                    or {}
+
+            local hasSelectedCategory =
+                next(
+                    selectedCategories
+                ) ~= nil
+
             local visibleRecords = {}
 
             for _, record in ipairs(
                 state.ExactRecords
             ) do
                 local matchesCategory =
-                    record.Group
-                    == state.ExactCategory
+                    selectedCategories[
+                        record.Group
+                    ] == true
 
                 local matchesSearch =
                     search == ""
@@ -110094,7 +110723,9 @@ function HolyMailCreateHud()
 
                 text(
                     empty,
-                    "Nothing found",
+                    hasSelectedCategory
+                            and "Nothing found"
+                        or "Select a category",
                     UDim2.new(
                         1,
                         -24,
@@ -110113,7 +110744,9 @@ function HolyMailCreateHud()
 
                 text(
                     empty,
-                    "Try another category, search, or refresh.",
+                    hasSelectedCategory
+                            and "Try another category, search, or refresh."
+                        or "Choose one or more categories above.",
                     UDim2.new(
                         1,
                         -24,
@@ -110199,24 +110832,42 @@ function HolyMailCreateHud()
                     10
                 )
 
-                text(
-                    icon,
-                    record.Name:sub(
-                        1,
-                        1
-                    ):upper(),
-                    UDim2.fromScale(
-                        1,
-                        1
-                    ),
-                    UDim2.fromOffset(
-                        0,
-                        0
-                    ),
-                    14,
-                    color.Text,
-                    Enum.TextXAlignment.Center,
-                    Enum.Font.GothamBold
+                local iconImage =
+                    create(
+                        "ImageLabel",
+                        {
+                            BackgroundTransparency =
+                                1,
+
+                            Image =
+                                tostring(
+                                    record.Icon
+                                    or ""
+                                ),
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -6,
+                                    1,
+                                    -6
+                                ),
+
+                            Position =
+                                UDim2.fromOffset(
+                                    3,
+                                    3
+                                ),
+
+                            ScaleType =
+                                Enum.ScaleType.Fit,
+                        },
+                        icon
+                    )
+
+                round(
+                    iconImage,
+                    8
                 )
 
                 text(
@@ -110398,6 +111049,9 @@ function HolyMailCreateHud()
 
                             Details =
                                 record.Details,
+
+                            Icon =
+                                record.Icon,
 
                             Group =
                                 record.Group,
@@ -111315,8 +111969,30 @@ function HolyMailCreateHud()
         itemCategoryButtons
     ) do
         categoryButton.MouseButton1Click:Connect(function()
-            state.ExactCategory =
+            if state.Running then
+                return
+            end
+
+            state.ExactCategories =
+                type(
+                    state.ExactCategories
+                ) == "table"
+                    and state.ExactCategories
+                    or {}
+
+            if state.ExactCategories[
                 categoryName
+            ] == true then
+                state.ExactCategories[
+                    categoryName
+                ] =
+                    nil
+            else
+                state.ExactCategories[
+                    categoryName
+                ] =
+                    true
+            end
 
             state.ExactView =
                 "Owned"
@@ -111326,8 +112002,9 @@ function HolyMailCreateHud()
             ) do
                 setSelectedButton(
                     otherButton,
-                    otherName
-                        == state.ExactCategory
+                    state.ExactCategories[
+                        otherName
+                    ] == true
                 )
             end
 
