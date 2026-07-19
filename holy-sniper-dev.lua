@@ -62375,6 +62375,7 @@ end
 HOLY_WEBHOOK_STATE = {
     Enabled = false,
     Url = "",
+    PingText = "",
     Filters = {},
     SelectedFilterKey = "",
     LastNotifiedRestockKey = "",
@@ -62532,6 +62533,12 @@ function HolyWebhookEnsureState()
     HOLY_WEBHOOK_STATE.Url =
         HolyCleanText(HOLY_WEBHOOK_STATE.Url)
 
+    HOLY_WEBHOOK_STATE.PingText =
+        tostring(
+            HOLY_WEBHOOK_STATE.PingText
+            or ""
+        )
+
     HOLY_WEBHOOK_STATE.Filters =
         HolyWebhookNormalizeFilters(
             HOLY_WEBHOOK_STATE.Filters
@@ -62617,6 +62624,11 @@ function HolySaveWebhookSettings()
         Enabled = HOLY_WEBHOOK_STATE.Enabled == true,
         Url = tostring(HOLY_WEBHOOK_STATE.Url or ""),
 
+        PingText = tostring(
+            HOLY_WEBHOOK_STATE.PingText
+            or ""
+        ),
+
         Filters = HolyWebhookNormalizeFilters(
             HOLY_WEBHOOK_STATE.Filters
         ),
@@ -62698,6 +62710,14 @@ function HolyLoadWebhookSettings()
         or data.WebhookUrl
         or ""
     )
+
+    HOLY_WEBHOOK_STATE.PingText =
+        tostring(
+            data.PingText
+            or data.MentionText
+            or data.Ping
+            or ""
+        )
 
     HOLY_WEBHOOK_STATE.Filters =
         HolyWebhookNormalizeFilters(
@@ -63393,39 +63413,374 @@ function HolyWebhookEnqueue(payload, callback)
     return true
 end
 
+function HolyWebhookLimitText(
+    value,
+    maximumCharacters
+)
+
+    local text = tostring(value or "")
+
+    local maximum =
+        math.max(
+            0,
+            math.floor(
+                tonumber(maximumCharacters)
+                or 0
+            )
+        )
+
+    if maximum <= 0 then
+        return ""
+    end
+
+    local lengthOk, length = pcall(function()
+
+        return utf8.len(text)
+    end)
+
+    if lengthOk ~= true
+    or type(length) ~= "number" then
+
+        return text:sub(1, maximum)
+    end
+
+    if length <= maximum then
+        return text
+    end
+
+    local offsetOk, byteOffset = pcall(function()
+
+        return utf8.offset(
+            text,
+            maximum + 1
+        )
+    end)
+
+    if offsetOk == true
+    and type(byteOffset) == "number" then
+
+        return text:sub(
+            1,
+            byteOffset - 1
+        )
+    end
+
+    return text
+end
+
+function HolyWebhookBuildAllowedMentions(content)
+
+    content = tostring(content or "")
+
+    local output = {
+        parse = {},
+    }
+
+    local lower = content:lower()
+
+    if lower:find(
+        "@everyone",
+        1,
+        true
+    )
+    or lower:find(
+        "@here",
+        1,
+        true
+    ) then
+
+        output.parse[#output.parse + 1] =
+            "everyone"
+    end
+
+    local users = {}
+    local roles = {}
+
+    local seenUsers = {}
+    local seenRoles = {}
+
+    local function addExplicitMention(
+        target,
+        seen,
+        id
+    )
+
+        id = tostring(id or "")
+
+        if id == ""
+        or seen[id] == true
+        or #target >= 100 then
+
+            return
+        end
+
+        seen[id] = true
+        target[#target + 1] = id
+    end
+
+    for userId in content:gmatch(
+        "<@!?(%d+)>"
+    ) do
+
+        addExplicitMention(
+            users,
+            seenUsers,
+            userId
+        )
+    end
+
+    for roleId in content:gmatch(
+        "<@&(%d+)>"
+    ) do
+
+        addExplicitMention(
+            roles,
+            seenRoles,
+            roleId
+        )
+    end
+
+    if #users > 0 then
+        output.users = users
+    end
+
+    if #roles > 0 then
+        output.roles = roles
+    end
+
+    return output
+end
+
+function HolyWebhookBuildMobileSummary(matches)
+
+    local count =
+        type(matches) == "table"
+        and #matches
+        or 0
+
+    if count <= 0 then
+
+        return
+            "🔥 A fruit multiplier filter matched."
+    end
+
+    if count == 1 then
+
+        local match = matches[1]
+
+        return
+            "🔥 "
+            .. tostring(match.Name)
+            .. " reached x"
+            .. HolyWebhookFormatMultiplier(
+                match.Multiplier
+            )
+            .. " (required x"
+            .. HolyWebhookFormatMultiplier(
+                match.Minimum
+            )
+            .. ")"
+    end
+
+    local entries = {}
+    local shown = math.min(count, 3)
+
+    for index = 1, shown do
+
+        local match = matches[index]
+
+        entries[#entries + 1] =
+            tostring(match.Name)
+            .. " x"
+            .. HolyWebhookFormatMultiplier(
+                match.Multiplier
+            )
+    end
+
+    local summary =
+        "🔥 "
+        .. tostring(count)
+        .. " fruit matches: "
+        .. table.concat(entries, ", ")
+
+    if count > shown then
+
+        summary =
+            summary
+            .. ", +"
+            .. tostring(count - shown)
+            .. " more"
+    end
+
+    return HolyWebhookLimitText(
+        summary,
+        500
+    )
+end
+
+function HolyWebhookResolveAlertRefreshAt(
+    stockResult
+)
+
+    local now =
+        tonumber(
+            HolyDailyDealLiveServerNow()
+        )
+        or os.time()
+
+    local nextRefreshAt =
+        tonumber(
+            HolyDailyDealLiveResolveNextRestockAt(
+                stockResult
+            )
+        )
+
+    if nextRefreshAt == nil
+    or nextRefreshAt ~= nextRefreshAt
+    or nextRefreshAt == math.huge
+    or nextRefreshAt == -math.huge
+    or nextRefreshAt <= now then
+
+        nextRefreshAt =
+            math.floor(
+                now / 600 + 1
+            ) * 600
+    end
+
+    return math.floor(nextRefreshAt)
+end
+
 function HolyWebhookBuildFruitAlertPayload(
     matches,
     stockResult
 )
 
-    local lines = {}
+    matches =
+        type(matches) == "table"
+        and matches
+        or {}
 
-    for _, match in ipairs(matches) do
+    local pingText =
+        tostring(
+            HOLY_WEBHOOK_STATE.PingText
+            or ""
+        )
 
-        lines[#lines + 1] =
-            "• **"
-            .. tostring(match.Name)
-            .. "** — **x"
-            .. HolyWebhookFormatMultiplier(
-                match.Multiplier
-            )
-            .. "**\n  Required: x"
-            .. HolyWebhookFormatMultiplier(
-                match.Minimum
-            )
+    pingText =
+        pingText
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    pingText =
+        HolyWebhookLimitText(
+            pingText,
+            1400
+        )
+
+    local mobileSummary =
+        HolyWebhookBuildMobileSummary(
+            matches
+        )
+
+    local content = mobileSummary
+
+    if pingText ~= "" then
+
+        content =
+            pingText
+            .. "\n"
+            .. mobileSummary
     end
 
-    local nextRestockAt =
-        HolyDailyDealLiveResolveNextRestockAt(
+    content =
+        HolyWebhookLimitText(
+            content,
+            2000
+        )
+
+    local fields = {}
+    local maximumFruitFields = 23
+    local shownFruitCount =
+        math.min(
+            #matches,
+            maximumFruitFields
+        )
+
+    for index = 1, shownFruitCount do
+
+        local match = matches[index]
+
+        fields[#fields + 1] = {
+            name =
+                "🌱 "
+                .. tostring(match.Name),
+
+            value =
+                "**Current Multiplier:** `x"
+                .. HolyWebhookFormatMultiplier(
+                    match.Multiplier
+                )
+                .. "`\n"
+                .. "**Required Multiplier:** `x"
+                .. HolyWebhookFormatMultiplier(
+                    match.Minimum
+                )
+                .. "`",
+
+            inline = false,
+        }
+    end
+
+    if #matches > maximumFruitFields then
+
+        fields[#fields + 1] = {
+            name = "Additional Matches",
+
+            value =
+                "`"
+                .. tostring(
+                    #matches
+                    - maximumFruitFields
+                )
+                .. "` more matching fruit filters.",
+
+            inline = false,
+        }
+    end
+
+    local nextRefreshAt =
+        HolyWebhookResolveAlertRefreshAt(
             stockResult
         )
+
+    fields[#fields + 1] = {
+        name = "Next Refresh",
+
+        value =
+            "<t:"
+            .. tostring(nextRefreshAt)
+            .. ":F>\n"
+            .. "<t:"
+            .. tostring(nextRefreshAt)
+            .. ":R>",
+
+        inline = false,
+    }
+
+    local matchWord =
+        #matches == 1
+        and "fruit"
+        or "fruits"
 
     return {
         username = "HOLY",
 
-        allowed_mentions = {
-            parse = {},
-        },
+        content = content,
+
+        allowed_mentions =
+            HolyWebhookBuildAllowedMentions(
+                content
+            ),
 
         embeds = {
             {
@@ -63433,24 +63788,15 @@ function HolyWebhookBuildFruitAlertPayload(
                     "🔥 Fruit Multiplier Alert",
 
                 description =
-                    table.concat(lines, "\n\n"),
+                    "**"
+                    .. tostring(#matches)
+                    .. " "
+                    .. matchWord
+                    .. "** matched your configured multiplier filters.",
 
                 color = 16753920,
 
-                fields = {
-                    {
-                        name = "Next Refresh",
-
-                        value =
-                            "<t:"
-                            .. tostring(
-                                math.floor(nextRestockAt)
-                            )
-                            .. ":R>",
-
-                        inline = false,
-                    },
-                },
+                fields = fields,
 
                 footer = {
                     text =
@@ -63641,9 +63987,40 @@ function HolyWebhookSendTest()
         return false
     end
 
+    local previewPing =
+        tostring(
+            HOLY_WEBHOOK_STATE.PingText
+            or ""
+        )
+
+    previewPing =
+        previewPing
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+            :gsub("`", "'")
+
+    previewPing =
+        HolyWebhookLimitText(
+            previewPing,
+            900
+        )
+
+    local previewPingValue = "`None`"
+
+    if previewPing ~= "" then
+
+        previewPingValue =
+            "`"
+            .. previewPing
+            .. "`"
+    end
+
     return HolyWebhookEnqueue(
         {
             username = "HOLY",
+
+            content =
+                "✅ Test alert: Moon Bloom reached x4.00 (required x2.00)",
 
             allowed_mentions = {
                 parse = {},
@@ -63651,12 +64028,37 @@ function HolyWebhookSendTest()
 
             embeds = {
                 {
-                    title = "Webhook Connected",
+                    title =
+                        "✅ Fruit Multiplier Webhook Test",
 
                     description =
-                        "Fruit multiplier alerts are ready.",
+                        "The webhook is connected and ready.\n"
+                        .. "The configured ping is suppressed for test messages.",
 
                     color = 10181046,
+
+                    fields = {
+                        {
+                            name =
+                                "🌱 Example — Moon Bloom",
+
+                            value =
+                                "**Current Multiplier:** `x4.00`\n"
+                                .. "**Required Multiplier:** `x2.00`",
+
+                            inline = false,
+                        },
+
+                        {
+                            name =
+                                "Configured Ping Text",
+
+                            value =
+                                previewPingValue,
+
+                            inline = false,
+                        },
+                    },
 
                     footer = {
                         text =
@@ -63674,7 +64076,7 @@ function HolyWebhookSendTest()
             HolyNotify(
                 "Webhook",
                 success == true
-                and "Test webhook sent."
+                and "Test webhook sent without pinging."
                 or tostring(sendReason),
                 4
             )
@@ -86343,6 +86745,17 @@ if type(Library.OnUnload) == "function" then
             HolyPerformanceMonitorStop(
                 true
             )
+
+            if type(HOLY_MAIL_RUNTIME) == "table"
+            and type(HOLY_MAIL_RUNTIME.Stop) == "function" then
+
+                pcall(function()
+
+                    HOLY_MAIL_RUNTIME.Stop(
+                        "unload"
+                    )
+                end)
+            end
         end)
     end)
 end
@@ -99875,6 +100288,4987 @@ end
 HOLY_MOON_PREDICTOR_RUNTIME.Stop =
     HolyMoonStop
 
+
+--==================================================
+-- [3.10] MAIL DELIVERY HUD
+--==================================================
+
+if type(HOLY_MAIL_RUNTIME) == "table" then
+    if type(HOLY_MAIL_RUNTIME.DeliveryState) == "table" then
+        HOLY_MAIL_RUNTIME.DeliveryState.Stop = true
+    end
+
+    if typeof(HOLY_MAIL_RUNTIME.Gui) == "Instance" then
+        pcall(function()
+            HOLY_MAIL_RUNTIME.Gui:Destroy()
+        end)
+    elseif type(HOLY_MAIL_RUNTIME.Stop) == "function" then
+        pcall(function()
+            HOLY_MAIL_RUNTIME.Stop("reload")
+        end)
+    end
+end
+
+local HOLY_MAIL_DAILY_LIMIT = 50
+local HOLY_MAIL_BATCH_LIMIT = 20
+local HOLY_MAIL_COOLDOWN = 10.05
+
+local HOLY_MAIL_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER .. "/HolyPremiumMailSettings.json"
+
+local HolyMailTweenService =
+    game:GetService("TweenService")
+
+HOLY_MAIL_STATE = {
+    HudEnabled = false,
+    StartMinimized = false,
+    HudPosition = nil,
+
+    TrackerDay = os.date("!%Y-%m-%d"),
+    TrackerUsed = 0,
+}
+
+HOLY_MAIL_RUNTIME = {
+    Gui = nil,
+    Window = nil,
+    DeliveryState = nil,
+
+    Status = "Closed",
+    LastError = "",
+
+    SetMinimized = nil,
+    UpdateQuota = nil,
+
+    SyncingToggle = false,
+    DestroyPending = false,
+
+    Stop = nil,
+}
+
+HOLY_MAIL_UI = {
+    HudToggle = nil,
+    StartMinimizedToggle = nil,
+    UsedInput = nil,
+
+    StatusLabel = nil,
+    UsageLabel = nil,
+}
+
+function HolyMailToday()
+    return os.date("!%Y-%m-%d")
+end
+
+function HolyMailCheckDay()
+    local today =
+        HolyMailToday()
+
+    if tostring(HOLY_MAIL_STATE.TrackerDay or "") ~= today then
+        HOLY_MAIL_STATE.TrackerDay =
+            today
+
+        HOLY_MAIL_STATE.TrackerUsed =
+            0
+
+        return true
+    end
+
+    HOLY_MAIL_STATE.TrackerUsed =
+        math.clamp(
+            math.floor(
+                tonumber(HOLY_MAIL_STATE.TrackerUsed)
+                    or 0
+            ),
+            0,
+            HOLY_MAIL_DAILY_LIMIT
+        )
+
+    return false
+end
+
+function HolyMailSaveSettings()
+    HolyMailCheckDay()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local position =
+        type(HOLY_MAIL_STATE.HudPosition) == "table"
+            and {
+                XScale =
+                    tonumber(
+                        HOLY_MAIL_STATE.HudPosition.XScale
+                    ) or 0.5,
+
+                XOffset =
+                    tonumber(
+                        HOLY_MAIL_STATE.HudPosition.XOffset
+                    ) or 0,
+
+                YScale =
+                    tonumber(
+                        HOLY_MAIL_STATE.HudPosition.YScale
+                    ) or 0.5,
+
+                YOffset =
+                    tonumber(
+                        HOLY_MAIL_STATE.HudPosition.YOffset
+                    ) or 0,
+            }
+            or nil
+
+    local payload = {
+        HudEnabled =
+            HOLY_MAIL_STATE.HudEnabled == true,
+
+        StartMinimized =
+            HOLY_MAIL_STATE.StartMinimized == true,
+
+        HudPosition =
+            position,
+
+        TrackerDay =
+            tostring(HOLY_MAIL_STATE.TrackerDay),
+
+        TrackerUsed =
+            math.clamp(
+                math.floor(
+                    tonumber(HOLY_MAIL_STATE.TrackerUsed)
+                        or 0
+                ),
+                0,
+                HOLY_MAIL_DAILY_LIMIT
+            ),
+    }
+
+    local encodeOk, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+
+    if encodeOk ~= true
+        or type(encoded) ~= "string"
+    then
+        return false
+    end
+
+    return pcall(function()
+        writefile(
+            HOLY_MAIL_SETTINGS_FILE,
+            encoded
+        )
+    end)
+end
+
+function HolyMailLoadSettings()
+    if HolyCanUseFiles() ~= true then
+        HolyMailCheckDay()
+
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+        exists =
+            isfile(HOLY_MAIL_SETTINGS_FILE)
+    end)
+
+    if exists ~= true then
+        HolyMailCheckDay()
+
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(
+                HOLY_MAIL_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+        or type(raw) ~= "string"
+        or raw == ""
+    then
+        HolyMailCheckDay()
+
+        return false
+    end
+
+    local decodeOk, data =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if decodeOk ~= true
+        or type(data) ~= "table"
+    then
+        HolyMailCheckDay()
+
+        return false
+    end
+
+    HOLY_MAIL_STATE.HudEnabled =
+        data.HudEnabled == true
+
+    HOLY_MAIL_STATE.StartMinimized =
+        data.StartMinimized == true
+
+    HOLY_MAIL_STATE.TrackerDay =
+        tostring(
+            data.TrackerDay
+                or HolyMailToday()
+        )
+
+    HOLY_MAIL_STATE.TrackerUsed =
+        math.clamp(
+            math.floor(
+                tonumber(data.TrackerUsed)
+                    or 0
+            ),
+            0,
+            HOLY_MAIL_DAILY_LIMIT
+        )
+
+    if type(data.HudPosition) == "table" then
+        HOLY_MAIL_STATE.HudPosition = {
+            XScale =
+                tonumber(data.HudPosition.XScale)
+                    or 0.5,
+
+            XOffset =
+                tonumber(data.HudPosition.XOffset)
+                    or 0,
+
+            YScale =
+                tonumber(data.HudPosition.YScale)
+                    or 0.5,
+
+            YOffset =
+                tonumber(data.HudPosition.YOffset)
+                    or 0,
+        }
+    end
+
+    if HolyMailCheckDay() == true then
+        HolyMailSaveSettings()
+    end
+
+    return true
+end
+
+function HolyMailReadPosition()
+    local saved =
+        HOLY_MAIL_STATE.HudPosition
+
+    if type(saved) ~= "table" then
+        return UDim2.fromScale(
+            0.5,
+            0.5
+        )
+    end
+
+    return UDim2.new(
+        tonumber(saved.XScale) or 0.5,
+        tonumber(saved.XOffset) or 0,
+        tonumber(saved.YScale) or 0.5,
+        tonumber(saved.YOffset) or 0
+    )
+end
+
+function HolyMailStorePosition(position)
+    if typeof(position) ~= "UDim2" then
+        return false
+    end
+
+    HOLY_MAIL_STATE.HudPosition = {
+        XScale =
+            position.X.Scale,
+
+        XOffset =
+            position.X.Offset,
+
+        YScale =
+            position.Y.Scale,
+
+        YOffset =
+            position.Y.Offset,
+    }
+
+    HolyMailSaveSettings()
+
+    return true
+end
+
+function HolyMailRefreshControlUI()
+    HolyMailCheckDay()
+
+    HolySniperSetLabel(
+        HOLY_MAIL_UI.StatusLabel,
+        "HUD: "
+            .. tostring(
+                HOLY_MAIL_RUNTIME.Status
+                    or "Closed"
+            )
+    )
+
+    HolySniperSetLabel(
+        HOLY_MAIL_UI.UsageLabel,
+        "Tracked today: "
+            .. tostring(
+                HOLY_MAIL_STATE.TrackerUsed
+            )
+            .. " / "
+            .. tostring(
+                HOLY_MAIL_DAILY_LIMIT
+            )
+    )
+
+    return true
+end
+
+function HolyMailSetTrackedUsed(value)
+    HolyMailCheckDay()
+
+    HOLY_MAIL_STATE.TrackerUsed =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                    or 0
+            ),
+            0,
+            HOLY_MAIL_DAILY_LIMIT
+        )
+
+    if type(HOLY_MAIL_RUNTIME.UpdateQuota) == "function" then
+        pcall(
+            HOLY_MAIL_RUNTIME.UpdateQuota
+        )
+    end
+
+    HolyMailSaveSettings()
+    HolyMailRefreshControlUI()
+
+    return HOLY_MAIL_STATE.TrackerUsed
+end
+
+HolyMailLoadSettings()
+
+function HolyMailCreateHud()
+    if typeof(HOLY_MAIL_RUNTIME.Gui) == "Instance"
+        and HOLY_MAIL_RUNTIME.Gui.Parent ~= nil
+    then
+        return true
+    end
+
+    local player =
+        LocalPlayer
+
+    local playerGui =
+        player:WaitForChild("PlayerGui")
+
+    local oldGui =
+        playerGui:FindFirstChild("HolyMailV7")
+
+    if oldGui then
+        oldGui:Destroy()
+    end
+
+    HolyMailCheckDay()
+
+    local DAILY_LIMIT =
+        HOLY_MAIL_DAILY_LIMIT
+
+    local BATCH_LIMIT =
+        HOLY_MAIL_BATCH_LIMIT
+
+    local COOLDOWN =
+        HOLY_MAIL_COOLDOWN
+
+    local tracker = {
+        Used =
+            HOLY_MAIL_STATE.TrackerUsed,
+    }
+
+    local TweenService =
+        HolyMailTweenService
+
+    local color = {
+        Back =
+            Color3.fromRGB(7, 8, 11),
+
+        Header =
+            Color3.fromRGB(10, 11, 15),
+
+        Card =
+            Color3.fromRGB(14, 16, 21),
+
+        Field =
+            Color3.fromRGB(21, 24, 31),
+
+        Hover =
+            Color3.fromRGB(29, 33, 42),
+
+        Border =
+            Color3.fromRGB(48, 54, 68),
+
+        Text =
+            Color3.fromRGB(245, 246, 250),
+
+        Muted =
+            Color3.fromRGB(142, 149, 166),
+
+        White =
+            Color3.fromRGB(247, 248, 251),
+
+        Black =
+            Color3.fromRGB(10, 11, 14),
+
+        Green =
+            Color3.fromRGB(82, 217, 143),
+
+        Yellow =
+            Color3.fromRGB(235, 188, 92),
+
+        Red =
+            Color3.fromRGB(240, 103, 111),
+
+        Accent =
+            Color3.fromRGB(59, 130, 246),
+    }
+
+    local function create(
+        className,
+        properties,
+        parent
+    )
+        local object =
+            Instance.new(className)
+
+        for property, value in pairs(
+            properties or {}
+        ) do
+            object[property] =
+                value
+        end
+
+        object.Parent =
+            parent
+
+        return object
+    end
+
+    local function round(
+        object,
+        radius
+    )
+        return create(
+            "UICorner",
+            {
+                CornerRadius =
+                    UDim.new(
+                        0,
+                        radius or 12
+                    ),
+            },
+            object
+        )
+    end
+
+    local function outline(
+        object,
+        chosenColor
+    )
+        return create(
+            "UIStroke",
+            {
+                Color =
+                    chosenColor
+                        or color.Border,
+
+                Thickness =
+                    1,
+            },
+            object
+        )
+    end
+
+    local function text(
+        parent,
+        value,
+        size,
+        position,
+        textSize,
+        chosenColor,
+        alignment,
+        font
+    )
+        return create(
+            "TextLabel",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Text =
+                    value or "",
+
+                Size =
+                    size,
+
+                Position =
+                    position,
+
+                TextSize =
+                    textSize or 12,
+
+                TextColor3 =
+                    chosenColor
+                        or color.Text,
+
+                TextXAlignment =
+                    alignment
+                        or Enum.TextXAlignment.Left,
+
+                TextYAlignment =
+                    Enum.TextYAlignment.Center,
+
+                TextTruncate =
+                    Enum.TextTruncate.AtEnd,
+
+                Font =
+                    font
+                        or Enum.Font.Gotham,
+            },
+            parent
+        )
+    end
+
+    local function button(
+        parent,
+        value,
+        size,
+        position,
+        bright
+    )
+        local object =
+            create(
+                "TextButton",
+                {
+                    AutoButtonColor =
+                        false,
+
+                    BackgroundColor3 =
+                        bright
+                            and color.Accent
+                            or color.Field,
+
+                    TextColor3 =
+                        color.Text,
+
+                    Text =
+                        value,
+
+                    Size =
+                        size,
+
+                    Position =
+                        position,
+
+                    TextSize =
+                        12,
+
+                    Font =
+                        Enum.Font.GothamSemibold,
+                },
+                parent
+            )
+
+        round(
+            object,
+            10
+        )
+
+        outline(
+            object,
+            bright
+                    and Color3.fromRGB(
+                        83,
+                        148,
+                        247
+                    )
+                or color.Border
+        )
+
+        return object
+    end
+
+    local function box(
+        parent,
+        placeholder,
+        size,
+        position
+    )
+        local object =
+            create(
+                "TextBox",
+                {
+                    BackgroundColor3 =
+                        color.Field,
+
+                    TextColor3 =
+                        color.Text,
+
+                    PlaceholderColor3 =
+                        color.Muted,
+
+                    PlaceholderText =
+                        placeholder,
+
+                    Text =
+                        "",
+
+                    ClearTextOnFocus =
+                        false,
+
+                    Size =
+                        size,
+
+                    Position =
+                        position,
+
+                    TextSize =
+                        12,
+
+                    TextXAlignment =
+                        Enum.TextXAlignment.Left,
+
+                    Font =
+                        Enum.Font.Gotham,
+                },
+                parent
+            )
+
+        round(
+            object,
+            10
+        )
+
+        outline(object)
+
+        create(
+            "UIPadding",
+            {
+                PaddingLeft =
+                    UDim.new(0, 11),
+
+                PaddingRight =
+                    UDim.new(0, 8),
+            },
+            object
+        )
+
+        return object
+    end
+
+    local function card(
+        parent,
+        size,
+        position
+    )
+        local object =
+            create(
+                "Frame",
+                {
+                    BackgroundColor3 =
+                        color.Card,
+
+                    Size =
+                        size,
+
+                    Position =
+                        position,
+                },
+                parent
+            )
+
+        round(
+            object,
+            15
+        )
+
+        outline(
+            object,
+            Color3.fromRGB(
+                35,
+                40,
+                51
+            )
+        )
+
+        return object
+    end
+
+    local gui =
+        create(
+            "ScreenGui",
+            {
+                Name =
+                    "HolyMailV7",
+
+                ResetOnSpawn =
+                    false,
+
+                IgnoreGuiInset =
+                    true,
+
+                DisplayOrder =
+                    999999,
+
+                ZIndexBehavior =
+                    Enum.ZIndexBehavior.Sibling,
+            },
+            playerGui
+        )
+
+    HOLY_MAIL_RUNTIME.Gui =
+        gui
+
+    local window =
+        create(
+            "Frame",
+            {
+                AnchorPoint =
+                    Vector2.new(0.5, 0.5),
+
+                Position =
+                    HolyMailReadPosition(),
+
+                Size =
+                    UDim2.fromOffset(
+                        920,
+                        620
+                    ),
+
+                BackgroundColor3 =
+                    color.Back,
+
+                ClipsDescendants =
+                    true,
+            },
+            gui
+        )
+
+    HOLY_MAIL_RUNTIME.Window =
+        window
+
+    round(
+        window,
+        20
+    )
+
+    outline(window)
+
+    local windowScale =
+        create(
+            "UIScale",
+            {
+                Scale =
+                    1,
+            },
+            window
+        )
+
+    local function resize()
+        local camera =
+            workspace.CurrentCamera
+
+        local viewport =
+            camera
+                and camera.ViewportSize
+                or Vector2.new(
+                    1920,
+                    1080
+                )
+
+        windowScale.Scale =
+            math.clamp(
+                math.min(
+                    viewport.X / 980,
+                    viewport.Y / 690
+                ),
+                0.62,
+                1
+            )
+    end
+
+    resize()
+
+    if workspace.CurrentCamera then
+        workspace.CurrentCamera
+            :GetPropertyChangedSignal(
+                "ViewportSize"
+            )
+            :Connect(resize)
+    end
+
+    local header =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Header,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        0,
+                        0,
+                        64
+                    ),
+            },
+            window
+        )
+
+    local logo =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.White,
+
+                Size =
+                    UDim2.fromOffset(
+                        40,
+                        40
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        16,
+                        12
+                    ),
+            },
+            header
+        )
+
+    round(
+        logo,
+        12
+    )
+
+    text(
+        logo,
+        "H",
+        UDim2.fromScale(1, 1),
+        UDim2.fromOffset(0, 0),
+        19,
+        color.Black,
+        Enum.TextXAlignment.Center,
+        Enum.Font.GothamBold
+    )
+
+    local title =
+        text(
+            header,
+            "HOLY Mail",
+            UDim2.fromOffset(
+                170,
+                23
+            ),
+            UDim2.fromOffset(
+                69,
+                9
+            ),
+            19,
+            color.Text,
+            nil,
+            Enum.Font.GothamBold
+        )
+
+    local subtitle =
+        text(
+            header,
+            "Send fruits by value",
+            UDim2.fromOffset(
+                220,
+                18
+            ),
+            UDim2.fromOffset(
+                69,
+                33
+            ),
+            11,
+            color.Muted
+        )
+
+    local quotaFrame =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Card,
+
+                Size =
+                    UDim2.fromOffset(
+                        150,
+                        38
+                    ),
+
+                Position =
+                    UDim2.new(
+                        1,
+                        -360,
+                        0,
+                        13
+                    ),
+            },
+            header
+        )
+
+    round(
+        quotaFrame,
+        12
+    )
+
+    outline(quotaFrame)
+
+    local quotaText =
+        text(
+            quotaFrame,
+            "0 / 50 sends today",
+            UDim2.fromScale(1, 1),
+            UDim2.fromOffset(0, 0),
+            11,
+            color.Text,
+            Enum.TextXAlignment.Center,
+            Enum.Font.GothamSemibold
+        )
+
+    local statusFrame =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Card,
+
+                Size =
+                    UDim2.fromOffset(
+                        108,
+                        38
+                    ),
+
+                Position =
+                    UDim2.new(
+                        1,
+                        -200,
+                        0,
+                        13
+                    ),
+            },
+            header
+        )
+
+    round(
+        statusFrame,
+        12
+    )
+
+    outline(statusFrame)
+
+    local statusDot =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Yellow,
+
+                Size =
+                    UDim2.fromOffset(
+                        7,
+                        7
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        16
+                    ),
+            },
+            statusFrame
+        )
+
+    round(
+        statusDot,
+        7
+    )
+
+    local statusText =
+        text(
+            statusFrame,
+            "Loading",
+            UDim2.fromOffset(
+                78,
+                28
+            ),
+            UDim2.fromOffset(
+                26,
+                5
+            ),
+            11,
+            color.Text,
+            nil,
+            Enum.Font.GothamSemibold
+        )
+
+    local minimizeButton =
+        button(
+            header,
+            "-",
+            UDim2.fromOffset(
+                40,
+                40
+            ),
+            UDim2.new(
+                1,
+                -88,
+                0,
+                12
+            ),
+            false
+        )
+
+    local closeButton =
+        button(
+            header,
+            "X",
+            UDim2.fromOffset(
+                40,
+                40
+            ),
+            UDim2.new(
+                1,
+                -44,
+                0,
+                12
+            ),
+            false
+        )
+
+    minimizeButton.TextSize =
+        21
+
+    closeButton.TextSize =
+        16
+
+    local content =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -24,
+                        1,
+                        -80
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        72
+                    ),
+            },
+            window
+        )
+
+    local routeCard =
+        card(
+            content,
+            UDim2.fromOffset(
+                430,
+                212
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    text(
+        routeCard,
+        "RECIPIENTS",
+        UDim2.fromOffset(
+            150,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local routeCount =
+        text(
+            routeCard,
+            "0 recipients",
+            UDim2.fromOffset(
+                100,
+                20
+            ),
+            UDim2.new(
+                1,
+                -172,
+                0,
+                9
+            ),
+            10,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local clearButton =
+        button(
+            routeCard,
+            "Clear",
+            UDim2.fromOffset(
+                54,
+                25
+            ),
+            UDim2.new(
+                1,
+                -66,
+                0,
+                6
+            ),
+            false
+        )
+
+    clearButton.TextSize =
+        9
+
+    clearButton.Visible =
+        false
+
+    local recipientBox =
+        box(
+            routeCard,
+            "Username or User ID",
+            UDim2.fromOffset(
+                205,
+                40
+            ),
+            UDim2.fromOffset(
+                14,
+                35
+            )
+        )
+
+    local valueBox =
+        box(
+            routeCard,
+            "$100M",
+            UDim2.fromOffset(
+                94,
+                40
+            ),
+            UDim2.fromOffset(
+                226,
+                35
+            )
+        )
+
+    local addButton =
+        button(
+            routeCard,
+            "+ Add",
+            UDim2.fromOffset(
+                88,
+                40
+            ),
+            UDim2.fromOffset(
+                328,
+                35
+            ),
+            true
+        )
+
+    local routeList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        0,
+                        123
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        82
+                    ),
+
+                CanvasSize =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                AutomaticCanvasSize =
+                    Enum.AutomaticSize.Y,
+
+                ScrollBarThickness =
+                    3,
+
+                ScrollBarImageColor3 =
+                    color.Border,
+            },
+            routeCard
+        )
+
+    local routeLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding =
+                    UDim.new(
+                        0,
+                        5
+                    ),
+            },
+            routeList
+        )
+
+    local ruleCard =
+        card(
+            content,
+            UDim2.fromOffset(
+                454,
+                212
+            ),
+            UDim2.fromOffset(
+                442,
+                0
+            )
+        )
+
+    text(
+        ruleCard,
+        "SEND OPTIONS",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local inventoryText =
+        text(
+            ruleCard,
+            "Not calculated",
+            UDim2.fromOffset(
+                220,
+                20
+            ),
+            UDim2.new(
+                1,
+                -234,
+                0,
+                9
+            ),
+            10,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local strategyButton =
+        button(
+            ruleCard,
+            "Send at least",
+            UDim2.fromOffset(
+                208,
+                40
+            ),
+            UDim2.fromOffset(
+                14,
+                38
+            ),
+            false
+        )
+
+    local favoriteButton =
+        button(
+            ruleCard,
+            "Skip favorites: ON",
+            UDim2.fromOffset(
+                210,
+                40
+            ),
+            UDim2.fromOffset(
+                230,
+                38
+            ),
+            false
+        )
+
+    local fruitsButton =
+        button(
+            ruleCard,
+            "Fruits: All",
+            UDim2.fromOffset(
+                208,
+                40
+            ),
+            UDim2.fromOffset(
+                14,
+                87
+            ),
+            false
+        )
+
+    fruitsButton.Active =
+        false
+
+    local calculateButton =
+        button(
+            ruleCard,
+            "Refresh preview",
+            UDim2.fromOffset(
+                210,
+                40
+            ),
+            UDim2.fromOffset(
+                230,
+                87
+            ),
+            true
+        )
+
+    local ruleInfo =
+        text(
+            ruleCard,
+            "Add as many people as you want. Each send can hold up to 20 fruits.",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                52
+            ),
+            UDim2.fromOffset(
+                14,
+                145
+            ),
+            10,
+            color.Muted
+        )
+
+    ruleInfo.TextWrapped =
+        true
+
+    local previewCard =
+        card(
+            content,
+            UDim2.fromOffset(
+                594,
+                324
+            ),
+            UDim2.fromOffset(
+                0,
+                224
+            )
+        )
+
+    text(
+        previewCard,
+        "PREVIEW",
+        UDim2.fromOffset(
+            180,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local previewCount =
+        text(
+            previewCard,
+            "No route",
+            UDim2.fromOffset(
+                220,
+                20
+            ),
+            UDim2.new(
+                1,
+                -234,
+                0,
+                9
+            ),
+            10,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local previewList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        1,
+                        -42
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        35
+                    ),
+
+                CanvasSize =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                AutomaticCanvasSize =
+                    Enum.AutomaticSize.Y,
+
+                ScrollBarThickness =
+                    3,
+
+                ScrollBarImageColor3 =
+                    color.Border,
+            },
+            previewCard
+        )
+
+    local previewLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding =
+                    UDim.new(
+                        0,
+                        6
+                    ),
+            },
+            previewList
+        )
+
+    local summaryCard =
+        card(
+            content,
+            UDim2.fromOffset(
+                290,
+                324
+            ),
+            UDim2.fromOffset(
+                606,
+                224
+            )
+        )
+
+    text(
+        summaryCard,
+        "SUMMARY",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            9
+        ),
+        10,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local summaryText =
+        text(
+            summaryCard,
+            "People: 0\nSends: 0\nFruits: 0\nTotal value: $0\nTime: Ready",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                125
+            ),
+            UDim2.fromOffset(
+                14,
+                39
+            ),
+            11,
+            color.Text
+        )
+
+    summaryText.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    local messageText =
+        text(
+            summaryCard,
+            "Add a recipient and target.",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                57
+            ),
+            UDim2.fromOffset(
+                14,
+                171
+            ),
+            10,
+            color.Muted
+        )
+
+    messageText.TextWrapped =
+        true
+
+    messageText.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    local progressTrack =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Hover,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        0,
+                        6
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        237
+                    ),
+            },
+            summaryCard
+        )
+
+    round(
+        progressTrack,
+        3
+    )
+
+    local progressFill =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Accent,
+
+                Size =
+                    UDim2.fromScale(
+                        0,
+                        1
+                    ),
+            },
+            progressTrack
+        )
+
+    round(
+        progressFill,
+        3
+    )
+
+    local sendButton =
+        button(
+            summaryCard,
+            "Review and send",
+            UDim2.new(
+                1,
+                -28,
+                0,
+                58
+            ),
+            UDim2.fromOffset(
+                14,
+                252
+            ),
+            true
+        )
+
+    local overlay =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.new(
+                        0,
+                        0,
+                        0
+                    ),
+
+                BackgroundTransparency =
+                    0.2,
+
+                Size =
+                    UDim2.fromScale(
+                        1,
+                        1
+                    ),
+
+                Visible =
+                    false,
+
+                ZIndex =
+                    50,
+            },
+            window
+        )
+
+    local state = {
+        Recipients = {},
+        Inventory = {},
+        Plan = {},
+
+        Strategy = "Send at least",
+        Protect = true,
+
+        Editing = nil,
+        Busy = false,
+        Running = false,
+        Stop = false,
+
+        LastAccepted = nil,
+
+        Minimized =
+            HOLY_MAIL_STATE.StartMinimized == true,
+    }
+
+    HOLY_MAIL_RUNTIME.DeliveryState =
+        state
+
+    local function setStatus(
+        value,
+        dotColor
+    )
+        statusText.Text =
+            value
+
+        statusDot.BackgroundColor3 =
+            dotColor
+                or color.Green
+
+        HOLY_MAIL_RUNTIME.Status =
+            tostring(
+                value or "Ready"
+            )
+
+        HolyMailRefreshControlUI()
+    end
+
+    local function updateQuota()
+        HolyMailCheckDay()
+
+        tracker.Used =
+            math.clamp(
+                math.floor(
+                    tonumber(
+                        HOLY_MAIL_STATE.TrackerUsed
+                    )
+                        or tracker.Used
+                        or 0
+                ),
+                0,
+                DAILY_LIMIT
+            )
+
+        HOLY_MAIL_STATE.TrackerUsed =
+            tracker.Used
+
+        quotaText.Text =
+            state.Minimized
+                    and string.format(
+                        "%d/%d",
+                        tracker.Used,
+                        DAILY_LIMIT
+                    )
+                or string.format(
+                    "%d / %d used here",
+                    tracker.Used,
+                    DAILY_LIMIT
+                )
+
+        HolyMailRefreshControlUI()
+    end
+
+    HOLY_MAIL_RUNTIME.UpdateQuota =
+        updateQuota
+
+    local function reportError(
+        where,
+        err
+    )
+        local result =
+            tostring(where)
+            .. ": "
+            .. tostring(err)
+
+        HOLY_MAIL_RUNTIME.LastError =
+            result
+
+        warn(
+            "[HOLY MAIL] "
+                .. result
+        )
+
+        setStatus(
+            "Error",
+            color.Red
+        )
+
+        messageText.Text =
+            "Something went wrong. The error was copied."
+
+        messageText.TextColor3 =
+            color.Red
+
+        pcall(function()
+            if type(setclipboard) == "function" then
+                setclipboard(result)
+            end
+        end)
+    end
+
+    local function protectedCall(
+        where,
+        callback
+    )
+        local ok, err =
+            xpcall(
+                callback,
+                function(value)
+                    local trace =
+                        ""
+
+                    pcall(function()
+                        trace =
+                            debug.traceback()
+                    end)
+
+                    return tostring(value)
+                        .. (
+                            trace ~= ""
+                                and "\n" .. trace
+                                or ""
+                        )
+                end
+            )
+
+        if not ok then
+            reportError(
+                where,
+                err
+            )
+        end
+
+        return ok
+    end
+
+    local function formatValue(value)
+        value =
+            math.max(
+                0,
+                tonumber(value)
+                    or 0
+            )
+
+        if type(HolyVisualFormatTotalFruitValue) == "function" then
+            local ok, result =
+                pcall(
+                    HolyVisualFormatTotalFruitValue,
+                    value
+                )
+
+            if ok
+                and type(result) == "string"
+            then
+                return result
+            end
+        end
+
+        if value >= 1e15 then
+            return "$"
+                .. string.format(
+                    "%.2fQa",
+                    value / 1e15
+                )
+        elseif value >= 1e12 then
+            return "$"
+                .. string.format(
+                    "%.2fT",
+                    value / 1e12
+                )
+        elseif value >= 1e9 then
+            return "$"
+                .. string.format(
+                    "%.2fB",
+                    value / 1e9
+                )
+        elseif value >= 1e6 then
+            return "$"
+                .. string.format(
+                    "%.2fM",
+                    value / 1e6
+                )
+        elseif value >= 1e3 then
+            return "$"
+                .. string.format(
+                    "%.1fK",
+                    value / 1e3
+                )
+        end
+
+        return "$"
+            .. tostring(
+                math.floor(value + 0.5)
+            )
+    end
+
+    local function parseValue(value)
+        local raw =
+            tostring(value or "")
+                :lower()
+                :gsub("[$,%s]", "")
+
+        local number =
+            tonumber(
+                raw:match("[%d%.]+")
+            )
+
+        if not number then
+            return nil
+        end
+
+        if raw:find(
+            "qa",
+            1,
+            true
+        ) then
+            number *= 1e15
+        elseif raw:find(
+            "t",
+            1,
+            true
+        ) then
+            number *= 1e12
+        elseif raw:find(
+            "b",
+            1,
+            true
+        ) then
+            number *= 1e9
+        elseif raw:find(
+            "m",
+            1,
+            true
+        ) then
+            number *= 1e6
+        elseif raw:find(
+            "k",
+            1,
+            true
+        ) then
+            number *= 1e3
+        end
+
+        number =
+            math.floor(
+                number + 0.5
+            )
+
+        return number > 0
+                and number
+            or nil
+    end
+
+    local function getRoots()
+        local roots = {}
+
+        if player.Character then
+            table.insert(
+                roots,
+                player.Character
+            )
+        end
+
+        local backpack =
+            player:FindFirstChildOfClass(
+                "Backpack"
+            )
+
+        if backpack then
+            table.insert(
+                roots,
+                backpack
+            )
+        end
+
+        return roots
+    end
+
+    local valueData
+
+    local function simpleKey(value)
+        return tostring(value or "")
+            :lower()
+            :gsub("[%s%p_]", "")
+    end
+
+    local function loadValueData()
+        if valueData then
+            return valueData
+        end
+
+        valueData = {
+            Calculator = nil,
+            Prices = {},
+            Mutations = {},
+        }
+
+        local shared =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        if not shared then
+            return valueData
+        end
+
+        local calculatorModule =
+            shared:FindFirstChild(
+                "FruitValueCalc"
+            )
+
+        if calculatorModule
+            and calculatorModule:IsA("ModuleScript")
+        then
+            local ok, result =
+                pcall(
+                    require,
+                    calculatorModule
+                )
+
+            if ok then
+                if type(result) == "function" then
+                    valueData.Calculator =
+                        result
+                elseif type(result) == "table" then
+                    valueData.Calculator =
+                        result.Calculate
+                        or result.GetValue
+                        or result.GetFruitValue
+                        or result.Value
+                end
+            end
+        end
+
+        local priceModule =
+            shared:FindFirstChild(
+                "SellValueData"
+            )
+
+        if priceModule
+            and priceModule:IsA("ModuleScript")
+        then
+            local ok, result =
+                pcall(
+                    require,
+                    priceModule
+                )
+
+            if ok
+                and type(result) == "table"
+            then
+                for fruitName, price in pairs(result) do
+                    if tonumber(price) then
+                        valueData.Prices[
+                            simpleKey(fruitName)
+                        ] =
+                            tonumber(price)
+                    end
+                end
+            end
+        end
+
+        local mutationFolder =
+            shared:FindFirstChild(
+                "MutationData"
+            )
+
+        if mutationFolder then
+            for _, module in ipairs(
+                mutationFolder:GetChildren()
+            ) do
+                if module:IsA("ModuleScript") then
+                    local ok, result =
+                        pcall(
+                            require,
+                            module
+                        )
+
+                    if ok
+                        and type(result) == "table"
+                    then
+                        local multiplier =
+                            tonumber(
+                                result.PriceMultiplier
+                                or result.SellMultiplier
+                                or result.ValueMultiplier
+                                or result.Multiplier
+                                or result.Boost
+                            )
+
+                        if multiplier
+                            and multiplier > 0
+                        then
+                            valueData.Mutations[
+                                simpleKey(module.Name)
+                            ] =
+                                multiplier
+                        end
+                    end
+                end
+            end
+        end
+
+        return valueData
+    end
+
+    local function fallbackFruitValue(item)
+        local name =
+            tostring(
+                item:GetAttribute("FruitName")
+                or item:GetAttribute("Fruit")
+                or item:GetAttribute("ItemName")
+                or item.Name
+            )
+
+        name =
+            name
+                :gsub("%s*%b[]", "")
+                :gsub("%s*%b()", "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        local mutation =
+            tostring(
+                item:GetAttribute("Mutation")
+                or item:GetAttribute("Mutations")
+                or item:GetAttribute("Variant")
+                or ""
+            )
+
+        if mutation == "" then
+            for bracket in tostring(item.Name):gmatch(
+                "%[([^%]]+)%]"
+            ) do
+                if not bracket
+                    :lower()
+                    :find("kg", 1, true)
+                then
+                    mutation =
+                        bracket
+
+                    break
+                end
+            end
+        end
+
+        local size =
+            tonumber(
+                item:GetAttribute("SizeMultiplier")
+                or item:GetAttribute("SizeMulti")
+                or item:GetAttribute("ScaleMultiplier")
+                or item:GetAttribute("ScaleMulti")
+                or item:GetAttribute("Scale")
+                or item:GetAttribute("Weight")
+                or item:GetAttribute("WeightKg")
+            )
+
+        size =
+            size
+            or tonumber(
+                tostring(item.Name):match(
+                    "([%d%.]+)%s*[Kk][Gg]"
+                )
+            )
+            or 1
+
+        size =
+            math.max(
+                0.01,
+                size
+            )
+
+        local data =
+            loadValueData()
+
+        local calculated
+
+        if type(data.Calculator) == "function" then
+            local attempts = {
+                {
+                    name,
+                    size,
+                    item,
+                    item,
+                    item,
+                },
+
+                {
+                    name,
+                    size,
+                    item,
+                },
+
+                {
+                    name,
+                    size,
+                },
+
+                {
+                    item,
+                },
+            }
+
+            for _, arguments in ipairs(attempts) do
+                local ok, result =
+                    pcall(
+                        data.Calculator,
+                        table.unpack(arguments)
+                    )
+
+                if ok
+                    and tonumber(result)
+                    and tonumber(result) >= 0
+                then
+                    calculated =
+                        tonumber(result)
+
+                    break
+                end
+            end
+        end
+
+        if not calculated then
+            calculated =
+                (
+                    data.Prices[
+                        simpleKey(name)
+                    ] or 0
+                )
+                * size ^ 2.5
+        end
+
+        local multiplier =
+            1
+
+        for part in mutation:gmatch(
+            "[^,%|/;]+"
+        ) do
+            multiplier *=
+                data.Mutations[
+                    simpleKey(part)
+                ] or 1
+        end
+
+        calculated *=
+            multiplier
+
+        return calculated > 0
+                and math.floor(
+                    calculated + 0.5
+                )
+                or nil,
+            name,
+            mutation
+    end
+
+    local function readFruit(item)
+        if not (
+            item:IsA("Tool")
+            or item:IsA("Configuration")
+        ) then
+            return nil
+        end
+
+        if item:GetAttribute("HarvestedFruit") ~= true then
+            return nil
+        end
+
+        local id =
+            tostring(
+                item:GetAttribute("Id")
+                or item:GetAttribute("FruitId")
+                or ""
+            )
+
+        if id == "" then
+            return nil
+        end
+
+        local info
+        local value
+        local fallbackName
+        local fallbackMutation
+
+        if type(HolyFruitAutomationReadToolInfo) == "function" then
+            local ok, result =
+                pcall(
+                    HolyFruitAutomationReadToolInfo,
+                    item
+                )
+
+            if ok
+                and type(result) == "table"
+            then
+                info =
+                    result
+            end
+        end
+
+        if info
+            and type(HolyFruitAutomationCalculateInfoValue) == "function"
+        then
+            local ok, result =
+                pcall(
+                    HolyFruitAutomationCalculateInfoValue,
+                    info
+                )
+
+            if ok then
+                value =
+                    tonumber(
+                        result
+                        or info.ValueNumber
+                        or info.Value
+                    )
+            end
+        end
+
+        if not value
+            and item:IsA("Tool")
+            and type(HolyVisualReadFruitTool) == "function"
+        then
+            local ok, result =
+                pcall(
+                    HolyVisualReadFruitTool,
+                    item,
+                    0
+                )
+
+            if ok
+                and type(result) == "table"
+            then
+                value =
+                    tonumber(result.Value)
+
+                info =
+                    info or result
+            end
+        end
+
+        value =
+            value
+            or tonumber(
+                item:GetAttribute("Value")
+                or item:GetAttribute("SellValue")
+                or item:GetAttribute("Price")
+            )
+
+        if not value
+            or value <= 0
+        then
+            value,
+            fallbackName,
+            fallbackMutation =
+                fallbackFruitValue(item)
+        end
+
+        if not value
+            or value <= 0
+        then
+            return nil
+        end
+
+        local name =
+            tostring(
+                (
+                    info
+                    and (
+                        info.FruitName
+                        or info.Name
+                        or info.DisplayName
+                    )
+                )
+                or item:GetAttribute("FruitName")
+                or item:GetAttribute("ItemName")
+                or fallbackName
+                or item.Name
+            )
+
+        local mutation =
+            tostring(
+                (
+                    info
+                    and (
+                        info.Mutation
+                        or info.RawMutation
+                    )
+                )
+                or item:GetAttribute("Mutation")
+                or item:GetAttribute("Variant")
+                or fallbackMutation
+                or "Normal"
+            )
+
+        local favorite =
+            item:GetAttribute("IsFavorite") == true
+            or item:GetAttribute("Favorite") == true
+            or item:GetAttribute("Favorited") == true
+            or (
+                info
+                and (
+                    info.IsFavorite == true
+                    or info.Favorite == true
+                )
+            )
+
+        return {
+            Id =
+                id,
+
+            Item =
+                item,
+
+            Name =
+                name,
+
+            Mutation =
+                mutation ~= ""
+                    and mutation
+                    or "Normal",
+
+            Value =
+                math.floor(
+                    value + 0.5
+                ),
+
+            Favorite =
+                favorite == true,
+        }
+    end
+
+    local function scanInventory()
+        local fruits = {}
+        local seen = {}
+        local unvalued = 0
+
+        for _, root in ipairs(getRoots()) do
+            for _, item in ipairs(
+                root:GetChildren()
+            ) do
+                if (
+                    item:IsA("Tool")
+                    or item:IsA("Configuration")
+                )
+                    and item:GetAttribute("HarvestedFruit") == true
+                then
+                    local id =
+                        tostring(
+                            item:GetAttribute("Id")
+                            or item:GetAttribute("FruitId")
+                            or ""
+                        )
+
+                    if id ~= ""
+                        and not seen[id]
+                    then
+                        seen[id] =
+                            true
+
+                        local fruit =
+                            readFruit(item)
+
+                        if fruit then
+                            table.insert(
+                                fruits,
+                                fruit
+                            )
+                        else
+                            unvalued +=
+                                1
+                        end
+                    end
+                end
+            end
+        end
+
+        state.Inventory =
+            fruits
+
+        return fruits,
+            unvalued
+    end
+
+    local function clearRows(
+        container,
+        layout
+    )
+        for _, child in ipairs(
+            container:GetChildren()
+        ) do
+            if child ~= layout then
+                child:Destroy()
+            end
+        end
+    end
+
+    local avatarCache = {}
+
+    local function addAvatar(
+        parent,
+        userId,
+        size,
+        position
+    )
+        local avatar =
+            create(
+                "ImageLabel",
+                {
+                    BackgroundColor3 =
+                        color.Hover,
+
+                    BorderSizePixel =
+                        0,
+
+                    Image =
+                        avatarCache[userId]
+                            or "",
+
+                    Size =
+                        size,
+
+                    Position =
+                        position,
+
+                    ScaleType =
+                        Enum.ScaleType.Crop,
+                },
+                parent
+            )
+
+        round(
+            avatar,
+            999
+        )
+
+        if avatar.Image == "" then
+            task.spawn(function()
+                local ok, image =
+                    pcall(
+                        Players.GetUserThumbnailAsync,
+                        Players,
+                        userId,
+                        Enum.ThumbnailType.HeadShot,
+                        Enum.ThumbnailSize.Size100x100
+                    )
+
+                if ok
+                    and type(image) == "string"
+                then
+                    avatarCache[userId] =
+                        image
+
+                    if avatar.Parent then
+                        avatar.Image =
+                            image
+                    end
+                end
+            end)
+        end
+
+        return avatar
+    end
+
+    local rebuildPlan
+
+    local function renderRecipients()
+        clearRows(
+            routeList,
+            routeLayout
+        )
+
+        routeCount.Text =
+            tostring(
+                #state.Recipients
+            )
+            .. (
+                #state.Recipients == 1
+                    and " recipient"
+                    or " recipients"
+            )
+
+        clearButton.Visible =
+            #state.Recipients > 0
+            and not state.Running
+
+        if #state.Recipients == 0 then
+            local empty =
+                create(
+                    "Frame",
+                    {
+                        BackgroundColor3 =
+                            color.Field,
+
+                        Size =
+                            UDim2.new(
+                                1,
+                                -2,
+                                0,
+                                52
+                            ),
+                    },
+                    routeList
+                )
+
+            round(
+                empty,
+                10
+            )
+
+            text(
+                empty,
+                "No recipients yet",
+                UDim2.new(
+                    1,
+                    -20,
+                    0,
+                    20
+                ),
+                UDim2.fromOffset(
+                    10,
+                    6
+                ),
+                11,
+                color.Text,
+                nil,
+                Enum.Font.GothamSemibold
+            )
+
+            text(
+                empty,
+                "Enter a username and amount above.",
+                UDim2.new(
+                    1,
+                    -20,
+                    0,
+                    18
+                ),
+                UDim2.fromOffset(
+                    10,
+                    27
+                ),
+                9,
+                color.Muted
+            )
+
+            return
+        end
+
+        for index, recipient in ipairs(
+            state.Recipients
+        ) do
+            local row =
+                create(
+                    "Frame",
+                    {
+                        BackgroundColor3 =
+                            color.Field,
+
+                        Size =
+                            UDim2.new(
+                                1,
+                                -2,
+                                0,
+                                58
+                            ),
+
+                        LayoutOrder =
+                            index,
+                    },
+                    routeList
+                )
+
+            round(
+                row,
+                10
+            )
+
+            addAvatar(
+                row,
+                recipient.UserId,
+                UDim2.fromOffset(
+                    38,
+                    38
+                ),
+                UDim2.fromOffset(
+                    9,
+                    10
+                )
+            )
+
+            text(
+                row,
+                "@"
+                    .. recipient.Name,
+                UDim2.new(
+                    1,
+                    -218,
+                    0,
+                    19
+                ),
+                UDim2.fromOffset(
+                    56,
+                    8
+                ),
+                10,
+                color.Text,
+                nil,
+                Enum.Font.GothamSemibold
+            )
+
+            text(
+                row,
+                formatValue(
+                    recipient.Target
+                )
+                    .. " to send",
+                UDim2.new(
+                    1,
+                    -218,
+                    0,
+                    17
+                ),
+                UDim2.fromOffset(
+                    56,
+                    31
+                ),
+                9,
+                color.Muted
+            )
+
+            local up =
+                button(
+                    row,
+                    "^",
+                    UDim2.fromOffset(
+                        25,
+                        29
+                    ),
+                    UDim2.new(
+                        1,
+                        -152,
+                        0,
+                        15
+                    ),
+                    false
+                )
+
+            local down =
+                button(
+                    row,
+                    "v",
+                    UDim2.fromOffset(
+                        25,
+                        29
+                    ),
+                    UDim2.new(
+                        1,
+                        -123,
+                        0,
+                        15
+                    ),
+                    false
+                )
+
+            local edit =
+                button(
+                    row,
+                    "Edit",
+                    UDim2.fromOffset(
+                        38,
+                        29
+                    ),
+                    UDim2.new(
+                        1,
+                        -94,
+                        0,
+                        15
+                    ),
+                    false
+                )
+
+            local remove =
+                button(
+                    row,
+                    "X",
+                    UDim2.fromOffset(
+                        29,
+                        29
+                    ),
+                    UDim2.new(
+                        1,
+                        -39,
+                        0,
+                        15
+                    ),
+                    false
+                )
+
+            up.TextSize =
+                11
+
+            down.TextSize =
+                11
+
+            edit.TextSize =
+                8
+
+            remove.TextSize =
+                10
+
+            up.MouseButton1Click:Connect(function()
+                if state.Running
+                    or index <= 1
+                then
+                    return
+                end
+
+                state.Recipients[index],
+                state.Recipients[index - 1] =
+                    state.Recipients[index - 1],
+                    state.Recipients[index]
+
+                renderRecipients()
+                task.spawn(rebuildPlan)
+            end)
+
+            down.MouseButton1Click:Connect(function()
+                if state.Running
+                    or index >= #state.Recipients
+                then
+                    return
+                end
+
+                state.Recipients[index],
+                state.Recipients[index + 1] =
+                    state.Recipients[index + 1],
+                    state.Recipients[index]
+
+                renderRecipients()
+                task.spawn(rebuildPlan)
+            end)
+
+            edit.MouseButton1Click:Connect(function()
+                if state.Running then
+                    return
+                end
+
+                state.Editing =
+                    index
+
+                recipientBox.Text =
+                    recipient.Name
+
+                valueBox.Text =
+                    formatValue(
+                        recipient.Target
+                    )
+
+                addButton.Text =
+                    "Save"
+            end)
+
+            remove.MouseButton1Click:Connect(function()
+                if state.Running then
+                    return
+                end
+
+                table.remove(
+                    state.Recipients,
+                    index
+                )
+
+                state.Editing =
+                    nil
+
+                addButton.Text =
+                    "+ Add"
+
+                renderRecipients()
+                task.spawn(rebuildPlan)
+            end)
+        end
+    end
+
+    local function allocate(
+        available,
+        target
+    )
+        local sorted =
+            table.clone(available)
+
+        table.sort(
+            sorted,
+            function(a, b)
+                return a.Value > b.Value
+            end
+        )
+
+        local chosen = {}
+        local used = {}
+        local total = 0
+
+        for _, fruit in ipairs(sorted) do
+            if total + fruit.Value <= target then
+                table.insert(
+                    chosen,
+                    fruit
+                )
+
+                used[fruit.Id] =
+                    true
+
+                total +=
+                    fruit.Value
+            end
+        end
+
+        if state.Strategy ~= "Don't go over"
+            and total < target
+        then
+            local best
+            local difference
+
+            for _, fruit in ipairs(sorted) do
+                if not used[fruit.Id] then
+                    local current =
+                        math.abs(
+                            target
+                            - total
+                            - fruit.Value
+                        )
+
+                    if not best
+                        or current < difference
+                    then
+                        best =
+                            fruit
+
+                        difference =
+                            current
+                    end
+                end
+            end
+
+            if best then
+                local below =
+                    math.abs(
+                        target - total
+                    )
+
+                local above =
+                    math.abs(
+                        target
+                        - total
+                        - best.Value
+                    )
+
+                if state.Strategy == "Send at least"
+                    or above < below
+                then
+                    table.insert(
+                        chosen,
+                        best
+                    )
+
+                    total +=
+                        best.Value
+                end
+            end
+        end
+
+        return chosen,
+            total
+    end
+
+    rebuildPlan =
+        function()
+            if state.Busy
+                or state.Running
+            then
+                return
+            end
+
+            state.Busy =
+                true
+
+            setStatus(
+                "Checking",
+                color.Yellow
+            )
+
+            messageText.TextColor3 =
+                color.Muted
+
+            local inventory, unvalued =
+                scanInventory()
+
+            local eligible = {}
+            local protected = 0
+
+            for _, fruit in ipairs(inventory) do
+                if state.Protect
+                    and fruit.Favorite
+                then
+                    protected +=
+                        1
+                else
+                    table.insert(
+                        eligible,
+                        fruit
+                    )
+                end
+            end
+
+            local available =
+                table.clone(eligible)
+
+            local plan = {}
+            local totalFruits = 0
+            local totalValue = 0
+            local totalMails = 0
+            local incomplete = 0
+
+            for routeIndex, recipient in ipairs(
+                state.Recipients
+            ) do
+                local chosen, chosenValue =
+                    allocate(
+                        available,
+                        recipient.Target
+                    )
+
+                local selected = {}
+
+                for _, fruit in ipairs(chosen) do
+                    selected[fruit.Id] =
+                        true
+                end
+
+                local remaining = {}
+
+                for _, fruit in ipairs(available) do
+                    if not selected[fruit.Id] then
+                        table.insert(
+                            remaining,
+                            fruit
+                        )
+                    end
+                end
+
+                available =
+                    remaining
+
+                local complete =
+                    (
+                        state.Strategy == "Send at least"
+                        and chosenValue >= recipient.Target
+                    )
+                    or (
+                        state.Strategy ~= "Send at least"
+                        and #chosen > 0
+                    )
+
+                if not complete then
+                    incomplete +=
+                        1
+                end
+
+                local entry = {
+                    Index =
+                        routeIndex,
+
+                    Recipient =
+                        recipient,
+
+                    Fruits =
+                        chosen,
+
+                    Value =
+                        chosenValue,
+
+                    Mails =
+                        math.ceil(
+                            #chosen / BATCH_LIMIT
+                        ),
+
+                    Complete =
+                        complete,
+                }
+
+                table.insert(
+                    plan,
+                    entry
+                )
+
+                totalFruits +=
+                    #chosen
+
+                totalValue +=
+                    chosenValue
+
+                totalMails +=
+                    entry.Mails
+            end
+
+            state.Plan =
+                plan
+
+            clearRows(
+                previewList,
+                previewLayout
+            )
+
+            if #plan == 0 then
+                local empty =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Field,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -2,
+                                    0,
+                                    78
+                                ),
+                        },
+                        previewList
+                    )
+
+                round(
+                    empty,
+                    11
+                )
+
+                text(
+                    empty,
+                    "Nothing to preview yet",
+                    UDim2.new(
+                        1,
+                        -20,
+                        0,
+                        22
+                    ),
+                    UDim2.fromOffset(
+                        10,
+                        17
+                    ),
+                    12,
+                    color.Text,
+                    Enum.TextXAlignment.Center,
+                    Enum.Font.GothamSemibold
+                )
+
+                text(
+                    empty,
+                    "Add someone and choose how much to send.",
+                    UDim2.new(
+                        1,
+                        -20,
+                        0,
+                        19
+                    ),
+                    UDim2.fromOffset(
+                        10,
+                        41
+                    ),
+                    9,
+                    color.Muted,
+                    Enum.TextXAlignment.Center
+                )
+            else
+                for _, entry in ipairs(plan) do
+                    local row =
+                        create(
+                            "Frame",
+                            {
+                                BackgroundColor3 =
+                                    color.Field,
+
+                                Size =
+                                    UDim2.new(
+                                        1,
+                                        -2,
+                                        0,
+                                        66
+                                    ),
+
+                                LayoutOrder =
+                                    entry.Index,
+                            },
+                            previewList
+                        )
+
+                    round(
+                        row,
+                        11
+                    )
+
+                    outline(
+                        row,
+                        color.Border
+                    )
+
+                    addAvatar(
+                        row,
+                        entry.Recipient.UserId,
+                        UDim2.fromOffset(
+                            38,
+                            38
+                        ),
+                        UDim2.fromOffset(
+                            11,
+                            14
+                        )
+                    )
+
+                    text(
+                        row,
+                        "@"
+                            .. entry.Recipient.Name,
+                        UDim2.new(
+                            1,
+                            -268,
+                            0,
+                            20
+                        ),
+                        UDim2.fromOffset(
+                            59,
+                            8
+                        ),
+                        11,
+                        color.Text,
+                        nil,
+                        Enum.Font.GothamSemibold
+                    )
+
+                    text(
+                        row,
+                        string.format(
+                            "%d fruits - %d sends",
+                            #entry.Fruits,
+                            entry.Mails
+                        ),
+                        UDim2.new(
+                            1,
+                            -268,
+                            0,
+                            18
+                        ),
+                        UDim2.fromOffset(
+                            59,
+                            34
+                        ),
+                        9,
+                        color.Muted
+                    )
+
+                    text(
+                        row,
+                        formatValue(
+                            entry.Recipient.Target
+                        )
+                            .. " -> "
+                            .. formatValue(
+                                entry.Value
+                            ),
+                        UDim2.fromOffset(
+                            200,
+                            22
+                        ),
+                        UDim2.new(
+                            1,
+                            -212,
+                            0,
+                            9
+                        ),
+                        11,
+                        color.Text,
+                        Enum.TextXAlignment.Right,
+                        Enum.Font.GothamBold
+                    )
+
+                    text(
+                        row,
+                        entry.Complete
+                                and "Ready"
+                            or "Not enough fruit value",
+                        UDim2.fromOffset(
+                            200,
+                            18
+                        ),
+                        UDim2.new(
+                            1,
+                            -212,
+                            0,
+                            36
+                        ),
+                        9,
+                        entry.Complete
+                                and color.Green
+                            or color.Yellow,
+                        Enum.TextXAlignment.Right
+                    )
+                end
+            end
+
+            local seconds =
+                totalMails <= 1
+                    and 0
+                or (
+                    totalMails - 1
+                ) * COOLDOWN
+
+            inventoryText.Text =
+                string.format(
+                    "%d available - %d skipped",
+                    #eligible,
+                    protected
+                )
+
+            previewCount.Text =
+                string.format(
+                    "%d fruits - %d sends",
+                    totalFruits,
+                    totalMails
+                )
+
+            summaryText.Text =
+                string.format(
+                    "People: %d\nSends: %d\nFruits: %d\nTotal value: %s\nTime: %s",
+                    #state.Recipients,
+                    totalMails,
+                    totalFruits,
+                    formatValue(totalValue),
+                    seconds > 0
+                            and "~"
+                                .. math.ceil(seconds)
+                                .. "s"
+                        or "Immediate"
+                )
+
+            if #inventory == 0
+                and unvalued > 0
+            then
+                messageText.Text =
+                    "Fruit values aren't ready. Load HOLY, then refresh the preview."
+
+                messageText.TextColor3 =
+                    color.Red
+            elseif #state.Recipients == 0 then
+                messageText.Text =
+                    "Add a recipient and target."
+            elseif incomplete > 0 then
+                messageText.Text =
+                    tostring(incomplete)
+                    .. " target(s) cannot be completed."
+            elseif totalMails
+                > DAILY_LIMIT - tracker.Used
+            then
+                messageText.Text =
+                    "This needs more sends than you have left today."
+            else
+                messageText.Text =
+                    "Everything is ready. Review it before sending."
+            end
+
+            state.Busy =
+                false
+
+            setStatus(
+                "Ready",
+                color.Green
+            )
+        end
+
+    local function closeModal()
+        overlay.Visible =
+            false
+
+        for _, child in ipairs(
+            overlay:GetChildren()
+        ) do
+            child:Destroy()
+        end
+    end
+
+    local function showModal(
+        titleValue,
+        bodyValue,
+        confirmValue,
+        callback,
+        warning
+    )
+        closeModal()
+
+        overlay.Visible =
+            true
+
+        local modal =
+            create(
+                "Frame",
+                {
+                    AnchorPoint =
+                        Vector2.new(
+                            0.5,
+                            0.5
+                        ),
+
+                    Position =
+                        UDim2.fromScale(
+                            0.5,
+                            0.5
+                        ),
+
+                    Size =
+                        UDim2.fromOffset(
+                            430,
+                            270
+                        ),
+
+                    BackgroundColor3 =
+                        color.Card,
+
+                    ZIndex =
+                        51,
+                },
+                overlay
+            )
+
+        round(
+            modal,
+            18
+        )
+
+        outline(
+            modal,
+            warning
+                    and color.Accent
+                or color.Border
+        )
+
+        local heading =
+            text(
+                modal,
+                titleValue,
+                UDim2.new(
+                    1,
+                    -36,
+                    0,
+                    28
+                ),
+                UDim2.fromOffset(
+                    18,
+                    17
+                ),
+                18,
+                color.Text,
+                nil,
+                Enum.Font.GothamBold
+            )
+
+        heading.ZIndex =
+            52
+
+        local body =
+            text(
+                modal,
+                bodyValue,
+                UDim2.new(
+                    1,
+                    -36,
+                    0,
+                    135
+                ),
+                UDim2.fromOffset(
+                    18,
+                    57
+                ),
+                11,
+                color.Muted
+            )
+
+        body.TextWrapped =
+            true
+
+        body.TextYAlignment =
+            Enum.TextYAlignment.Top
+
+        body.ZIndex =
+            52
+
+        local cancel =
+            button(
+                modal,
+                callback
+                        and "Cancel"
+                    or "Close",
+                UDim2.fromOffset(
+                    callback
+                            and 112
+                        or 394,
+                    46
+                ),
+                UDim2.fromOffset(
+                    18,
+                    207
+                ),
+                false
+            )
+
+        cancel.ZIndex =
+            53
+
+        cancel.MouseButton1Click:Connect(
+            closeModal
+        )
+
+        if callback then
+            local confirm =
+                button(
+                    modal,
+                    confirmValue,
+                    UDim2.fromOffset(
+                        266,
+                        46
+                    ),
+                    UDim2.fromOffset(
+                        146,
+                        207
+                    ),
+                    true
+                )
+
+            confirm.ZIndex =
+                53
+
+            confirm.MouseButton1Click:Connect(function()
+                closeModal()
+                callback()
+            end)
+        end
+    end
+
+    local function getSendPacket()
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local networkingModule =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "Networking"
+            )
+
+        if not networkingModule
+            or not networkingModule:IsA("ModuleScript")
+        then
+            return nil,
+                "SharedModules.Networking was not found"
+        end
+
+        local ok, networking =
+            pcall(
+                require,
+                networkingModule
+            )
+
+        if not ok
+            or type(networking) ~= "table"
+        then
+            return nil,
+                "Networking require failed: "
+                    .. tostring(networking)
+        end
+
+        local packet =
+            type(networking.Mailbox) == "table"
+            and networking.Mailbox.SendBatch
+            or nil
+
+        if type(packet) ~= "table"
+            or type(packet.Fire) ~= "function"
+        then
+            return nil,
+                "Networking.Mailbox.SendBatch is unavailable"
+        end
+
+        return packet
+    end
+
+    local function currentIds()
+        local ids = {}
+
+        for _, root in ipairs(getRoots()) do
+            for _, item in ipairs(
+                root:GetChildren()
+            ) do
+                local id =
+                    tostring(
+                        item:GetAttribute("Id")
+                        or item:GetAttribute("FruitId")
+                        or ""
+                    )
+
+                if id ~= "" then
+                    ids[id] =
+                        true
+                end
+            end
+        end
+
+        return ids
+    end
+
+    local function waitForRemoval(batch)
+        local deadline =
+            os.clock() + 8
+
+        repeat
+            local owned =
+                currentIds()
+
+            local remaining =
+                0
+
+            for _, fruit in ipairs(batch) do
+                if owned[fruit.Id] then
+                    remaining +=
+                        1
+                end
+            end
+
+            if remaining == 0 then
+                return true
+            end
+
+            task.wait(0.15)
+        until os.clock() >= deadline
+
+        return false
+    end
+
+    local function waitForCooldown()
+        while state.LastAccepted do
+            local remaining =
+                COOLDOWN
+                - (
+                    workspace:GetServerTimeNow()
+                    - state.LastAccepted
+                )
+
+            if remaining <= 0 then
+                return not state.Stop
+            end
+
+            if state.Stop then
+                return false
+            end
+
+            setStatus(
+                string.format(
+                    "%.1fs",
+                    remaining
+                ),
+                color.Yellow
+            )
+
+            task.wait(
+                math.min(
+                    0.1,
+                    remaining
+                )
+            )
+        end
+
+        return not state.Stop
+    end
+
+    local function sendBatch(
+        packet,
+        recipient,
+        batch
+    )
+        local payload = {}
+
+        for _, fruit in ipairs(batch) do
+            table.insert(
+                payload,
+                {
+                    ItemKey =
+                        fruit.Id,
+
+                    Count =
+                        1,
+
+                    Category =
+                        "HarvestedFruits",
+                }
+            )
+        end
+
+        while not state.Stop do
+            if not waitForCooldown() then
+                return false,
+                    "Stopped",
+                    "STOPPED"
+            end
+
+            local started =
+                workspace:GetServerTimeNow()
+
+            setStatus(
+                "Sending",
+                color.Yellow
+            )
+
+            local ok, first, second =
+                pcall(function()
+                    return packet:Fire(
+                        recipient.UserId,
+                        payload,
+                        ""
+                    )
+                end)
+
+            if not ok then
+                return false,
+                    tostring(first),
+                    "ERROR"
+            end
+
+            local message =
+                tostring(second or "")
+
+            if first == true then
+                state.LastAccepted =
+                    started
+
+                tracker.Used =
+                    math.min(
+                        DAILY_LIMIT,
+                        tracker.Used + 1
+                    )
+
+                HOLY_MAIL_STATE.TrackerDay =
+                    HolyMailToday()
+
+                HOLY_MAIL_STATE.TrackerUsed =
+                    tracker.Used
+
+                updateQuota()
+                HolyMailSaveSettings()
+                waitForRemoval(batch)
+
+                return true,
+                    message,
+                    "ACCEPTED"
+            end
+
+            local lower =
+                message:lower()
+
+            local seconds =
+                tonumber(
+                    lower:match(
+                        "wait%s+(%d+)%s*s"
+                    )
+                )
+
+            if seconds then
+                task.wait(
+                    seconds + 0.25
+                )
+            elseif lower:find(
+                "daily gift limit",
+                1,
+                true
+            ) then
+                tracker.Used =
+                    DAILY_LIMIT
+
+                HOLY_MAIL_STATE.TrackerDay =
+                    HolyMailToday()
+
+                HOLY_MAIL_STATE.TrackerUsed =
+                    DAILY_LIMIT
+
+                updateQuota()
+                HolyMailSaveSettings()
+
+                return false,
+                    message,
+                    "DAILY"
+            else
+                return false,
+                    message ~= ""
+                            and message
+                        or tostring(first),
+                    "REJECTED"
+            end
+        end
+
+        return false,
+            "Stopped",
+            "STOPPED"
+    end
+
+    local function runDelivery(totalMails)
+        protectedCall(
+            "Delivery",
+            function()
+                local packet, packetError =
+                    getSendPacket()
+
+                if not packet then
+                    reportError(
+                        "Networking",
+                        packetError
+                    )
+
+                    return
+                end
+
+                state.Running =
+                    true
+
+                state.Stop =
+                    false
+
+                progressFill.Size =
+                    UDim2.fromScale(
+                        0,
+                        1
+                    )
+
+                renderRecipients()
+
+                local completedMails = 0
+                local fruitsSent = 0
+                local valueSent = 0
+                local completedRecipients = 0
+
+                local failure
+                local failureType
+
+                for routeIndex, entry in ipairs(
+                    state.Plan
+                ) do
+                    if state.Stop then
+                        break
+                    end
+
+                    local recipientFinished =
+                        true
+
+                    for firstIndex = 1,
+                        #entry.Fruits,
+                        BATCH_LIMIT
+                    do
+                        if state.Stop then
+                            recipientFinished =
+                                false
+
+                            break
+                        end
+
+                        local batch = {}
+                        local batchValue = 0
+
+                        for fruitIndex = firstIndex,
+                            math.min(
+                                firstIndex
+                                    + BATCH_LIMIT
+                                    - 1,
+                                #entry.Fruits
+                            )
+                        do
+                            local fruit =
+                                entry.Fruits[fruitIndex]
+
+                            table.insert(
+                                batch,
+                                fruit
+                            )
+
+                            batchValue +=
+                                fruit.Value
+                        end
+
+                        sendButton.Text =
+                            string.format(
+                                "@%s - mail %d/%d",
+                                entry.Recipient.Name,
+                                completedMails + 1,
+                                totalMails
+                            )
+
+                        setStatus(
+                            string.format(
+                                "%d/%d",
+                                routeIndex,
+                                #state.Plan
+                            ),
+                            color.Yellow
+                        )
+
+                        local accepted,
+                            response,
+                            responseType =
+                            sendBatch(
+                                packet,
+                                entry.Recipient,
+                                batch
+                            )
+
+                        if not accepted then
+                            recipientFinished =
+                                false
+
+                            failure =
+                                response
+
+                            failureType =
+                                responseType
+
+                            break
+                        end
+
+                        completedMails +=
+                            1
+
+                        fruitsSent +=
+                            #batch
+
+                        valueSent +=
+                            batchValue
+
+                        progressFill.Size =
+                            UDim2.fromScale(
+                                completedMails
+                                    / math.max(
+                                        totalMails,
+                                        1
+                                    ),
+                                1
+                            )
+
+                        messageText.Text =
+                            string.format(
+                                "Sent %d fruits worth %s.",
+                                fruitsSent,
+                                formatValue(valueSent)
+                            )
+                    end
+
+                    if recipientFinished then
+                        completedRecipients +=
+                            1
+                    else
+                        break
+                    end
+                end
+
+                local stopped =
+                    state.Stop
+                    and not failure
+
+                local complete =
+                    completedMails == totalMails
+                    and not failure
+                    and not stopped
+
+                state.Running =
+                    false
+
+                state.Stop =
+                    false
+
+                renderRecipients()
+
+                setStatus(
+                    complete
+                            and "Complete"
+                        or stopped
+                                and "Stopped"
+                            or "Paused",
+                    complete
+                            and color.Green
+                        or color.Yellow
+                )
+
+                sendButton.Text =
+                    "Review and send"
+
+                local heading =
+                    complete
+                            and "Delivery complete"
+                        or failureType == "DAILY"
+                                and "Daily limit reached"
+                            or stopped
+                                    and "Delivery stopped"
+                                or "Delivery paused"
+
+                local body =
+                    (
+                        failure
+                            and failure
+                                .. "\n\n"
+                            or ""
+                    )
+                    .. string.format(
+                        "People completed: %d\nFruits sent: %d\nValue sent: %s\nSends used: %d",
+                        completedRecipients,
+                        fruitsSent,
+                        formatValue(valueSent),
+                        completedMails
+                    )
+
+                showModal(
+                    heading,
+                    body,
+                    nil,
+                    nil,
+                    not complete
+                )
+
+                task.spawn(rebuildPlan)
+            end
+        )
+    end
+
+    local function requestDelivery()
+        if state.Running then
+            state.Stop =
+                true
+
+            sendButton.Text =
+                "Stopping after this mail..."
+
+            return
+        end
+
+        if state.Busy
+            or #state.Plan == 0
+        then
+            return
+        end
+
+        local mails = 0
+        local fruits = 0
+        local value = 0
+        local incomplete = false
+
+        for _, entry in ipairs(state.Plan) do
+            mails +=
+                entry.Mails
+
+            fruits +=
+                #entry.Fruits
+
+            value +=
+                entry.Value
+
+            incomplete =
+                incomplete
+                or not entry.Complete
+        end
+
+        if incomplete
+            or mails <= 0
+        then
+            messageText.Text =
+                "The delivery is incomplete and cannot start."
+
+            return
+        end
+
+        if mails
+            > DAILY_LIMIT - tracker.Used
+        then
+            messageText.Text =
+                "This needs more sends than you have left today."
+
+            return
+        end
+
+        local seconds =
+            mails <= 1
+                and 0
+            or (
+                mails - 1
+            ) * COOLDOWN
+
+        showModal(
+            "Review before sending",
+            string.format(
+                "People: %d\nFruits: %d\nTotal value: %s\nSends: %d\nTime: about %ds",
+                #state.Plan,
+                fruits,
+                formatValue(value),
+                mails,
+                math.ceil(seconds)
+            ),
+            "Send now",
+            function()
+                task.spawn(
+                    runDelivery,
+                    mails
+                )
+            end,
+            true
+        )
+    end
+
+    addButton.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Add recipient",
+            function()
+                if state.Running
+                    or state.Busy
+                then
+                    return
+                end
+
+                local raw =
+                    recipientBox.Text
+                        :gsub("^%s+", "")
+                        :gsub("%s+$", "")
+
+                local target =
+                    parseValue(
+                        valueBox.Text
+                    )
+
+                if raw == "" then
+                    recipientBox.PlaceholderText =
+                        "Enter a recipient"
+
+                    return
+                end
+
+                if not target then
+                    valueBox.Text =
+                        ""
+
+                    valueBox.PlaceholderText =
+                        "Invalid value"
+
+                    return
+                end
+
+                addButton.Text =
+                    "Checking..."
+
+                local userId
+                local username
+
+                local numeric =
+                    tonumber(raw)
+
+                if numeric then
+                    local ok, result =
+                        pcall(
+                            Players.GetNameFromUserIdAsync,
+                            Players,
+                            math.floor(numeric)
+                        )
+
+                    if ok then
+                        userId =
+                            math.floor(numeric)
+
+                        username =
+                            result
+                    end
+                else
+                    local ok, result =
+                        pcall(
+                            Players.GetUserIdFromNameAsync,
+                            Players,
+                            raw
+                        )
+
+                    if ok then
+                        userId =
+                            result
+
+                        local nameOk, name =
+                            pcall(
+                                Players.GetNameFromUserIdAsync,
+                                Players,
+                                userId
+                            )
+
+                        username =
+                            nameOk
+                                and name
+                                or raw
+                    end
+                end
+
+                if not userId
+                    or not username
+                    or userId == player.UserId
+                then
+                    recipientBox.Text =
+                        ""
+
+                    recipientBox.PlaceholderText =
+                        "Recipient not found"
+
+                    addButton.Text =
+                        "+ Add"
+
+                    return
+                end
+
+                for index, recipient in ipairs(
+                    state.Recipients
+                ) do
+                    if index ~= state.Editing
+                        and recipient.UserId == userId
+                    then
+                        recipientBox.Text =
+                            ""
+
+                        recipientBox.PlaceholderText =
+                            "Already added"
+
+                        addButton.Text =
+                            "+ Add"
+
+                        return
+                    end
+                end
+
+                local record = {
+                    UserId =
+                        userId,
+
+                    Name =
+                        username,
+
+                    Target =
+                        target,
+                }
+
+                if state.Editing
+                    and state.Recipients[state.Editing]
+                then
+                    state.Recipients[state.Editing] =
+                        record
+                else
+                    table.insert(
+                        state.Recipients,
+                        record
+                    )
+                end
+
+                state.Editing =
+                    nil
+
+                recipientBox.Text =
+                    ""
+
+                valueBox.Text =
+                    ""
+
+                addButton.Text =
+                    "+ Add"
+
+                renderRecipients()
+                rebuildPlan()
+            end
+        )
+    end)
+
+    calculateButton.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Refresh preview",
+            rebuildPlan
+        )
+    end)
+
+    local strategies = {
+        "Send at least",
+        "Closest amount",
+        "Don't go over",
+    }
+
+    strategyButton.MouseButton1Click:Connect(function()
+        if state.Running
+            or state.Busy
+        then
+            return
+        end
+
+        local index =
+            table.find(
+                strategies,
+                state.Strategy
+            ) or 1
+
+        state.Strategy =
+            strategies[
+                index % #strategies + 1
+            ]
+
+        strategyButton.Text =
+            state.Strategy
+
+        task.spawn(function()
+            protectedCall(
+                "Strategy",
+                rebuildPlan
+            )
+        end)
+    end)
+
+    favoriteButton.MouseButton1Click:Connect(function()
+        if state.Running
+            or state.Busy
+        then
+            return
+        end
+
+        state.Protect =
+            not state.Protect
+
+        favoriteButton.Text =
+            "Skip favorites: "
+            .. (
+                state.Protect
+                    and "ON"
+                    or "OFF"
+            )
+
+        task.spawn(function()
+            protectedCall(
+                "Favorite filter",
+                rebuildPlan
+            )
+        end)
+    end)
+
+    clearButton.MouseButton1Click:Connect(function()
+        if state.Running
+            or #state.Recipients == 0
+        then
+            return
+        end
+
+        showModal(
+            "Clear everyone?",
+            "This removes every person from the list. Your fruits will not be changed.",
+            "Clear all",
+            function()
+                state.Recipients = {}
+
+                state.Editing =
+                    nil
+
+                recipientBox.Text =
+                    ""
+
+                valueBox.Text =
+                    ""
+
+                addButton.Text =
+                    "+ Add"
+
+                renderRecipients()
+                task.spawn(rebuildPlan)
+            end,
+            false
+        )
+    end)
+
+    sendButton.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Send button",
+            requestDelivery
+        )
+    end)
+
+    local fullSize =
+        window.Size
+
+    local function applyMinimized()
+        content.Visible =
+            not state.Minimized
+
+        overlay.Visible =
+            false
+
+        if state.Minimized then
+            header.Size =
+                UDim2.new(
+                    1,
+                    0,
+                    0,
+                    46
+                )
+
+            logo.Size =
+                UDim2.fromOffset(
+                    28,
+                    28
+                )
+
+            logo.Position =
+                UDim2.fromOffset(
+                    9,
+                    9
+                )
+
+            title.Position =
+                UDim2.fromOffset(
+                    47,
+                    4
+                )
+
+            title.Size =
+                UDim2.fromOffset(
+                    82,
+                    38
+                )
+
+            title.TextSize =
+                13
+
+            subtitle.Visible =
+                false
+
+            quotaFrame.Size =
+                UDim2.fromOffset(
+                    52,
+                    28
+                )
+
+            quotaFrame.Position =
+                UDim2.fromOffset(
+                    132,
+                    9
+                )
+
+            quotaText.TextSize =
+                8
+
+            statusFrame.Size =
+                UDim2.fromOffset(
+                    68,
+                    28
+                )
+
+            statusFrame.Position =
+                UDim2.fromOffset(
+                    189,
+                    9
+                )
+
+            statusDot.Size =
+                UDim2.fromOffset(
+                    6,
+                    6
+                )
+
+            statusDot.Position =
+                UDim2.fromOffset(
+                    8,
+                    11
+                )
+
+            statusText.Size =
+                UDim2.fromOffset(
+                    48,
+                    24
+                )
+
+            statusText.Position =
+                UDim2.fromOffset(
+                    18,
+                    2
+                )
+
+            statusText.TextSize =
+                8
+
+            minimizeButton.Size =
+                UDim2.fromOffset(
+                    28,
+                    28
+                )
+
+            minimizeButton.Position =
+                UDim2.fromOffset(
+                    262,
+                    9
+                )
+
+            minimizeButton.Text =
+                "+"
+
+            closeButton.Size =
+                UDim2.fromOffset(
+                    28,
+                    28
+                )
+
+            closeButton.Position =
+                UDim2.fromOffset(
+                    295,
+                    9
+                )
+
+            TweenService:Create(
+                window,
+                TweenInfo.new(0.12),
+                {
+                    Size =
+                        UDim2.fromOffset(
+                            332,
+                            46
+                        ),
+                }
+            ):Play()
+        else
+            header.Size =
+                UDim2.new(
+                    1,
+                    0,
+                    0,
+                    64
+                )
+
+            logo.Size =
+                UDim2.fromOffset(
+                    40,
+                    40
+                )
+
+            logo.Position =
+                UDim2.fromOffset(
+                    16,
+                    12
+                )
+
+            title.Position =
+                UDim2.fromOffset(
+                    69,
+                    9
+                )
+
+            title.Size =
+                UDim2.fromOffset(
+                    170,
+                    23
+                )
+
+            title.TextSize =
+                19
+
+            subtitle.Visible =
+                true
+
+            quotaFrame.Size =
+                UDim2.fromOffset(
+                    150,
+                    38
+                )
+
+            quotaFrame.Position =
+                UDim2.new(
+                    1,
+                    -360,
+                    0,
+                    13
+                )
+
+            quotaText.TextSize =
+                11
+
+            statusFrame.Size =
+                UDim2.fromOffset(
+                    108,
+                    38
+                )
+
+            statusFrame.Position =
+                UDim2.new(
+                    1,
+                    -200,
+                    0,
+                    13
+                )
+
+            statusDot.Size =
+                UDim2.fromOffset(
+                    7,
+                    7
+                )
+
+            statusDot.Position =
+                UDim2.fromOffset(
+                    12,
+                    16
+                )
+
+            statusText.Size =
+                UDim2.fromOffset(
+                    78,
+                    28
+                )
+
+            statusText.Position =
+                UDim2.fromOffset(
+                    26,
+                    5
+                )
+
+            statusText.TextSize =
+                11
+
+            minimizeButton.Size =
+                UDim2.fromOffset(
+                    40,
+                    40
+                )
+
+            minimizeButton.Position =
+                UDim2.new(
+                    1,
+                    -88,
+                    0,
+                    12
+                )
+
+            minimizeButton.Text =
+                "-"
+
+            closeButton.Size =
+                UDim2.fromOffset(
+                    40,
+                    40
+                )
+
+            closeButton.Position =
+                UDim2.new(
+                    1,
+                    -44,
+                    0,
+                    12
+                )
+
+            TweenService:Create(
+                window,
+                TweenInfo.new(0.12),
+                {
+                    Size =
+                        fullSize,
+                }
+            ):Play()
+        end
+
+        updateQuota()
+    end
+
+    HOLY_MAIL_RUNTIME.SetMinimized =
+        function(value)
+            state.Minimized =
+                value == true
+
+            applyMinimized()
+
+            return true
+        end
+
+    minimizeButton.MouseButton1Click:Connect(function()
+        state.Minimized =
+            not state.Minimized
+
+        applyMinimized()
+    end)
+
+    closeButton.MouseButton1Click:Connect(function()
+        if state.Running then
+            state.Stop =
+                true
+
+            return
+        end
+
+        HolyMailSetEnabled(false)
+    end)
+
+    do
+        local dragging =
+            false
+
+        local startInput
+        local startPosition
+
+        header.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch
+            then
+                dragging =
+                    true
+
+                startInput =
+                    input.Position
+
+                startPosition =
+                    window.Position
+            end
+        end)
+
+        header.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch
+            then
+                dragging =
+                    false
+
+                HolyMailStorePosition(
+                    window.Position
+                )
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging
+                and (
+                    input.UserInputType == Enum.UserInputType.MouseMovement
+                    or input.UserInputType == Enum.UserInputType.Touch
+                )
+            then
+                local delta =
+                    input.Position
+                    - startInput
+
+                window.Position =
+                    UDim2.new(
+                        startPosition.X.Scale,
+                        startPosition.X.Offset
+                            + delta.X,
+                        startPosition.Y.Scale,
+                        startPosition.Y.Offset
+                            + delta.Y
+                    )
+            end
+        end)
+    end
+
+    updateQuota()
+    renderRecipients()
+
+    setStatus(
+        "Ready",
+        color.Green
+    )
+
+    messageText.Text =
+        "HUD loaded. Add a recipient or refresh the preview."
+
+    print(
+        "[HOLY MAIL] V7 HUD loaded successfully"
+    )
+
+    if state.Minimized == true then
+        applyMinimized()
+    end
+
+    task.spawn(function()
+        protectedCall(
+            "Initial inventory scan",
+            rebuildPlan
+        )
+    end)
+
+    return true
+end
+
+function HolyMailDestroyHud(reason)
+    local deliveryState =
+        HOLY_MAIL_RUNTIME.DeliveryState
+
+    if type(deliveryState) == "table"
+        and deliveryState.Running == true
+    then
+        deliveryState.Stop =
+            true
+
+        if HOLY_MAIL_RUNTIME.DestroyPending ~= true then
+            HOLY_MAIL_RUNTIME.DestroyPending =
+                true
+
+            task.spawn(function()
+                local deadline =
+                    os.clock() + 15
+
+                while type(HOLY_MAIL_RUNTIME.DeliveryState) == "table"
+                    and HOLY_MAIL_RUNTIME.DeliveryState.Running == true
+                    and os.clock() < deadline
+                do
+                    task.wait(0.1)
+                end
+
+                HOLY_MAIL_RUNTIME.DestroyPending =
+                    false
+
+                HolyMailDestroyHud(reason)
+            end)
+        end
+
+        return false
+    end
+
+    local gui =
+        HOLY_MAIL_RUNTIME.Gui
+
+    if typeof(gui) == "Instance" then
+        pcall(function()
+            gui:Destroy()
+        end)
+    end
+
+    HOLY_MAIL_RUNTIME.Gui =
+        nil
+
+    HOLY_MAIL_RUNTIME.Window =
+        nil
+
+    HOLY_MAIL_RUNTIME.DeliveryState =
+        nil
+
+    HOLY_MAIL_RUNTIME.SetMinimized =
+        nil
+
+    HOLY_MAIL_RUNTIME.UpdateQuota =
+        nil
+
+    HOLY_MAIL_RUNTIME.Status =
+        "Closed"
+
+    HolyMailRefreshControlUI()
+
+    return true
+end
+
+function HolyMailSyncToggle(value)
+    local toggle =
+        type(Toggles) == "table"
+        and Toggles.HolyMailHud
+        or nil
+
+    if type(toggle) ~= "table"
+        or type(toggle.SetValue) ~= "function"
+        or toggle.Value == (value == true)
+    then
+        return false
+    end
+
+    HOLY_MAIL_RUNTIME.SyncingToggle =
+        true
+
+    pcall(function()
+        toggle:SetValue(
+            value == true
+        )
+    end)
+
+    HOLY_MAIL_RUNTIME.SyncingToggle =
+        false
+
+    return true
+end
+
+function HolyMailSetEnabled(
+    value,
+    fromToggle
+)
+    local enabled =
+        value == true
+
+    HOLY_MAIL_STATE.HudEnabled =
+        enabled
+
+    if enabled == true then
+        local ok, result =
+            xpcall(
+                HolyMailCreateHud,
+                function(message)
+                    return tostring(message)
+                        .. "\n"
+                        .. debug.traceback()
+                end
+            )
+
+        if ok ~= true
+            or result ~= true
+        then
+            HOLY_MAIL_STATE.HudEnabled =
+                false
+
+            HOLY_MAIL_RUNTIME.Status =
+                "Error"
+
+            HOLY_MAIL_RUNTIME.LastError =
+                tostring(result)
+
+            warn(
+                "[HOLY MAIL]",
+                tostring(result)
+            )
+
+            HolyNotify(
+                "HOLY Mail",
+                "The Mail HUD could not open. The error was printed to the console.",
+                6
+            )
+
+            enabled =
+                false
+        end
+    else
+        HolyMailDestroyHud("disabled")
+    end
+
+    HolyMailSaveSettings()
+    HolyMailRefreshControlUI()
+
+    if fromToggle ~= true then
+        HolyMailSyncToggle(enabled)
+    end
+
+    return enabled
+end
+
+function HolyMailOpenHud()
+    if HOLY_MAIL_STATE.HudEnabled ~= true then
+        return HolyMailSetEnabled(true)
+    end
+
+    if typeof(HOLY_MAIL_RUNTIME.Gui) ~= "Instance" then
+        HolyMailCreateHud()
+    end
+
+    if type(HOLY_MAIL_RUNTIME.SetMinimized) == "function" then
+        HOLY_MAIL_RUNTIME.SetMinimized(false)
+    end
+
+    return true
+end
+
+function HolyMailResetPosition()
+    HOLY_MAIL_STATE.HudPosition =
+        nil
+
+    local window =
+        HOLY_MAIL_RUNTIME.Window
+
+    if typeof(window) == "Instance" then
+        window.Position =
+            UDim2.fromScale(
+                0.5,
+                0.5
+            )
+    end
+
+    HolyMailSaveSettings()
+
+    return true
+end
+
+HOLY_MAIL_RUNTIME.Stop =
+    function(reason)
+        HOLY_MAIL_STATE.HudEnabled =
+            false
+
+        return HolyMailDestroyHud(
+            reason or "stop"
+        )
+    end
+
+
 --==================================================
 -- [4] WINDOW
 --==================================================
@@ -99976,6 +105370,13 @@ local Tabs = {
             Name = "Shop",
             Icon = "shopping-cart",
             Description = "Shop automation.",
+        }),
+
+    Mail =
+        Window:AddTab({
+            Name = "Mail",
+            Icon = "mail",
+            Description = "Mail delivery tools.",
         }),
 
     Sniper =
@@ -100081,6 +105482,22 @@ local MainFarmDetailsBox =
         "Main.FarmDetails",
         "Farm Details",
         "sprout"
+    )
+
+local MailHudBox =
+    HolyAddLeftGroupbox(
+        Tabs.Mail,
+        "Mail.Hud",
+        "Mail HUD",
+        "mail"
+    )
+
+local MailUsageBox =
+    HolyAddRightGroupbox(
+        Tabs.Mail,
+        "Mail.Usage",
+        "Mail Usage",
+        "activity"
     )
 
 local WebhookSetupBox =
@@ -109567,6 +114984,204 @@ HOLY_SERVER_UI.MemoryLabel =
 HolyServerRefreshUI()
 
 --==================================================
+-- [6.20] MAIL TAB
+--==================================================
+
+HOLY_MAIL_UI.HudToggle =
+    MailHudBox:AddToggle(
+        "HolyMailHud",
+        {
+            Text =
+                "Show Mail HUD",
+
+            Default =
+                HOLY_MAIL_STATE.HudEnabled == true,
+
+            Tooltip =
+                "Shows the Mail HUD used to plan and send fruit deliveries.",
+        }
+    )
+
+HOLY_MAIL_UI.HudToggle:OnChanged(function(value)
+
+    if HOLY_MAIL_RUNTIME.SyncingToggle == true then
+        return
+    end
+
+    HolyMailSetEnabled(
+        value,
+        true
+    )
+end)
+
+HOLY_MAIL_UI.StartMinimizedToggle =
+    MailHudBox:AddToggle(
+        "HolyMailStartMinimized",
+        {
+            Text =
+                "Start Minimized",
+
+            Default =
+                HOLY_MAIL_STATE.StartMinimized == true,
+
+            Tooltip =
+                "Starts the Mail HUD as a small bar when it opens.",
+        }
+    )
+
+HOLY_MAIL_UI.StartMinimizedToggle:OnChanged(function(value)
+
+    HOLY_MAIL_STATE.StartMinimized =
+        value == true
+
+    HolyMailSaveSettings()
+end)
+
+local HolyMailOpenButton =
+    MailHudBox:AddButton({
+        Text =
+            "Open HUD",
+
+        Tooltip =
+            "Opens the Mail HUD and expands it if it is minimized.",
+
+        Func =
+            function()
+
+                HolyMailOpenHud()
+            end,
+    })
+
+HolyMailOpenButton:AddButton({
+    Text =
+        "Reset Position",
+
+    Tooltip =
+        "Moves the Mail HUD back to the center of the screen.",
+
+    Func =
+        function()
+
+            HolyMailResetPosition()
+
+            HolyNotify(
+                "HOLY Mail",
+                "HUD position reset.",
+                3
+            )
+        end,
+})
+
+HOLY_MAIL_UI.StatusLabel =
+    HolySniperAddLabel(
+        MailHudBox,
+        "HUD: Closed"
+    )
+
+HOLY_MAIL_UI.UsedInput =
+    MailUsageBox:AddInput(
+        "HolyMailTrackedUsed",
+        {
+            Text =
+                "Sends Already Used",
+
+            Default =
+                tostring(
+                    HOLY_MAIL_STATE.TrackerUsed
+                ),
+
+            Placeholder =
+                "0",
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Enter sends used before HOLY loaded so the local tracker stays accurate.",
+        }
+    )
+
+HOLY_MAIL_UI.UsedInput:OnChanged(function(value)
+
+    HolyMailSetTrackedUsed(
+        value
+    )
+end)
+
+MailUsageBox:AddButton({
+    Text =
+        "Reset Tracked Sends",
+
+    Tooltip =
+        "Resets HOLY's local counter. This does not reset the game's daily limit.",
+
+    Func =
+        function()
+
+            HolyMailSetTrackedUsed(
+                0
+            )
+
+            if type(HOLY_MAIL_UI.UsedInput) == "table"
+            and type(HOLY_MAIL_UI.UsedInput.SetValue) == "function" then
+
+                pcall(function()
+
+                    HOLY_MAIL_UI.UsedInput:SetValue(
+                        "0"
+                    )
+                end)
+            end
+
+            HolyNotify(
+                "HOLY Mail",
+                "Tracked sends reset. The game's actual limit was not changed.",
+                4
+            )
+        end,
+})
+
+HOLY_MAIL_UI.UsageLabel =
+    HolySniperAddLabel(
+        MailUsageBox,
+        "Tracked today: 0 / 50"
+    )
+
+HolySniperAddLabel(
+    MailUsageBox,
+    "20 fruits per send"
+)
+
+HolySniperAddLabel(
+    MailUsageBox,
+    "10.05 seconds between sends"
+)
+
+HolySniperAddLabel(
+    MailUsageBox,
+    "50 accepted sends per day"
+)
+
+HolyMailRefreshControlUI()
+
+task.defer(function()
+
+    if HOLY_MAIL_STATE.HudEnabled == true then
+
+        HolyMailSetEnabled(
+            true,
+            true
+        )
+    end
+end)
+
+--==================================================
 -- [6.25] SNIPER TAB
 --==================================================
 
@@ -109762,6 +115377,38 @@ HOLY_WEBHOOK_UI.EnabledToggle:OnChanged(function(value)
             )
         end)
     end
+end)
+
+HOLY_WEBHOOK_UI.PingInput =
+    WebhookFruitMultiplierBox:AddInput(
+        "HolyWebhookFruitMultiplierPingText",
+        {
+            Text = "Ping Text",
+
+            Default =
+                tostring(
+                    HOLY_WEBHOOK_STATE.PingText
+                    or ""
+                ),
+
+            Placeholder =
+                "@everyone, @here, <@USER_ID>, <@&ROLE_ID>",
+
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+
+            Tooltip =
+                "Optional text placed above the mobile alert summary. Supports @everyone, @here, user IDs, role IDs, or normal text.",
+        }
+    )
+
+HOLY_WEBHOOK_UI.PingInput:OnChanged(function(value)
+
+    HOLY_WEBHOOK_STATE.PingText =
+        tostring(value or "")
+
+    HolySaveWebhookSettings()
 end)
 
 HOLY_WEBHOOK_UI.FruitDropdown =
