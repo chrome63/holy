@@ -100329,7 +100329,7 @@ local HolyMailTweenService =
 HOLY_MAIL_STATE = {
     HudEnabled = false,
     StartMinimized = false,
-    HudScale = "100%",
+    HudScale = "90%",
     HudPosition = nil,
 
     AutoClaim = false,
@@ -100392,7 +100392,7 @@ end
 function HolyMailNormalizeScale(value)
     local cleanedValue =
         tostring(
-            value or "100%"
+            value or "90%"
         ):gsub(
             "%%",
             ""
@@ -100400,14 +100400,14 @@ function HolyMailNormalizeScale(value)
 
     local scale =
         tonumber(cleanedValue)
-        or 100
+        or 90
 
     scale =
         math.clamp(
             math.floor(
                 scale + 0.5
             ),
-            60,
+            80,
             110
         )
 
@@ -101574,34 +101574,37 @@ function HolyMailCreateHud()
 
     local color = {
         Back =
-            Color3.fromRGB(7, 8, 11),
+            Color3.fromRGB(6, 9, 14),
 
         Header =
-            Color3.fromRGB(10, 11, 15),
+            Color3.fromRGB(8, 12, 19),
 
         Card =
-            Color3.fromRGB(14, 16, 21),
+            Color3.fromRGB(10, 15, 23),
 
         Field =
-            Color3.fromRGB(21, 24, 31),
+            Color3.fromRGB(18, 25, 36),
 
         Hover =
-            Color3.fromRGB(29, 33, 42),
+            Color3.fromRGB(25, 34, 47),
 
         Border =
-            Color3.fromRGB(48, 54, 68),
+            Color3.fromRGB(53, 65, 84),
 
         Text =
-            Color3.fromRGB(245, 246, 250),
+            Color3.fromRGB(241, 244, 250),
+
+        Secondary =
+            Color3.fromRGB(190, 198, 212),
 
         Muted =
-            Color3.fromRGB(142, 149, 166),
+            Color3.fromRGB(160, 170, 189),
 
         White =
-            Color3.fromRGB(247, 248, 251),
+            Color3.fromRGB(248, 249, 252),
 
         Black =
-            Color3.fromRGB(10, 11, 14),
+            Color3.fromRGB(9, 12, 18),
 
         Green =
             Color3.fromRGB(82, 217, 143),
@@ -101613,7 +101616,7 @@ function HolyMailCreateHud()
             Color3.fromRGB(240, 103, 111),
 
         Accent =
-            Color3.fromRGB(59, 130, 246),
+            Color3.fromRGB(45, 128, 246),
     }
 
     local function create(
@@ -101623,6 +101626,13 @@ function HolyMailCreateHud()
     )
         local object =
             Instance.new(className)
+
+        if object:IsA(
+            "GuiObject"
+        ) then
+            object.BorderSizePixel =
+                0
+        end
 
         for property, value in pairs(
             properties or {}
@@ -101666,7 +101676,16 @@ function HolyMailCreateHud()
                         or color.Border,
 
                 Thickness =
-                    1,
+                    1.15,
+
+                Transparency =
+                    0.18,
+
+                ApplyStrokeMode =
+                    Enum.ApplyStrokeMode.Border,
+
+                LineJoinMode =
+                    Enum.LineJoinMode.Round,
             },
             object
         )
@@ -101682,6 +101701,23 @@ function HolyMailCreateHud()
         alignment,
         font
     )
+        local requestedTextSize =
+            math.floor(
+                (
+                    tonumber(textSize)
+                    or 13
+                )
+                + 0.5
+            )
+
+        local minimumTextSize =
+            (
+                font == Enum.Font.GothamBold
+                or font == Enum.Font.GothamSemibold
+            )
+                and 12
+                or 11
+
         return create(
             "TextLabel",
             {
@@ -101698,7 +101734,10 @@ function HolyMailCreateHud()
                     position,
 
                 TextSize =
-                    textSize or 12,
+                    math.max(
+                        requestedTextSize,
+                        minimumTextSize
+                    ),
 
                 TextColor3 =
                     chosenColor
@@ -101714,9 +101753,12 @@ function HolyMailCreateHud()
                 TextTruncate =
                     Enum.TextTruncate.AtEnd,
 
+                TextStrokeTransparency =
+                    1,
+
                 Font =
                     font
-                        or Enum.Font.Gotham,
+                        or Enum.Font.GothamMedium,
             },
             parent
         )
@@ -101754,7 +101796,10 @@ function HolyMailCreateHud()
                         position,
 
                     TextSize =
-                        12,
+                        13,
+
+                    TextStrokeTransparency =
+                        1,
 
                     Font =
                         Enum.Font.GothamSemibold,
@@ -101764,16 +101809,16 @@ function HolyMailCreateHud()
 
         round(
             object,
-            10
+            12
         )
 
         outline(
             object,
             bright
                     and Color3.fromRGB(
-                        83,
-                        148,
-                        247
+                        76,
+                        149,
+                        250
                     )
                 or color.Border
         )
@@ -101816,20 +101861,23 @@ function HolyMailCreateHud()
                         position,
 
                     TextSize =
-                        12,
+                        13,
+
+                    TextStrokeTransparency =
+                        1,
 
                     TextXAlignment =
                         Enum.TextXAlignment.Left,
 
                     Font =
-                        Enum.Font.Gotham,
+                        Enum.Font.GothamMedium,
                 },
                 parent
             )
 
         round(
             object,
-            10
+            12
         )
 
         outline(object)
@@ -101838,10 +101886,10 @@ function HolyMailCreateHud()
             "UIPadding",
             {
                 PaddingLeft =
-                    UDim.new(0, 11),
+                    UDim.new(0, 12),
 
                 PaddingRight =
-                    UDim.new(0, 8),
+                    UDim.new(0, 10),
             },
             object
         )
@@ -101872,16 +101920,12 @@ function HolyMailCreateHud()
 
         round(
             object,
-            15
+            16
         )
 
         outline(
             object,
-            Color3.fromRGB(
-                35,
-                40,
-                51
-            )
+            color.Border
         )
 
         return object
@@ -102074,14 +102118,14 @@ function HolyMailCreateHud()
             header,
             "HOLY Mail",
             UDim2.fromOffset(
-                170,
-                23
+                190,
+                25
             ),
             UDim2.fromOffset(
                 69,
-                9
+                8
             ),
-            19,
+            21,
             color.Text,
             nil,
             Enum.Font.GothamBold
@@ -102092,15 +102136,17 @@ function HolyMailCreateHud()
             header,
             "Send fruits by value",
             UDim2.fromOffset(
-                220,
-                18
+                240,
+                20
             ),
             UDim2.fromOffset(
                 69,
-                33
+                34
             ),
-            11,
-            color.Muted
+            13,
+            color.Secondary,
+            nil,
+            Enum.Font.GothamMedium
         )
 
     local quotaFrame =
@@ -102709,62 +102755,285 @@ function HolyMailCreateHud()
         "SUMMARY",
         UDim2.fromOffset(
             160,
-            20
+            22
         ),
         UDim2.fromOffset(
             14,
             9
         ),
-        10,
-        color.Muted,
+        12,
+        color.Secondary,
         nil,
         Enum.Font.GothamBold
     )
 
-    local summaryText =
+    text(
+        summaryCard,
+        "People",
+        UDim2.fromOffset(
+            150,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            38
+        ),
+        12,
+        color.Secondary,
+        nil,
+        Enum.Font.GothamMedium
+    )
+
+    local summaryPeopleValue =
         text(
             summaryCard,
-            "People: 0\nSends: 0\nFruits: 0\nTotal value: $0\nTime: Ready",
+            "0",
+            UDim2.fromOffset(
+                96,
+                20
+            ),
             UDim2.new(
                 1,
-                -28,
+                -110,
                 0,
-                125
+                38
             ),
-            UDim2.fromOffset(
-                14,
-                39
-            ),
-            11,
-            color.Text
+            12,
+            color.Text,
+            Enum.TextXAlignment.Right,
+            Enum.Font.GothamSemibold
         )
 
-    summaryText.TextYAlignment =
-        Enum.TextYAlignment.Top
+    text(
+        summaryCard,
+        "Sends",
+        UDim2.fromOffset(
+            150,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            63
+        ),
+        12,
+        color.Secondary,
+        nil,
+        Enum.Font.GothamMedium
+    )
+
+    local summarySendsValue =
+        text(
+            summaryCard,
+            "0",
+            UDim2.fromOffset(
+                96,
+                20
+            ),
+            UDim2.new(
+                1,
+                -110,
+                0,
+                63
+            ),
+            12,
+            color.Text,
+            Enum.TextXAlignment.Right,
+            Enum.Font.GothamSemibold
+        )
+
+    text(
+        summaryCard,
+        "Fruits",
+        UDim2.fromOffset(
+            150,
+            20
+        ),
+        UDim2.fromOffset(
+            14,
+            88
+        ),
+        12,
+        color.Secondary,
+        nil,
+        Enum.Font.GothamMedium
+    )
+
+    local summaryFruitsValue =
+        text(
+            summaryCard,
+            "0",
+            UDim2.fromOffset(
+                96,
+                20
+            ),
+            UDim2.new(
+                1,
+                -110,
+                0,
+                88
+            ),
+            12,
+            color.Text,
+            Enum.TextXAlignment.Right,
+            Enum.Font.GothamSemibold
+        )
+
+    create(
+        "Frame",
+        {
+            BackgroundColor3 =
+                color.Border,
+
+            BackgroundTransparency =
+                0.25,
+
+            Size =
+                UDim2.new(
+                    1,
+                    -28,
+                    0,
+                    1
+                ),
+
+            Position =
+                UDim2.fromOffset(
+                    14,
+                    116
+                ),
+        },
+        summaryCard
+    )
+
+    text(
+        summaryCard,
+        "Total value",
+        UDim2.fromOffset(
+            150,
+            24
+        ),
+        UDim2.fromOffset(
+            14,
+            125
+        ),
+        13,
+        color.Text,
+        nil,
+        Enum.Font.GothamSemibold
+    )
+
+    local summaryTotalValue =
+        text(
+            summaryCard,
+            "$0",
+            UDim2.fromOffset(
+                130,
+                28
+            ),
+            UDim2.new(
+                1,
+                -144,
+                0,
+                122
+            ),
+            17,
+            color.Accent,
+            Enum.TextXAlignment.Right,
+            Enum.Font.GothamBold
+        )
+
+    text(
+        summaryCard,
+        "Estimated time",
+        UDim2.fromOffset(
+            150,
+            22
+        ),
+        UDim2.fromOffset(
+            14,
+            155
+        ),
+        12,
+        color.Secondary,
+        nil,
+        Enum.Font.GothamMedium
+    )
+
+    local summaryTimeValue =
+        text(
+            summaryCard,
+            "Immediate",
+            UDim2.fromOffset(
+                130,
+                22
+            ),
+            UDim2.new(
+                1,
+                -144,
+                0,
+                155
+            ),
+            12,
+            color.Text,
+            Enum.TextXAlignment.Right,
+            Enum.Font.GothamSemibold
+        )
+
+    local summaryMessageBox =
+        create(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    color.Field,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -28,
+                        0,
+                        43
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        14,
+                        185
+                    ),
+            },
+            summaryCard
+        )
+
+    round(
+        summaryMessageBox,
+        11
+    )
+
+    outline(
+        summaryMessageBox,
+        color.Border
+    )
 
     local messageText =
         text(
-            summaryCard,
+            summaryMessageBox,
             "Add a recipient and target.",
             UDim2.new(
                 1,
-                -28,
-                0,
-                57
+                -20,
+                1,
+                0
             ),
             UDim2.fromOffset(
-                14,
-                171
+                10,
+                0
             ),
-            10,
-            color.Muted
+            11,
+            color.Secondary,
+            Enum.TextXAlignment.Center,
+            Enum.Font.GothamMedium
         )
 
     messageText.TextWrapped =
         true
-
-    messageText.TextYAlignment =
-        Enum.TextYAlignment.Top
 
     local progressTrack =
         create(
@@ -102832,6 +103101,9 @@ function HolyMailCreateHud()
             ),
             true
         )
+
+    sendButton.TextSize =
+        14
 
     local overlay =
         create(
@@ -104301,7 +104573,7 @@ function HolyMailCreateHud()
                                     1,
                                     -2,
                                     0,
-                                    78
+                                    268
                                 ),
                         },
                         previewList
@@ -104309,7 +104581,112 @@ function HolyMailCreateHud()
 
                 round(
                     empty,
-                    11
+                    13
+                )
+
+                outline(
+                    empty,
+                    Color3.fromRGB(
+                        40,
+                        51,
+                        68
+                    )
+                )
+
+                local emptyIcon =
+                    create(
+                        "Frame",
+                        {
+                            AnchorPoint =
+                                Vector2.new(
+                                    0.5,
+                                    0
+                                ),
+
+                            BackgroundTransparency =
+                                1,
+
+                            Size =
+                                UDim2.fromOffset(
+                                    54,
+                                    46
+                                ),
+
+                            Position =
+                                UDim2.new(
+                                    0.5,
+                                    0,
+                                    0,
+                                    55
+                                ),
+                        },
+                        empty
+                    )
+
+                local emptyIconBody =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundTransparency =
+                                1,
+
+                            Size =
+                                UDim2.fromOffset(
+                                    48,
+                                    38
+                                ),
+
+                            Position =
+                                UDim2.fromOffset(
+                                    3,
+                                    4
+                                ),
+                        },
+                        emptyIcon
+                    )
+
+                round(
+                    emptyIconBody,
+                    8
+                )
+
+                local emptyIconStroke =
+                    outline(
+                        emptyIconBody,
+                        color.Secondary
+                    )
+
+                emptyIconStroke.Thickness =
+                    2
+
+                emptyIconStroke.Transparency =
+                    0.1
+
+                local emptyIconTray =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Secondary,
+
+                            Size =
+                                UDim2.fromOffset(
+                                    22,
+                                    3
+                                ),
+
+                            Position =
+                                UDim2.fromOffset(
+                                    16,
+                                    29
+                                ),
+                        },
+                        emptyIcon
+                    )
+
+                round(
+                    emptyIconTray,
+                    3
                 )
 
                 text(
@@ -104317,18 +104694,18 @@ function HolyMailCreateHud()
                     "Nothing to preview yet",
                     UDim2.new(
                         1,
-                        -20,
+                        -30,
                         0,
-                        22
+                        28
                     ),
                     UDim2.fromOffset(
-                        10,
-                        17
+                        15,
+                        124
                     ),
-                    12,
+                    16,
                     color.Text,
                     Enum.TextXAlignment.Center,
-                    Enum.Font.GothamSemibold
+                    Enum.Font.GothamBold
                 )
 
                 text(
@@ -104336,17 +104713,18 @@ function HolyMailCreateHud()
                     "Add someone and choose how much to send.",
                     UDim2.new(
                         1,
-                        -20,
+                        -30,
                         0,
-                        19
+                        24
                     ),
                     UDim2.fromOffset(
-                        10,
-                        41
+                        15,
+                        160
                     ),
-                    9,
-                    color.Muted,
-                    Enum.TextXAlignment.Center
+                    12,
+                    color.Secondary,
+                    Enum.TextXAlignment.Center,
+                    Enum.Font.GothamMedium
                 )
             else
                 for _, entry in ipairs(plan) do
@@ -104505,19 +104883,34 @@ function HolyMailCreateHud()
                     totalMails
                 )
 
-            summaryText.Text =
-                string.format(
-                    "People: %d\nSends: %d\nFruits: %d\nTotal value: %s\nTime: %s",
-                    #state.Recipients,
-                    totalMails,
-                    totalFruits,
-                    formatValue(totalValue),
-                    seconds > 0
-                            and "~"
-                                .. math.ceil(seconds)
-                                .. "s"
-                        or "Immediate"
+            summaryPeopleValue.Text =
+                tostring(
+                    #state.Recipients
                 )
+
+            summarySendsValue.Text =
+                tostring(
+                    totalMails
+                )
+
+            summaryFruitsValue.Text =
+                tostring(
+                    totalFruits
+                )
+
+            summaryTotalValue.Text =
+                formatValue(
+                    totalValue
+                )
+
+            summaryTimeValue.Text =
+                seconds > 0
+                        and "~"
+                            .. tostring(
+                                math.ceil(seconds)
+                            )
+                            .. "s"
+                    or "Immediate"
 
             if #inventory == 0
                 and unvalued > 0
@@ -106086,7 +106479,10 @@ function HolyMailCreateHud()
                         color.Muted,
 
                     TextSize =
-                        11,
+                        13,
+
+                    TextStrokeTransparency =
+                        1,
 
                     Font =
                         Enum.Font.GothamSemibold,
@@ -106264,10 +106660,10 @@ function HolyMailCreateHud()
         )
 
     valueModeButton.TextSize =
-        10
+        12
 
     itemModeButton.TextSize =
-        10
+        12
 
     local inboxPage =
         create(
@@ -106741,7 +107137,7 @@ function HolyMailCreateHud()
 
     text(
         settingsCard,
-        "Click HUD Scale to cycle between 60%, 70%, 80%, 90%, 100%, and 110%.",
+        "Click HUD Scale to cycle between 80%, 90%, 100%, and 110%. Text stays readable at every size.",
         UDim2.new(
             1,
             -36,
@@ -107066,8 +107462,6 @@ function HolyMailCreateHud()
 
     settingsScaleButton.MouseButton1Click:Connect(function()
         local choices = {
-            "60%",
-            "70%",
             "80%",
             "90%",
             "100%",
@@ -121023,8 +121417,6 @@ HOLY_MAIL_UI.ScaleDropdown =
                 "HUD Scale",
 
             Values = {
-                "60%",
-                "70%",
                 "80%",
                 "90%",
                 "100%",
