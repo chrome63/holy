@@ -101152,6 +101152,9 @@ HOLY_MAIL_STATE = {
     ExtraLimitMode = "5%",
     ExtraLimitCustom = "5%",
 
+    FilterFruits = {},
+    FilterMutations = {},
+
     TrackerDay = os.date("!%Y-%m-%d"),
     TrackerUsed = 0,
 }
@@ -101792,6 +101795,135 @@ function HolyMailNormalizeExtraLimitCustom(
     return value
 end
 
+function HolyMailFilterKey(
+    value
+)
+    return tostring(
+        value or ""
+    )
+        :gsub(
+            "[%c]+",
+            ""
+        )
+        :gsub(
+            "^%s+",
+            ""
+        )
+        :gsub(
+            "%s+$",
+            ""
+        )
+        :lower()
+end
+
+function HolyMailNormalizeFilterSelection(
+    value
+)
+    local output = {}
+    local seen = {}
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for key, stored in pairs(
+        value
+    ) do
+        local candidate
+
+        if type(key) == "number" then
+            candidate =
+                stored
+        elseif stored == true then
+            candidate =
+                key
+        elseif type(stored) == "string" then
+            candidate =
+                stored
+        end
+
+        if candidate ~= nil then
+            local display =
+                tostring(
+                    candidate
+                )
+                    :gsub(
+                        "[%c]+",
+                        ""
+                    )
+                    :gsub(
+                        "^%s+",
+                        ""
+                    )
+                    :gsub(
+                        "%s+$",
+                        ""
+                    )
+
+            local normalized =
+                HolyMailFilterKey(
+                    display
+                )
+
+            if normalized ~= ""
+                and not seen[normalized]
+            then
+                seen[normalized] =
+                    true
+
+                table.insert(
+                    output,
+                    display:sub(
+                        1,
+                        80
+                    )
+                )
+
+                if #output >= 250 then
+                    break
+                end
+            end
+        end
+    end
+
+    table.sort(
+        output,
+        function(left, right)
+            return tostring(
+                left
+            ):lower()
+                < tostring(
+                    right
+                ):lower()
+        end
+    )
+
+    return output
+end
+
+function HolyMailFilterSelectionMap(
+    value
+)
+    local output = {}
+
+    for _, display in ipairs(
+        HolyMailNormalizeFilterSelection(
+            value
+        )
+    ) do
+        local key =
+            HolyMailFilterKey(
+                display
+            )
+
+        if key ~= "" then
+            output[key] =
+                display
+        end
+    end
+
+    return output
+end
 
 function HolyMailSetHudScale(value)
     local formattedScale =
@@ -101919,6 +102051,16 @@ function HolyMailSaveSettings()
         ExtraLimitCustom =
             HolyMailNormalizeExtraLimitCustom(
                 HOLY_MAIL_STATE.ExtraLimitCustom
+            ),
+
+        FilterFruits =
+            HolyMailNormalizeFilterSelection(
+                HOLY_MAIL_STATE.FilterFruits
+            ),
+
+        FilterMutations =
+            HolyMailNormalizeFilterSelection(
+                HOLY_MAIL_STATE.FilterMutations
             ),
 
         HudPosition =
@@ -102063,6 +102205,20 @@ function HolyMailLoadSettings()
         HolyMailNormalizeExtraLimitCustom(
             data.ExtraLimitCustom
             or HOLY_MAIL_STATE.ExtraLimitCustom
+        )
+
+    HOLY_MAIL_STATE.FilterFruits =
+        HolyMailNormalizeFilterSelection(
+            data.FilterFruits
+            or HOLY_MAIL_STATE.FilterFruits
+            or {}
+        )
+
+    HOLY_MAIL_STATE.FilterMutations =
+        HolyMailNormalizeFilterSelection(
+            data.FilterMutations
+            or HOLY_MAIL_STATE.FilterMutations
+            or {}
         )
 
     HOLY_MAIL_STATE.TrackerDay =
@@ -104002,7 +104158,13 @@ function HolyMailCreateHud()
         )
 
     fruitsButton.Active =
-        false
+        true
+
+    fruitsButton.AutoButtonColor =
+        true
+
+    fruitsButton.TextSize =
+        9
 
     local calculateButton =
         button(
@@ -104571,6 +104733,18 @@ function HolyMailCreateHud()
         LastAccepted = nil,
 
         Safety = {},
+
+        Filters = {
+            Fruits =
+                HolyMailFilterSelectionMap(
+                    HOLY_MAIL_STATE.FilterFruits
+                ),
+
+            Mutations =
+                HolyMailFilterSelectionMap(
+                    HOLY_MAIL_STATE.FilterMutations
+                ),
+        },
 
         ValueSession =
             nil,
@@ -105497,6 +105671,162 @@ function HolyMailCreateHud()
             unvalued
     end
 
+    state.Filters.Matches =
+        function(fruit)
+            if type(fruit) ~= "table" then
+                return false
+            end
+
+            local selectedFruits =
+                state.Filters.Fruits
+
+            if type(selectedFruits) == "table"
+                and next(
+                    selectedFruits
+                ) ~= nil
+            then
+                local fruitKey =
+                    HolyMailFilterKey(
+                        fruit.Name
+                    )
+
+                if selectedFruits[
+                    fruitKey
+                ] == nil then
+                    return false
+                end
+            end
+
+            local selectedMutations =
+                state.Filters.Mutations
+
+            if type(selectedMutations) == "table"
+                and next(
+                    selectedMutations
+                ) ~= nil
+            then
+                local mutationText =
+                    tostring(
+                        fruit.Mutation
+                        or "Normal"
+                    )
+
+                if HolyMailFilterKey(
+                    mutationText
+                ) == "" then
+                    mutationText =
+                        "Normal"
+                end
+
+                local matched =
+                    false
+
+                for part in mutationText:gmatch(
+                    "[^,%|/;]+"
+                ) do
+                    local mutationKey =
+                        HolyMailFilterKey(
+                            part
+                        )
+
+                    if mutationKey ~= ""
+                        and selectedMutations[
+                            mutationKey
+                        ] ~= nil
+                    then
+                        matched =
+                            true
+
+                        break
+                    end
+                end
+
+                if not matched
+                    and HolyMailFilterKey(
+                        mutationText
+                    ) == "normal"
+                    and selectedMutations.normal
+                then
+                    matched =
+                        true
+                end
+
+                if not matched then
+                    return false
+                end
+            end
+
+            return true
+        end
+
+    state.Filters.UpdateButton =
+        function()
+            local fruitCount = 0
+            local mutationCount = 0
+
+            for _ in pairs(
+                state.Filters.Fruits
+                or {}
+            ) do
+                fruitCount +=
+                    1
+            end
+
+            for _ in pairs(
+                state.Filters.Mutations
+                or {}
+            ) do
+                mutationCount +=
+                    1
+            end
+
+            if fruitCount <= 0
+                and mutationCount <= 0
+            then
+                fruitsButton.Text =
+                    "Filters: All"
+            elseif fruitCount > 0
+                and mutationCount <= 0
+            then
+                fruitsButton.Text =
+                    "Filters: "
+                    .. tostring(
+                        fruitCount
+                    )
+                    .. (
+                        fruitCount == 1
+                            and " fruit"
+                            or " fruits"
+                    )
+            elseif fruitCount <= 0
+                and mutationCount > 0
+            then
+                fruitsButton.Text =
+                    "Filters: "
+                    .. tostring(
+                        mutationCount
+                    )
+                    .. (
+                        mutationCount == 1
+                            and " mutation"
+                            or " mutations"
+                    )
+            else
+                fruitsButton.Text =
+                    "Filters: "
+                    .. tostring(
+                        fruitCount
+                    )
+                    .. " fruits · "
+                    .. tostring(
+                        mutationCount
+                    )
+                    .. " mutations"
+            end
+        end
+
+    state.Filters.UpdateButton()
+
     local function clearRows(
         container,
         layout
@@ -106301,9 +106631,18 @@ function HolyMailCreateHud()
 
             local eligible = {}
             local protected = 0
+            local filtered = 0
 
-            for _, fruit in ipairs(inventory) do
-                if state.Protect
+            for _, fruit in ipairs(
+                inventory
+            ) do
+                if not state.Filters.Matches(
+                    fruit
+                )
+                then
+                    filtered +=
+                        1
+                elseif state.Protect
                     and fruit.Favorite
                 then
                     protected +=
@@ -106958,10 +107297,14 @@ function HolyMailCreateHud()
 
             inventoryText.Text =
                 string.format(
-                    "%d available - %d skipped",
+                    "%d available · %d favorites · %d filtered",
                     #eligible,
-                    protected
+                    protected,
+                    filtered
                 )
+
+            inventoryText.TextSize =
+                8
 
             previewCount.Text =
                 string.format(
@@ -107299,6 +107642,854 @@ function HolyMailCreateHud()
             end)
         end
     end
+
+    state.Filters.Show =
+        function()
+            if state.Running
+                or state.Busy
+            then
+                return
+            end
+
+            if type(
+                state.ValueSession
+            ) == "table"
+                and state.ValueSession.Status
+                    ~= "Complete"
+            then
+                messageText.Text =
+                    "Finish or safely end the paused delivery before changing filters."
+
+                messageText.TextColor3 =
+                    color.Yellow
+
+                return
+            end
+
+            local inventory =
+                scanInventory()
+
+            local draft = {
+                Tab = "Fruits",
+                Search = "",
+
+                Fruits =
+                    HolyMailFilterSelectionMap(
+                        state.Filters.Fruits
+                    ),
+
+                Mutations =
+                    HolyMailFilterSelectionMap(
+                        state.Filters.Mutations
+                    ),
+
+                FruitOptionsMap = {},
+                MutationOptionsMap = {},
+            }
+
+            draft.AddOption =
+                function(
+                    target,
+                    value
+                )
+                    local display =
+                        tostring(
+                            value or ""
+                        )
+                            :gsub(
+                                "[%c]+",
+                                ""
+                            )
+                            :gsub(
+                                "^%s+",
+                                ""
+                            )
+                            :gsub(
+                                "%s+$",
+                                ""
+                            )
+
+                    local key =
+                        HolyMailFilterKey(
+                            display
+                        )
+
+                    if key ~= "" then
+                        target[key] =
+                            display
+                    end
+                end
+
+            for _, fruit in ipairs(
+                inventory
+            ) do
+                draft.AddOption(
+                    draft.FruitOptionsMap,
+                    fruit.Name
+                )
+
+                local mutationText =
+                    tostring(
+                        fruit.Mutation
+                        or "Normal"
+                    )
+
+                local foundMutation =
+                    false
+
+                for part in mutationText:gmatch(
+                    "[^,%|/;]+"
+                ) do
+                    if HolyMailFilterKey(
+                        part
+                    ) ~= "" then
+                        foundMutation =
+                            true
+
+                        draft.AddOption(
+                            draft.MutationOptionsMap,
+                            part
+                        )
+                    end
+                end
+
+                if not foundMutation then
+                    draft.AddOption(
+                        draft.MutationOptionsMap,
+                        "Normal"
+                    )
+                end
+            end
+
+            draft.AddOption(
+                draft.MutationOptionsMap,
+                "Normal"
+            )
+
+            for _, display in pairs(
+                draft.Fruits
+            ) do
+                draft.AddOption(
+                    draft.FruitOptionsMap,
+                    display
+                )
+            end
+
+            for _, display in pairs(
+                draft.Mutations
+            ) do
+                draft.AddOption(
+                    draft.MutationOptionsMap,
+                    display
+                )
+            end
+
+            draft.FruitOptions = {}
+            draft.MutationOptions = {}
+
+            for _, display in pairs(
+                draft.FruitOptionsMap
+            ) do
+                table.insert(
+                    draft.FruitOptions,
+                    display
+                )
+            end
+
+            for _, display in pairs(
+                draft.MutationOptionsMap
+            ) do
+                table.insert(
+                    draft.MutationOptions,
+                    display
+                )
+            end
+
+            table.sort(
+                draft.FruitOptions,
+                function(left, right)
+                    return left:lower()
+                        < right:lower()
+                end
+            )
+
+            table.sort(
+                draft.MutationOptions,
+                function(left, right)
+                    return left:lower()
+                        < right:lower()
+                end
+            )
+
+            closeModal()
+
+            overlay.Visible =
+                true
+
+            local modal =
+                create(
+                    "Frame",
+                    {
+                        AnchorPoint =
+                            Vector2.new(
+                                0.5,
+                                0.5
+                            ),
+
+                        Position =
+                            UDim2.fromScale(
+                                0.5,
+                                0.5
+                            ),
+
+                        Size =
+                            UDim2.fromOffset(
+                                620,
+                                530
+                            ),
+
+                        BackgroundColor3 =
+                            color.Card,
+
+                        ZIndex =
+                            51,
+                    },
+                    overlay
+                )
+
+            round(
+                modal,
+                18
+            )
+
+            outline(
+                modal,
+                color.Border
+            )
+
+            local heading =
+                text(
+                    modal,
+                    "Fruit & Mutation Filters",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        28
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        15
+                    ),
+                    18,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamBold
+                )
+
+            heading.ZIndex =
+                52
+
+            local subtitle =
+                text(
+                    modal,
+                    "Nothing selected means All. Fruit and mutation filters work together.",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        20
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        46
+                    ),
+                    9,
+                    color.Muted
+                )
+
+            subtitle.ZIndex =
+                52
+
+            local searchBox =
+                box(
+                    modal,
+                    "Search fruits or mutations",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        42
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        75
+                    )
+                )
+
+            searchBox.ZIndex =
+                53
+
+            local fruitTab =
+                button(
+                    modal,
+                    "Fruits",
+                    UDim2.fromOffset(
+                        280,
+                        38
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        128
+                    ),
+                    true
+                )
+
+            local mutationTab =
+                button(
+                    modal,
+                    "Mutations",
+                    UDim2.fromOffset(
+                        280,
+                        38
+                    ),
+                    UDim2.fromOffset(
+                        322,
+                        128
+                    ),
+                    false
+                )
+
+            fruitTab.ZIndex =
+                53
+
+            mutationTab.ZIndex =
+                53
+
+            local selectAllButton =
+                button(
+                    modal,
+                    "Select visible",
+                    UDim2.fromOffset(
+                        138,
+                        36
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        177
+                    ),
+                    false
+                )
+
+            local clearSelectionButton =
+                button(
+                    modal,
+                    "Clear selection",
+                    UDim2.fromOffset(
+                        138,
+                        36
+                    ),
+                    UDim2.fromOffset(
+                        166,
+                        177
+                    ),
+                    false
+                )
+
+            selectAllButton.ZIndex =
+                53
+
+            clearSelectionButton.ZIndex =
+                53
+
+            local selectionStatus =
+                text(
+                    modal,
+                    "All selected",
+                    UDim2.fromOffset(
+                        280,
+                        36
+                    ),
+                    UDim2.fromOffset(
+                        322,
+                        177
+                    ),
+                    9,
+                    color.Muted,
+                    Enum.TextXAlignment.Right,
+                    Enum.Font.GothamMedium
+                )
+
+            selectionStatus.ZIndex =
+                52
+
+            local optionList =
+                create(
+                    "ScrollingFrame",
+                    {
+                        BackgroundColor3 =
+                            color.Field,
+
+                        BorderSizePixel =
+                            0,
+
+                        Size =
+                            UDim2.new(
+                                1,
+                                -36,
+                                0,
+                                224
+                            ),
+
+                        Position =
+                            UDim2.fromOffset(
+                                18,
+                                222
+                            ),
+
+                        CanvasSize =
+                            UDim2.fromOffset(
+                                0,
+                                0
+                            ),
+
+                        AutomaticCanvasSize =
+                            Enum.AutomaticSize.Y,
+
+                        ScrollingDirection =
+                            Enum.ScrollingDirection.Y,
+
+                        ScrollBarThickness =
+                            3,
+
+                        ScrollBarImageColor3 =
+                            color.Border,
+
+                        ClipsDescendants =
+                            true,
+
+                        ZIndex =
+                            52,
+                    },
+                    modal
+                )
+
+            round(
+                optionList,
+                11
+            )
+
+            outline(
+                optionList,
+                color.Border
+            )
+
+            local optionLayout =
+                create(
+                    "UIListLayout",
+                    {
+                        Padding =
+                            UDim.new(
+                                0,
+                                5
+                            ),
+
+                        SortOrder =
+                            Enum.SortOrder.LayoutOrder,
+                    },
+                    optionList
+                )
+
+            local optionPadding =
+                create(
+                    "UIPadding",
+                    {
+                        PaddingTop =
+                            UDim.new(
+                                0,
+                                6
+                            ),
+
+                        PaddingBottom =
+                            UDim.new(
+                                0,
+                                6
+                            ),
+
+                        PaddingLeft =
+                            UDim.new(
+                                0,
+                                6
+                            ),
+
+                        PaddingRight =
+                            UDim.new(
+                                0,
+                                6
+                            ),
+                    },
+                    optionList
+                )
+
+            draft.RefreshTabs =
+                function()
+                    fruitTab.BackgroundColor3 =
+                        draft.Tab == "Fruits"
+                                and color.Accent
+                            or color.Field
+
+                    mutationTab.BackgroundColor3 =
+                        draft.Tab == "Mutations"
+                                and color.Accent
+                            or color.Field
+
+                    fruitTab.TextColor3 =
+                        draft.Tab == "Fruits"
+                                and color.Text
+                            or color.Secondary
+
+                    mutationTab.TextColor3 =
+                        draft.Tab == "Mutations"
+                                and color.Text
+                            or color.Secondary
+                end
+
+            draft.Render =
+                function()
+                    clearRows(
+                        optionList,
+                        optionLayout
+                    )
+
+                    if optionPadding.Parent
+                        ~= optionList
+                    then
+                        optionPadding.Parent =
+                            optionList
+                    end
+
+                    local options =
+                        draft.Tab == "Fruits"
+                        and draft.FruitOptions
+                        or draft.MutationOptions
+
+                    local selected =
+                        draft.Tab == "Fruits"
+                        and draft.Fruits
+                        or draft.Mutations
+
+                    local query =
+                        HolyMailFilterKey(
+                            draft.Search
+                        )
+
+                    local visibleCount = 0
+                    local selectedCount = 0
+
+                    for _ in pairs(
+                        selected
+                    ) do
+                        selectedCount +=
+                            1
+                    end
+
+                    for optionIndex, display in ipairs(
+                        options
+                    ) do
+                        local optionKey =
+                            HolyMailFilterKey(
+                                display
+                            )
+
+                        if query == ""
+                            or optionKey:find(
+                                query,
+                                1,
+                                true
+                            )
+                        then
+                            visibleCount +=
+                                1
+
+                            local isSelected =
+                                selected[
+                                    optionKey
+                                ] ~= nil
+
+                            local optionButton =
+                                button(
+                                    optionList,
+                                    isSelected
+                                            and (
+                                                "✓  "
+                                                .. display
+                                            )
+                                            or (
+                                                "     "
+                                                .. display
+                                            ),
+                                    UDim2.new(
+                                        1,
+                                        -4,
+                                        0,
+                                        38
+                                    ),
+                                    UDim2.fromOffset(
+                                        0,
+                                        0
+                                    ),
+                                    isSelected
+                                )
+
+                            optionButton.LayoutOrder =
+                                optionIndex
+
+                            optionButton.ZIndex =
+                                53
+
+                            optionButton.TextSize =
+                                10
+
+                            optionButton.TextXAlignment =
+                                Enum.TextXAlignment.Left
+
+                            create(
+                                "UIPadding",
+                                {
+                                    PaddingLeft =
+                                        UDim.new(
+                                            0,
+                                            12
+                                        ),
+
+                                    PaddingRight =
+                                        UDim.new(
+                                            0,
+                                            12
+                                        ),
+                                },
+                                optionButton
+                            )
+
+                            optionButton.MouseButton1Click:Connect(function()
+                                if selected[
+                                    optionKey
+                                ] ~= nil
+                                then
+                                    selected[
+                                        optionKey
+                                    ] =
+                                        nil
+                                else
+                                    selected[
+                                        optionKey
+                                    ] =
+                                        display
+                                end
+
+                                draft.Render()
+                            end)
+                        end
+                    end
+
+                    selectionStatus.Text =
+                        selectedCount <= 0
+                                and "All allowed · "
+                                    .. tostring(
+                                        visibleCount
+                                    )
+                                    .. " shown"
+                            or tostring(
+                                selectedCount
+                            )
+                                .. " selected · "
+                                .. tostring(
+                                    visibleCount
+                                )
+                                .. " shown"
+
+                    if visibleCount <= 0 then
+                        local empty =
+                            text(
+                                optionList,
+                                "No matching options.",
+                                UDim2.new(
+                                    1,
+                                    -4,
+                                    0,
+                                    90
+                                ),
+                                UDim2.fromOffset(
+                                    0,
+                                    0
+                                ),
+                                10,
+                                color.Muted,
+                                Enum.TextXAlignment.Center,
+                                Enum.Font.GothamMedium
+                            )
+
+                        empty.LayoutOrder =
+                            1
+
+                        empty.ZIndex =
+                            53
+                    end
+                end
+
+            fruitTab.MouseButton1Click:Connect(function()
+                draft.Tab =
+                    "Fruits"
+
+                draft.RefreshTabs()
+                draft.Render()
+            end)
+
+            mutationTab.MouseButton1Click:Connect(function()
+                draft.Tab =
+                    "Mutations"
+
+                draft.RefreshTabs()
+                draft.Render()
+            end)
+
+            searchBox:GetPropertyChangedSignal(
+                "Text"
+            ):Connect(function()
+                draft.Search =
+                    searchBox.Text
+
+                draft.Render()
+            end)
+
+            selectAllButton.MouseButton1Click:Connect(function()
+                local options =
+                    draft.Tab == "Fruits"
+                    and draft.FruitOptions
+                    or draft.MutationOptions
+
+                local selected =
+                    draft.Tab == "Fruits"
+                    and draft.Fruits
+                    or draft.Mutations
+
+                local query =
+                    HolyMailFilterKey(
+                        draft.Search
+                    )
+
+                for _, display in ipairs(
+                    options
+                ) do
+                    local optionKey =
+                        HolyMailFilterKey(
+                            display
+                        )
+
+                    if query == ""
+                        or optionKey:find(
+                            query,
+                            1,
+                            true
+                        )
+                    then
+                        selected[
+                            optionKey
+                        ] =
+                            display
+                    end
+                end
+
+                draft.Render()
+            end)
+
+            clearSelectionButton.MouseButton1Click:Connect(function()
+                if draft.Tab == "Fruits" then
+                    draft.Fruits = {}
+                else
+                    draft.Mutations = {}
+                end
+
+                draft.Render()
+            end)
+
+            local cancelButton =
+                button(
+                    modal,
+                    "Cancel",
+                    UDim2.fromOffset(
+                        180,
+                        46
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        466
+                    ),
+                    false
+                )
+
+            local applyButton =
+                button(
+                    modal,
+                    "Apply filters",
+                    UDim2.fromOffset(
+                        386,
+                        46
+                    ),
+                    UDim2.fromOffset(
+                        216,
+                        466
+                    ),
+                    true
+                )
+
+            cancelButton.ZIndex =
+                53
+
+            applyButton.ZIndex =
+                53
+
+            cancelButton.MouseButton1Click:Connect(
+                closeModal
+            )
+
+            applyButton.MouseButton1Click:Connect(function()
+                state.Filters.Fruits =
+                    HolyMailFilterSelectionMap(
+                        draft.Fruits
+                    )
+
+                state.Filters.Mutations =
+                    HolyMailFilterSelectionMap(
+                        draft.Mutations
+                    )
+
+                HOLY_MAIL_STATE.FilterFruits =
+                    HolyMailNormalizeFilterSelection(
+                        state.Filters.Fruits
+                    )
+
+                HOLY_MAIL_STATE.FilterMutations =
+                    HolyMailNormalizeFilterSelection(
+                        state.Filters.Mutations
+                    )
+
+                HolyMailSaveSettings()
+
+                state.Filters.UpdateButton()
+                closeModal()
+
+                task.spawn(function()
+                    protectedCall(
+                        "Mail filters",
+                        rebuildPlan
+                    )
+                end)
+            end)
+
+            draft.RefreshTabs()
+            draft.Render()
+        end
 
     local function showStrategySettings()
         if state.Running
@@ -109834,6 +111025,14 @@ function HolyMailCreateHud()
 
         showStrategySettings()
     end)
+
+    fruitsButton.MouseButton1Click:Connect(function()
+        protectedCall(
+            "Fruit filters",
+            state.Filters.Show
+        )
+    end)
+
 
     favoriteButton.MouseButton1Click:Connect(function()
         if state.Running
