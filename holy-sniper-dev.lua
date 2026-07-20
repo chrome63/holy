@@ -104570,6 +104570,14 @@ function HolyMailCreateHud()
 
         LastAccepted = nil,
 
+        Safety = {},
+
+        ValueSession =
+            nil,
+
+        ExactSession =
+            nil,
+
         Minimized =
             HOLY_MAIL_STATE.StartMinimized == true,
     }
@@ -106321,12 +106329,44 @@ function HolyMailCreateHud()
             for routeIndex, recipient in ipairs(
                 state.Recipients
             ) do
+                local planTarget =
+                    tonumber(
+                        recipient.Target
+                    )
+                    or 0
+
+                local valueSession =
+                    state.ValueSession
+
+                if type(valueSession) == "table"
+                    and type(
+                        valueSession.RemainingTargets
+                    ) == "table"
+                    and valueSession.Status ~= "Complete"
+                then
+                    local remainingTarget =
+                        valueSession.RemainingTargets[
+                            recipient.UserId
+                        ]
+
+                    if remainingTarget ~= nil then
+                        planTarget =
+                            math.max(
+                                0,
+                                tonumber(
+                                    remainingTarget
+                                )
+                                or 0
+                            )
+                    end
+                end
+
                 local chosen,
                     chosenValue,
                     allocation =
                     allocate(
                         available,
-                        recipient.Target
+                        planTarget
                     )
 
                 allocation =
@@ -106338,14 +106378,18 @@ function HolyMailCreateHud()
 
                 local selected = {}
 
-                for _, fruit in ipairs(chosen) do
+                for _, fruit in ipairs(
+                    chosen
+                ) do
                     selected[fruit.Id] =
                         true
                 end
 
                 local remaining = {}
 
-                for _, fruit in ipairs(available) do
+                for _, fruit in ipairs(
+                    available
+                ) do
                     if not selected[fruit.Id] then
                         table.insert(
                             remaining,
@@ -106358,19 +106402,24 @@ function HolyMailCreateHud()
                     remaining
 
                 local complete =
-                    allocation.GuardBlocked ~= true
-                    and (
-                        (
-                            state.Strategy == "Send at least"
-                            and chosenValue >= recipient.Target
-                        )
-                        or (
-                            state.Strategy ~= "Send at least"
-                            and #chosen > 0
+                    planTarget <= 0
+                    or (
+                        allocation.GuardBlocked ~= true
+                        and (
+                            (
+                                state.Strategy == "Send at least"
+                                and chosenValue >= planTarget
+                            )
+                            or (
+                                state.Strategy ~= "Send at least"
+                                and #chosen > 0
+                            )
                         )
                     )
 
-                if allocation.GuardBlocked == true then
+                if planTarget > 0
+                    and allocation.GuardBlocked == true
+                then
                     overpayBlocked +=
                         1
                 end
@@ -106387,6 +106436,9 @@ function HolyMailCreateHud()
                     Recipient =
                         recipient,
 
+                    Target =
+                        planTarget,
+
                     Fruits =
                         chosen,
 
@@ -106395,16 +106447,16 @@ function HolyMailCreateHud()
 
                     Extra =
                         chosenValue
-                        - recipient.Target,
+                        - planTarget,
 
                     ExtraPercent =
-                        recipient.Target > 0
+                        planTarget > 0
                         and (
                             (
                                 chosenValue
-                                - recipient.Target
+                                - planTarget
                             )
-                            / recipient.Target
+                            / planTarget
                             * 100
                         )
                         or 0,
@@ -106418,7 +106470,8 @@ function HolyMailCreateHud()
                         complete,
 
                     GuardBlocked =
-                        allocation.GuardBlocked == true,
+                        planTarget > 0
+                        and allocation.GuardBlocked == true,
 
                     UnsafeValue =
                         allocation.UnsafeValue,
@@ -106786,7 +106839,8 @@ function HolyMailCreateHud()
                     addPreviewStat(
                         "TARGET",
                         formatValue(
-                            entry.Recipient.Target
+                            entry.Target
+                            or entry.Recipient.Target
                         ),
                         12,
                         color.Text
@@ -106952,12 +107006,35 @@ function HolyMailCreateHud()
                     - tracker.Used
                 )
 
+            local valueSession =
+                state.ValueSession
+
+            local valueSessionStatus =
+                type(valueSession) == "table"
+                and tostring(
+                    valueSession.Status
+                    or ""
+                )
+                or ""
+
+            local reviewingUncertain =
+                valueSessionStatus
+                == "Uncertain"
+
+            local resumingDelivery =
+                valueSessionStatus
+                == "Paused"
+
             local canSend =
-                #plan > 0
-                and totalMails > 0
-                and incomplete == 0
-                and overpayBlocked == 0
-                and totalMails <= remainingUses
+                reviewingUncertain
+                or resumingDelivery
+                or (
+                    #plan > 0
+                    and totalMails > 0
+                    and incomplete == 0
+                    and overpayBlocked == 0
+                    and totalMails <= remainingUses
+                )
 
             sendButton.Active =
                 canSend
@@ -106975,7 +107052,28 @@ function HolyMailCreateHud()
                         and color.Text
                     or color.Muted
 
-            if #inventory == 0
+            sendButton.Text =
+                reviewingUncertain
+                        and "Review uncertain mail"
+                    or resumingDelivery
+                            and "Resume remaining delivery"
+                        or "Review and send"
+
+            if reviewingUncertain then
+                messageText.Text =
+                    "A mail was accepted, but item removal could not be confirmed."
+
+                messageText.TextColor3 =
+                    color.Red
+            elseif resumingDelivery
+                and totalMails <= 0
+            then
+                messageText.Text =
+                    "No remaining batches. Press Resume to finish the session."
+
+                messageText.TextColor3 =
+                    color.Green
+            elseif #inventory == 0
                 and unvalued > 0
             then
                 messageText.Text =
@@ -107016,10 +107114,22 @@ function HolyMailCreateHud()
             state.Busy =
                 false
 
-            setStatus(
-                "Ready",
-                color.Green
-            )
+            if reviewingUncertain then
+                setStatus(
+                    "Confirmation uncertain",
+                    color.Red
+                )
+            elseif resumingDelivery then
+                setStatus(
+                    "Paused",
+                    color.Yellow
+                )
+            else
+                setStatus(
+                    "Ready",
+                    color.Green
+                )
+            end
         end
 
     local function closeModal()
@@ -107907,8 +108017,11 @@ function HolyMailCreateHud()
             addModalStat(
                 "TARGET",
                 formatValue(
-                    entry.Recipient
-                    and entry.Recipient.Target
+                    entry.Target
+                    or (
+                        entry.Recipient
+                        and entry.Recipient.Target
+                    )
                     or 0
                 ),
                 8,
@@ -108442,717 +108555,1105 @@ function HolyMailCreateHud()
         return packet
     end
 
-    local function currentIds()
-        local ids = {}
+    state.Safety.CurrentFruitMap =
+        function()
+            local fruits = {}
 
-        for _, root in ipairs(getRoots()) do
-            for _, item in ipairs(
-                root:GetChildren()
+            for _, root in ipairs(
+                getRoots()
             ) do
-                local id =
-                    tostring(
-                        item:GetAttribute("Id")
-                        or item:GetAttribute("FruitId")
-                        or ""
-                    )
-
-                if id ~= "" then
-                    ids[id] =
-                        true
-                end
-            end
-        end
-
-        return ids
-    end
-
-    local function waitForRemoval(batch)
-        local deadline =
-            os.clock() + 8
-
-        repeat
-            local owned =
-                currentIds()
-
-            local remaining =
-                0
-
-            for _, fruit in ipairs(batch) do
-                if owned[fruit.Id] then
-                    remaining +=
-                        1
-                end
-            end
-
-            if remaining == 0 then
-                return true
-            end
-
-            task.wait(0.15)
-        until os.clock() >= deadline
-
-        return false
-    end
-
-    local function waitForCooldown()
-        while state.LastAccepted do
-            local remaining =
-                COOLDOWN
-                - (
-                    workspace:GetServerTimeNow()
-                    - state.LastAccepted
-                )
-
-            if remaining <= 0 then
-                return not state.Stop
-            end
-
-            if state.Stop then
-                return false
-            end
-
-            setStatus(
-                string.format(
-                    "%.1fs",
-                    remaining
-                ),
-                color.Yellow
-            )
-
-            task.wait(
-                math.min(
-                    0.1,
-                    remaining
-                )
-            )
-        end
-
-        return not state.Stop
-    end
-
-    local function sendBatch(
-        packet,
-        recipient,
-        batch
-    )
-        local payload = {}
-
-        for _, fruit in ipairs(batch) do
-            table.insert(
-                payload,
-                {
-                    ItemKey =
-                        fruit.Id,
-
-                    Count =
-                        1,
-
-                    Category =
-                        "HarvestedFruits",
-                }
-            )
-        end
-
-        while not state.Stop do
-            if not waitForCooldown() then
-                return false,
-                    "Stopped",
-                    "STOPPED"
-            end
-
-            local started =
-                workspace:GetServerTimeNow()
-
-            setStatus(
-                "Sending",
-                color.Yellow
-            )
-
-            local ok, first, second =
-                pcall(function()
-                    return packet:Fire(
-                        recipient.UserId,
-                        payload,
-                        ""
-                    )
-                end)
-
-            if not ok then
-                return false,
-                    tostring(first),
-                    "ERROR"
-            end
-
-            local message =
-                tostring(second or "")
-
-            if first == true then
-                state.LastAccepted =
-                    started
-
-                tracker.Used =
-                    math.min(
-                        DAILY_LIMIT,
-                        tracker.Used + 1
-                    )
-
-                HOLY_MAIL_STATE.TrackerDay =
-                    HolyMailToday()
-
-                HOLY_MAIL_STATE.TrackerUsed =
-                    tracker.Used
-
-                updateQuota()
-                HolyMailSaveSettings()
-                waitForRemoval(batch)
-
-                return true,
-                    message,
-                    "ACCEPTED"
-            end
-
-            local lower =
-                message:lower()
-
-            local seconds =
-                tonumber(
-                    lower:match(
-                        "wait%s+(%d+)%s*s"
-                    )
-                )
-
-            if seconds then
-                task.wait(
-                    seconds + 0.25
-                )
-            elseif lower:find(
-                "daily gift limit",
-                1,
-                true
-            ) then
-                tracker.Used =
-                    DAILY_LIMIT
-
-                HOLY_MAIL_STATE.TrackerDay =
-                    HolyMailToday()
-
-                HOLY_MAIL_STATE.TrackerUsed =
-                    DAILY_LIMIT
-
-                updateQuota()
-                HolyMailSaveSettings()
-
-                return false,
-                    message,
-                    "DAILY"
-            else
-                return false,
-                    message ~= ""
-                            and message
-                        or tostring(first),
-                    "REJECTED"
-            end
-        end
-
-        return false,
-            "Stopped",
-            "STOPPED"
-    end
-
-    local function runDelivery(totalMails)
-        protectedCall(
-            "Delivery",
-            function()
-                local packet, packetError =
-                    getSendPacket()
-
-                if not packet then
-                    reportError(
-                        "Networking",
-                        packetError
-                    )
-
-                    return
-                end
-
-                state.Running =
-                    true
-
-                state.Stop =
-                    false
-
-                progressFill.Size =
-                    UDim2.fromScale(
-                        0,
-                        1
-                    )
-
-                renderRecipients()
-
-                local completedMails = 0
-                local fruitsSent = 0
-                local valueSent = 0
-                local completedRecipients = 0
-
-                local failure
-                local failureType
-
-                for routeIndex, entry in ipairs(
-                    state.Plan
+                for _, item in ipairs(
+                    root:GetChildren()
                 ) do
-                    if state.Stop then
-                        break
-                    end
-
-                    local recipientFinished =
-                        true
-
-                    local historyRecord = {
-                        Direction = "Sent",
-                        Mode = "By Value",
-                        Status = "Failed",
-
-                        OtherUserId =
-                            entry.Recipient.UserId,
-
-                        OtherName =
-                            entry.Recipient.Name,
-
-                        AttemptedMails =
-                            entry.Mails,
-
-                        AcceptedMails = 0,
-
-                        PlannedItems =
-                            #entry.Fruits,
-
-                        SentItems = 0,
-
-                        TargetValue =
-                            entry.Value,
-
-                        AcceptedValue = 0,
-
-                        Items = {},
-                    }
-
-                    local historyItemMap = {}
-
-                    for firstIndex = 1,
-                        #entry.Fruits,
-                        BATCH_LIMIT
-                    do
-                        if state.Stop then
-                            recipientFinished =
-                                false
-
-                            break
-                        end
-
-                        local batch = {}
-                        local batchValue = 0
-
-                        for fruitIndex = firstIndex,
-                            math.min(
-                                firstIndex
-                                    + BATCH_LIMIT
-                                    - 1,
-                                #entry.Fruits
-                            )
-                        do
-                            local fruit =
-                                entry.Fruits[fruitIndex]
-
-                            table.insert(
-                                batch,
-                                fruit
-                            )
-
-                            batchValue +=
-                                fruit.Value
-                        end
-
-                        sendButton.Text =
-                            string.format(
-                                "@%s - mail %d/%d",
-                                entry.Recipient.Name,
-                                completedMails + 1,
-                                totalMails
-                            )
-
-                        setStatus(
-                            string.format(
-                                "%d/%d",
-                                routeIndex,
-                                #state.Plan
-                            ),
-                            color.Yellow
-                        )
-
-                        local accepted,
-                            response,
-                            responseType =
-                            sendBatch(
-                                packet,
-                                entry.Recipient,
-                                batch
-                            )
-
-                        if not accepted then
-                            recipientFinished =
-                                false
-
-                            failure =
-                                response
-
-                            failureType =
-                                responseType
-
-                            break
-                        end
-
-                        completedMails +=
-                            1
-
-                        fruitsSent +=
-                            #batch
-
-                        valueSent +=
-                            batchValue
-
-                        historyRecord.AcceptedMails +=
-                            1
-
-                        historyRecord.SentItems +=
-                            #batch
-
-                        historyRecord.AcceptedValue +=
-                            batchValue
-
-                        for _, fruit in ipairs(batch) do
-                            local source =
-                                fruit.Item
-
-                            local icon = ""
-
-                            if typeof(source) == "Instance" then
-                                icon =
-                                    HolyMailHistoryNormalizeIcon(
-                                        source:GetAttribute("IMG")
-                                            or source:GetAttribute("Icon")
-                                            or source:GetAttribute("Image")
-                                            or source:GetAttribute("TextureId")
-                                            or (
-                                                source:IsA("Tool")
-                                                and source.TextureId
-                                                or ""
-                                            )
-                                    )
-                            end
-
-                            local itemKey =
-                                tostring(
-                                    fruit.Name
-                                        or "Unknown fruit"
-                                )
-                                .. "|"
-                                .. tostring(
-                                    fruit.Mutation
-                                        or "Normal"
-                                )
-                                .. "|"
-                                .. icon
-
-                            local historyItem =
-                                historyItemMap[
-                                    itemKey
-                                ]
-
-                            if not historyItem then
-                                historyItem = {
-                                    Name =
-                                        tostring(
-                                            fruit.Name
-                                                or "Unknown fruit"
-                                        ),
-
-                                    Details =
-                                        tostring(
-                                            fruit.Mutation
-                                                or "Normal"
-                                        ),
-
-                                    Icon = icon,
-                                    Count = 0,
-                                    Sent = 0,
-                                    Value = 0,
-                                }
-
-                                historyItemMap[
-                                    itemKey
-                                ] =
-                                    historyItem
-
-                                table.insert(
-                                    historyRecord.Items,
-                                    historyItem
-                                )
-                            end
-
-                            historyItem.Count +=
-                                1
-
-                            historyItem.Sent +=
-                                1
-
-                            historyItem.Value +=
-                                tonumber(
-                                    fruit.Value
-                                )
-                                or 0
-                        end
-
-                        progressFill.Size =
-                            UDim2.fromScale(
-                                completedMails
-                                    / math.max(
-                                        totalMails,
-                                        1
-                                    ),
-                                1
-                            )
-
-                        messageText.Text =
-                            string.format(
-                                "Sent %d fruits worth %s.",
-                                fruitsSent,
-                                formatValue(valueSent)
-                            )
-                    end
-
-                    if recipientFinished then
-                        historyRecord.Status =
-                            "Sent"
-                    elseif historyRecord.AcceptedMails > 0
-                        or state.Stop
-                    then
-                        historyRecord.Status =
-                            "Partial"
-                    else
-                        historyRecord.Status =
-                            "Failed"
-                    end
-
-                    historyRecord.Error =
-                        failure
-                        or (
-                            state.Stop
-                            and "Stopped by user"
+                    local id =
+                        tostring(
+                            item:GetAttribute("Id")
+                            or item:GetAttribute("FruitId")
                             or ""
                         )
 
-                    HolyMailHistoryAdd(
-                        historyRecord
-                    )
+                    if id ~= "" then
+                        fruits[id] =
+                            item
+                    end
+                end
+            end
 
-                    if recipientFinished then
-                        completedRecipients +=
+            return fruits
+        end
+
+    state.Safety.ItemIsFavorite =
+        function(
+            item,
+            fallback
+        )
+            if typeof(item) == "Instance" then
+                return item:GetAttribute(
+                    "IsFavorite"
+                ) == true
+                    or item:GetAttribute(
+                        "Favorite"
+                    ) == true
+                    or item:GetAttribute(
+                        "Favorited"
+                    ) == true
+            end
+
+            return fallback == true
+        end
+
+    state.Safety.ValidateValueBatch =
+        function(batch)
+            HolyMailCheckDay()
+            updateQuota()
+
+            if tracker.Used >= DAILY_LIMIT then
+                return false,
+                    "No daily sends remain.",
+                    "DAILY"
+            end
+
+            local owned =
+                state.Safety.CurrentFruitMap()
+
+            for _, fruit in ipairs(
+                batch
+            ) do
+                local item =
+                    owned[
+                        tostring(
+                            fruit.Id
+                        )
+                    ]
+
+                if typeof(item) ~= "Instance" then
+                    return false,
+                        tostring(
+                            fruit.Name
+                            or "A selected fruit"
+                        )
+                        .. " is no longer in your inventory.",
+                        "INVENTORY"
+                end
+
+                if state.Protect
+                    and state.Safety.ItemIsFavorite(
+                        item,
+                        fruit.Favorite
+                    )
+                then
+                    return false,
+                        tostring(
+                            fruit.Name
+                            or "A selected fruit"
+                        )
+                        .. " became favorited.",
+                        "FAVORITE"
+                end
+            end
+
+            return true
+        end
+
+    state.Safety.WaitForValueRemoval =
+        function(
+            batch,
+            timeout
+        )
+            local deadline =
+                os.clock()
+                + (
+                    tonumber(timeout)
+                    or 8
+                )
+
+            repeat
+                local owned =
+                    state.Safety.CurrentFruitMap()
+
+                local remaining =
+                    0
+
+                for _, fruit in ipairs(
+                    batch
+                ) do
+                    if owned[
+                        tostring(
+                            fruit.Id
+                        )
+                    ] then
+                        remaining +=
                             1
-                    else
-                        break
                     end
                 end
 
-                local stopped =
-                    state.Stop
-                    and not failure
+                if remaining == 0 then
+                    return true
+                end
 
-                local complete =
-                    completedMails == totalMails
-                    and not failure
-                    and not stopped
+                task.wait(
+                    0.15
+                )
+            until os.clock() >= deadline
 
-                state.Running =
-                    false
+            return false
+        end
 
-                state.Stop =
-                    false
+    state.Safety.WaitForCooldown =
+        function()
+            while state.LastAccepted do
+                local remaining =
+                    COOLDOWN
+                    - (
+                        workspace:GetServerTimeNow()
+                        - state.LastAccepted
+                    )
 
-                renderRecipients()
+                if remaining <= 0 then
+                    return not state.Stop
+                end
+
+                if state.Stop then
+                    return false
+                end
 
                 setStatus(
-                    complete
-                            and "Complete"
-                        or stopped
-                                and "Stopped"
-                            or "Paused",
-                    complete
-                            and color.Green
-                        or color.Yellow
+                    string.format(
+                        "%.1fs",
+                        remaining
+                    ),
+                    color.Yellow
                 )
+
+                task.wait(
+                    math.min(
+                        0.1,
+                        remaining
+                    )
+                )
+            end
+
+            return not state.Stop
+        end
+
+    state.Safety.RecordAcceptedMail =
+        function(started)
+            state.LastAccepted =
+                started
+
+            tracker.Used =
+                math.min(
+                    DAILY_LIMIT,
+                    tracker.Used + 1
+                )
+
+            HOLY_MAIL_STATE.TrackerDay =
+                HolyMailToday()
+
+            HOLY_MAIL_STATE.TrackerUsed =
+                tracker.Used
+
+            updateQuota()
+            HolyMailSaveSettings()
+        end
+
+    state.Safety.SendValueBatch =
+        function(
+            packet,
+            recipient,
+            batch
+        )
+            local payload = {}
+
+            for _, fruit in ipairs(
+                batch
+            ) do
+                table.insert(
+                    payload,
+                    {
+                        ItemKey =
+                            fruit.Id,
+
+                        Count =
+                            1,
+
+                        Category =
+                            "HarvestedFruits",
+                    }
+                )
+            end
+
+            while not state.Stop do
+                local valid,
+                    validationMessage,
+                    validationType =
+                    state.Safety.ValidateValueBatch(
+                        batch
+                    )
+
+                if not valid then
+                    return false,
+                        validationMessage,
+                        validationType,
+                        false
+                end
+
+                if not state.Safety.WaitForCooldown() then
+                    return false,
+                        "Stopped",
+                        "STOPPED",
+                        false
+                end
+
+                valid,
+                validationMessage,
+                validationType =
+                    state.Safety.ValidateValueBatch(
+                        batch
+                    )
+
+                if not valid then
+                    return false,
+                        validationMessage,
+                        validationType,
+                        false
+                end
+
+                local started =
+                    workspace:GetServerTimeNow()
+
+                setStatus(
+                    "Sending",
+                    color.Yellow
+                )
+
+                local ok,
+                    first,
+                    second =
+                    pcall(function()
+                        return packet:Fire(
+                            recipient.UserId,
+                            payload,
+                            ""
+                        )
+                    end)
+
+                if not ok then
+                    return false,
+                        tostring(
+                            first
+                        ),
+                        "ERROR",
+                        false
+                end
+
+                local message =
+                    tostring(
+                        second or ""
+                    )
+
+                if first == true then
+                    state.Safety.RecordAcceptedMail(
+                        started
+                    )
+
+                    local confirmed =
+                        state.Safety.WaitForValueRemoval(
+                            batch,
+                            8
+                        )
+
+                    if not confirmed then
+                        return false,
+                            "The server accepted this mail, but inventory removal could not be confirmed.",
+                            "UNCERTAIN",
+                            true
+                    end
+
+                    return true,
+                        message,
+                        "CONFIRMED",
+                        true
+                end
+
+                local lower =
+                    message:lower()
+
+                local seconds =
+                    tonumber(
+                        lower:match(
+                            "wait%s+(%d+)%s*s"
+                        )
+                    )
+
+                if seconds then
+                    task.wait(
+                        seconds + 0.25
+                    )
+                elseif lower:find(
+                    "daily gift limit",
+                    1,
+                    true
+                ) then
+                    tracker.Used =
+                        DAILY_LIMIT
+
+                    HOLY_MAIL_STATE.TrackerDay =
+                        HolyMailToday()
+
+                    HOLY_MAIL_STATE.TrackerUsed =
+                        DAILY_LIMIT
+
+                    updateQuota()
+                    HolyMailSaveSettings()
+
+                    return false,
+                        message,
+                        "DAILY",
+                        false
+                else
+                    return false,
+                        message ~= ""
+                                and message
+                            or tostring(
+                                first
+                            ),
+                        "REJECTED",
+                        false
+                end
+            end
+
+            return false,
+                "Stopped",
+                "STOPPED",
+                false
+        end
+
+    state.Safety.AddFruitHistoryBatch =
+        function(
+            historyRecord,
+            historyItemMap,
+            batch
+        )
+            for _, fruit in ipairs(
+                batch
+            ) do
+                local source =
+                    fruit.Item
+
+                local icon = ""
+
+                if typeof(source) == "Instance" then
+                    icon =
+                        HolyMailHistoryNormalizeIcon(
+                            source:GetAttribute("IMG")
+                                or source:GetAttribute("Icon")
+                                or source:GetAttribute("Image")
+                                or source:GetAttribute("TextureId")
+                                or (
+                                    source:IsA("Tool")
+                                    and source.TextureId
+                                    or ""
+                                )
+                        )
+                end
+
+                local itemKey =
+                    tostring(
+                        fruit.Name
+                        or "Unknown fruit"
+                    )
+                    .. "|"
+                    .. tostring(
+                        fruit.Mutation
+                        or "Normal"
+                    )
+                    .. "|"
+                    .. icon
+
+                local historyItem =
+                    historyItemMap[
+                        itemKey
+                    ]
+
+                if not historyItem then
+                    historyItem = {
+                        Name =
+                            tostring(
+                                fruit.Name
+                                or "Unknown fruit"
+                            ),
+
+                        Details =
+                            tostring(
+                                fruit.Mutation
+                                or "Normal"
+                            ),
+
+                        Icon = icon,
+                        Count = 0,
+                        Sent = 0,
+                        Value = 0,
+                    }
+
+                    historyItemMap[
+                        itemKey
+                    ] =
+                        historyItem
+
+                    table.insert(
+                        historyRecord.Items,
+                        historyItem
+                    )
+                end
+
+                historyItem.Count +=
+                    1
+
+                historyItem.Sent +=
+                    1
+
+                historyItem.Value +=
+                    tonumber(
+                        fruit.Value
+                    )
+                    or 0
+            end
+        end
+
+    state.Safety.RunValueDelivery =
+        function(totalMails)
+            protectedCall(
+                "Delivery",
+                function()
+                    local packet,
+                        packetError =
+                        getSendPacket()
+
+                    if not packet then
+                        reportError(
+                            "Networking",
+                            packetError
+                        )
+
+                        if type(
+                            state.ValueSession
+                        ) == "table" then
+                            state.ValueSession.Status =
+                                "Paused"
+                        end
+
+                        return
+                    end
+
+                    local session =
+                        state.ValueSession
+
+                    if type(session) ~= "table" then
+                        return
+                    end
+
+                    session.Status =
+                        "Running"
+
+                    state.Running =
+                        true
+
+                    state.Stop =
+                        false
+
+                    progressFill.Size =
+                        UDim2.fromScale(
+                            0,
+                            1
+                        )
+
+                    renderRecipients()
+
+                    local completedMails = 0
+                    local fruitsSent = 0
+                    local valueSent = 0
+                    local completedRecipients = 0
+
+                    local failure
+                    local failureType
+
+                    for routeIndex, entry in ipairs(
+                        state.Plan
+                    ) do
+                        if state.Stop then
+                            break
+                        end
+
+                        local recipientFinished =
+                            true
+
+                        local historyRecord = {
+                            Direction = "Sent",
+                            Mode = "By Value",
+                            Status = "Failed",
+
+                            OtherUserId =
+                                entry.Recipient.UserId,
+
+                            OtherName =
+                                entry.Recipient.Name,
+
+                            AttemptedMails =
+                                entry.Mails,
+
+                            AcceptedMails = 0,
+
+                            PlannedItems =
+                                #entry.Fruits,
+
+                            SentItems = 0,
+
+                            TargetValue =
+                                entry.Target
+                                or entry.Value,
+
+                            AcceptedValue = 0,
+
+                            Items = {},
+                        }
+
+                        local historyItemMap = {}
+
+                        for firstIndex = 1,
+                            #entry.Fruits,
+                            BATCH_LIMIT
+                        do
+                            if state.Stop then
+                                recipientFinished =
+                                    false
+
+                                break
+                            end
+
+                            local batch = {}
+                            local batchValue = 0
+
+                            for fruitIndex = firstIndex,
+                                math.min(
+                                    firstIndex
+                                        + BATCH_LIMIT
+                                        - 1,
+                                    #entry.Fruits
+                                )
+                            do
+                                local fruit =
+                                    entry.Fruits[
+                                        fruitIndex
+                                    ]
+
+                                table.insert(
+                                    batch,
+                                    fruit
+                                )
+
+                                batchValue +=
+                                    tonumber(
+                                        fruit.Value
+                                    )
+                                    or 0
+                            end
+
+                            sendButton.Text =
+                                string.format(
+                                    "@%s · mail %d/%d",
+                                    entry.Recipient.Name,
+                                    completedMails + 1,
+                                    totalMails
+                                )
+
+                            setStatus(
+                                string.format(
+                                    "%d/%d",
+                                    routeIndex,
+                                    #state.Plan
+                                ),
+                                color.Yellow
+                            )
+
+                            local confirmed,
+                                response,
+                                responseType,
+                                acceptedByServer =
+                                state.Safety.SendValueBatch(
+                                    packet,
+                                    entry.Recipient,
+                                    batch
+                                )
+
+                            if acceptedByServer then
+                                completedMails +=
+                                    1
+
+                                fruitsSent +=
+                                    #batch
+
+                                valueSent +=
+                                    batchValue
+
+                                session.AcceptedMails =
+                                    (
+                                        tonumber(
+                                            session.AcceptedMails
+                                        )
+                                        or 0
+                                    )
+                                    + 1
+
+                                session.AcceptedItems =
+                                    (
+                                        tonumber(
+                                            session.AcceptedItems
+                                        )
+                                        or 0
+                                    )
+                                    + #batch
+
+                                session.AcceptedValue =
+                                    (
+                                        tonumber(
+                                            session.AcceptedValue
+                                        )
+                                        or 0
+                                    )
+                                    + batchValue
+
+                                local userId =
+                                    entry.Recipient.UserId
+
+                                local oldRemaining =
+                                    tonumber(
+                                        session.RemainingTargets[
+                                            userId
+                                        ]
+                                    )
+                                    or tonumber(
+                                        entry.Target
+                                    )
+                                    or 0
+
+                                session.RemainingTargets[
+                                    userId
+                                ] =
+                                    math.max(
+                                        0,
+                                        oldRemaining
+                                        - batchValue
+                                    )
+
+                                historyRecord.AcceptedMails +=
+                                    1
+
+                                historyRecord.SentItems +=
+                                    #batch
+
+                                historyRecord.AcceptedValue +=
+                                    batchValue
+
+                                state.Safety.AddFruitHistoryBatch(
+                                    historyRecord,
+                                    historyItemMap,
+                                    batch
+                                )
+
+                                progressFill.Size =
+                                    UDim2.fromScale(
+                                        completedMails
+                                            / math.max(
+                                                totalMails,
+                                                1
+                                            ),
+                                        1
+                                    )
+
+                                messageText.Text =
+                                    string.format(
+                                        "Accepted %d fruits worth %s.",
+                                        fruitsSent,
+                                        formatValue(
+                                            valueSent
+                                        )
+                                    )
+                            end
+
+                            if not confirmed then
+                                recipientFinished =
+                                    false
+
+                                failure =
+                                    tostring(
+                                        response
+                                        or "Delivery paused"
+                                    )
+
+                                failureType =
+                                    tostring(
+                                        responseType
+                                        or "PAUSED"
+                                    )
+
+                                if failureType
+                                    == "UNCERTAIN"
+                                then
+                                    session.UncertainBatch = {
+                                        Recipient =
+                                            entry.Recipient,
+
+                                        Fruits =
+                                            batch,
+
+                                        Value =
+                                            batchValue,
+
+                                        Accepted =
+                                            acceptedByServer == true,
+                                    }
+                                end
+
+                                break
+                            end
+                        end
+
+                        if failureType == "UNCERTAIN" then
+                            historyRecord.Status =
+                                "Uncertain"
+                        elseif recipientFinished then
+                            historyRecord.Status =
+                                "Sent"
+                        elseif historyRecord.AcceptedMails > 0
+                            or state.Stop
+                        then
+                            historyRecord.Status =
+                                "Partial"
+                        else
+                            historyRecord.Status =
+                                "Failed"
+                        end
+
+                        historyRecord.Error =
+                            failure
+                            or (
+                                state.Stop
+                                and "Stopped by user"
+                                or ""
+                            )
+
+                        if historyRecord.AttemptedMails > 0 then
+                            HolyMailHistoryAdd(
+                                historyRecord
+                            )
+                        end
+
+                        if recipientFinished then
+                            completedRecipients +=
+                                1
+                        else
+                            break
+                        end
+                    end
+
+                    local stopped =
+                        state.Stop
+                        and not failure
+
+                    local complete =
+                        completedMails == totalMails
+                        and not failure
+                        and not stopped
+
+                    if complete then
+                        session.Status =
+                            "Complete"
+
+                        state.ValueSession =
+                            nil
+                    elseif failureType == "UNCERTAIN" then
+                        session.Status =
+                            "Uncertain"
+                    else
+                        session.Status =
+                            "Paused"
+                    end
+
+                    state.Running =
+                        false
+
+                    state.Stop =
+                        false
+
+                    renderRecipients()
+
+                    setStatus(
+                        complete
+                                and "Complete"
+                            or failureType == "UNCERTAIN"
+                                    and "Confirmation uncertain"
+                                or "Paused",
+                        complete
+                                and color.Green
+                            or failureType == "UNCERTAIN"
+                                    and color.Red
+                                or color.Yellow
+                    )
+
+                    sendButton.Text =
+                        complete
+                                and "Review and send"
+                            or failureType == "UNCERTAIN"
+                                    and "Review uncertain mail"
+                                or "Resume remaining delivery"
+
+                    showModal(
+                        complete
+                                and "Delivery complete"
+                            or failureType == "UNCERTAIN"
+                                    and "Confirmation uncertain"
+                                or failureType == "DAILY"
+                                        and "Daily limit reached"
+                                    or "Delivery paused",
+                        (
+                            failure
+                            and failure
+                                .. "\n\n"
+                            or ""
+                        )
+                        .. string.format(
+                            "People completed: %d\nFruits accepted: %d\nValue accepted: %s\nSends accepted: %d",
+                            completedRecipients,
+                            fruitsSent,
+                            formatValue(
+                                valueSent
+                            ),
+                            completedMails
+                        ),
+                        nil,
+                        nil,
+                        not complete
+                    )
+
+                    task.spawn(
+                        rebuildPlan
+                    )
+                end
+            )
+        end
+
+    state.Safety.RequestValueDelivery =
+        function()
+            if state.Running then
+                state.Stop =
+                    true
+
+                sendButton.Text =
+                    "Stopping after current mail..."
+
+                return
+            end
+
+            local session =
+                state.ValueSession
+
+            if type(session) == "table"
+                and session.Status == "Uncertain"
+            then
+                showModal(
+                    "Confirmation uncertain",
+                    "The server accepted the previous mail, but HOLY could not confirm that its items disappeared.\n\nThat batch was removed from the remaining target and will never be resent automatically.",
+                    "Continue safely",
+                    function()
+                        session.Status =
+                            "Paused"
+
+                        session.UncertainBatch =
+                            nil
+
+                        sendButton.Text =
+                            "Resume remaining delivery"
+
+                        task.spawn(
+                            rebuildPlan
+                        )
+                    end,
+                    true
+                )
+
+                return
+            end
+
+            local resuming =
+                type(session) == "table"
+                and session.Status == "Paused"
+
+            if resuming then
+                rebuildPlan()
+            end
+
+            if state.Busy
+                or #state.Plan == 0
+            then
+                return
+            end
+
+            local mails = 0
+            local fruits = 0
+            local value = 0
+            local incomplete = false
+            local overpayBlocked = false
+
+            for _, entry in ipairs(
+                state.Plan
+            ) do
+                mails +=
+                    entry.Mails
+
+                fruits +=
+                    #entry.Fruits
+
+                value +=
+                    entry.Value
+
+                incomplete =
+                    incomplete
+                    or not entry.Complete
+
+                overpayBlocked =
+                    overpayBlocked
+                    or entry.GuardBlocked == true
+            end
+
+            if resuming
+                and mails <= 0
+            then
+                state.ValueSession =
+                    nil
+
+                messageText.Text =
+                    "The remaining delivery is complete."
+
+                messageText.TextColor3 =
+                    color.Green
 
                 sendButton.Text =
                     "Review and send"
 
-                local heading =
-                    complete
-                            and "Delivery complete"
-                        or failureType == "DAILY"
-                                and "Daily limit reached"
-                            or stopped
-                                    and "Delivery stopped"
-                                or "Delivery paused"
-
-                local body =
-                    (
-                        failure
-                            and failure
-                                .. "\n\n"
-                            or ""
-                    )
-                    .. string.format(
-                        "People completed: %d\nFruits sent: %d\nValue sent: %s\nSends used: %d",
-                        completedRecipients,
-                        fruitsSent,
-                        formatValue(valueSent),
-                        completedMails
-                    )
-
-                showModal(
-                    heading,
-                    body,
-                    nil,
-                    nil,
-                    not complete
-                )
-
-                task.spawn(rebuildPlan)
-            end
-        )
-    end
-
-    local function requestDelivery()
-        if state.Running then
-            state.Stop =
-                true
-
-            sendButton.Text =
-                "Stopping after this mail..."
-
-            return
-        end
-
-        if state.Busy
-            or #state.Plan == 0
-        then
-            return
-        end
-
-        local mails = 0
-        local fruits = 0
-        local value = 0
-        local incomplete = false
-        local overpayBlocked = false
-
-        for _, entry in ipairs(
-            state.Plan
-        ) do
-            mails +=
-                entry.Mails
-
-            fruits +=
-                #entry.Fruits
-
-            value +=
-                entry.Value
-
-            incomplete =
-                incomplete
-                or not entry.Complete
-
-            overpayBlocked =
-                overpayBlocked
-                or entry.GuardBlocked == true
-        end
-
-        if overpayBlocked then
-            messageText.Text =
-                "Cannot reach one or more targets within the maximum extra value."
-
-            messageText.TextColor3 =
-                color.Red
-
-            sendButton.Active =
-                false
-
-            sendButton.AutoButtonColor =
-                false
-
-            return
-        end
-
-        if incomplete
-            or mails <= 0
-        then
-            messageText.Text =
-                "The delivery is incomplete and cannot start."
-
-            messageText.TextColor3 =
-                color.Red
-
-            return
-        end
-
-        if mails
-            > DAILY_LIMIT - tracker.Used
-        then
-            messageText.Text =
-                "This needs more sends than you have left today."
-
-            messageText.TextColor3 =
-                color.Red
-
-            return
-        end
-
-        local seconds =
-            mails <= 1
-                and 0
-            or (
-                mails - 1
-            ) * COOLDOWN
-
-        local maximumExtraText =
-            state.Strategy == "Send at least"
-                    and extraLimitCaption()
-                or "Not used"
-
-        showModal(
-            "Review before sending",
-            string.format(
-                "Strategy: %s\nMaximum extra: %s\nPeople: %d\nFruits: %d\nTotal value: %s\nSends: %d\nTime: about %ds",
-                state.Strategy,
-                maximumExtraText,
-                #state.Plan,
-                fruits,
-                formatValue(
-                    value
-                ),
-                mails,
-                math.ceil(
-                    seconds
-                )
-            ),
-            "Send now",
-            function()
                 task.spawn(
-                    runDelivery,
-                    mails
+                    rebuildPlan
                 )
-            end,
-            true
-        )
-    end
+
+                return
+            end
+
+            if overpayBlocked then
+                messageText.Text =
+                    "Cannot reach one or more remaining targets within the maximum extra value."
+
+                messageText.TextColor3 =
+                    color.Red
+
+                return
+            end
+
+            if incomplete
+                or mails <= 0
+            then
+                messageText.Text =
+                    "The remaining delivery cannot currently be completed safely."
+
+                messageText.TextColor3 =
+                    color.Red
+
+                return
+            end
+
+            if mails
+                > DAILY_LIMIT - tracker.Used
+            then
+                messageText.Text =
+                    "This needs more sends than you have left today."
+
+                messageText.TextColor3 =
+                    color.Red
+
+                return
+            end
+
+            local seconds =
+                mails <= 1
+                and 0
+                or (
+                    mails - 1
+                ) * COOLDOWN
+
+            local maximumExtraText =
+                state.Strategy == "Send at least"
+                        and extraLimitCaption()
+                    or "Not used"
+
+            showModal(
+                resuming
+                        and "Resume remaining delivery"
+                    or "Review before sending",
+                string.format(
+                    "Strategy: %s\nMaximum extra: %s\nPeople: %d\nFruits remaining: %d\nRemaining value: %s\nSends remaining: %d\nTime: about %ds",
+                    state.Strategy,
+                    maximumExtraText,
+                    #state.Plan,
+                    fruits,
+                    formatValue(
+                        value
+                    ),
+                    mails,
+                    math.ceil(
+                        seconds
+                    )
+                ),
+                resuming
+                        and "Resume"
+                    or "Send now",
+                function()
+                    if not resuming then
+                        local remainingTargets = {}
+
+                        for _, recipient in ipairs(
+                            state.Recipients
+                        ) do
+                            remainingTargets[
+                                recipient.UserId
+                            ] =
+                                tonumber(
+                                    recipient.Target
+                                )
+                                or 0
+                        end
+
+                        state.ValueSession = {
+                            Status = "Ready",
+
+                            RemainingTargets =
+                                remainingTargets,
+
+                            AcceptedMails = 0,
+                            AcceptedItems = 0,
+                            AcceptedValue = 0,
+
+                            UncertainBatch =
+                                nil,
+                        }
+                    end
+
+                    task.spawn(
+                        state.Safety.RunValueDelivery,
+                        mails
+                    )
+                end,
+                true
+            )
+        end
 
     addButton.MouseButton1Click:Connect(function()
         protectedCall(
@@ -109396,7 +109897,7 @@ function HolyMailCreateHud()
     sendButton.MouseButton1Click:Connect(function()
         protectedCall(
             "Send button",
-            requestDelivery
+            state.Safety.RequestValueDelivery
         )
     end)
 
@@ -114660,15 +115161,48 @@ function HolyMailCreateHud()
                     .. " items are ready for review."
             end
 
+            local exactSession =
+                state.ExactSession
+
+            local exactStatus =
+                type(exactSession) == "table"
+                and tostring(
+                    exactSession.Status
+                    or ""
+                )
+                or ""
+
+            local reviewingUncertain =
+                exactStatus == "Uncertain"
+
+            local resumingDelivery =
+                exactStatus == "Paused"
+
             itemSendButton.Active =
-                sendable > 0
-                and items == sendable
-                and not state.Running
+                state.Running
+                or reviewingUncertain
+                or resumingDelivery
+                or (
+                    sendable > 0
+                    and items == sendable
+                )
+
+            itemSendButton.AutoButtonColor =
+                itemSendButton.Active
 
             itemSendButton.BackgroundColor3 =
                 itemSendButton.Active
                     and color.Accent
                     or color.Hover
+
+            itemSendButton.Text =
+                state.Running
+                        and "Stop after current mail"
+                    or reviewingUncertain
+                            and "Review uncertain mail"
+                        or resumingDelivery
+                                and "Resume remaining delivery"
+                            or "Review and send"
 
             return people,
                 items,
@@ -115925,287 +116459,551 @@ function HolyMailCreateHud()
             missing
     end
 
-    local function sendExactPayload(
-        packet,
-        recipient,
-        payload
-    )
-        while not state.Stop do
-            if not waitForCooldown() then
-                return false,
-                    "Stopped",
-                    "STOPPED"
-            end
+    state.Safety.ExactRequirements =
+        function(batchHistory)
+            local requirements = {}
 
-            local started =
-                workspace:GetServerTimeNow()
-
-            setStatus(
-                "Sending",
-                color.Yellow
-            )
-
-            local ok,
-                first,
-                second =
-                pcall(function()
-                    return packet:Fire(
-                        recipient.UserId,
-                        payload,
-                        ""
-                    )
-                end)
-
-            if not ok then
-                return false,
+            for _, entry in ipairs(
+                batchHistory
+            ) do
+                local key =
                     tostring(
-                        first
-                    ),
-                    "ERROR"
-            end
-
-            local message =
-                tostring(
-                    second or ""
-                )
-
-            if first == true then
-                state.LastAccepted =
-                    started
-
-                tracker.Used =
-                    math.min(
-                        DAILY_LIMIT,
-                        tracker.Used + 1
+                        entry.Key
+                        or ""
                     )
 
-                HOLY_MAIL_STATE.TrackerDay =
-                    HolyMailToday()
-
-                HOLY_MAIL_STATE.TrackerUsed =
-                    tracker.Used
-
-                updateQuota()
-                HolyMailSaveSettings()
-
-                return true,
-                    message,
-                    "ACCEPTED"
+                if key ~= "" then
+                    requirements[key] =
+                        (
+                            requirements[key]
+                            or 0
+                        )
+                        + math.max(
+                            0,
+                            math.floor(
+                                tonumber(
+                                    entry.Count
+                                )
+                                or 0
+                            )
+                        )
+                end
             end
 
-            local lower =
-                message:lower()
+            return requirements
+        end
 
-            local seconds =
-                tonumber(
-                    lower:match(
-                        "wait%s+(%d+)%s*s"
-                    )
-                )
+    state.Safety.ValidateExactBatch =
+        function(batchHistory)
+            HolyMailCheckDay()
+            updateQuota()
 
-            if seconds then
-                task.wait(
-                    seconds + 0.25
-                )
-            elseif lower:find(
-                "daily gift limit",
-                1,
-                true
-            ) then
-                tracker.Used =
-                    DAILY_LIMIT
-
-                HOLY_MAIL_STATE.TrackerDay =
-                    HolyMailToday()
-
-                HOLY_MAIL_STATE.TrackerUsed =
-                    DAILY_LIMIT
-
-                updateQuota()
-                HolyMailSaveSettings()
-
+            if tracker.Used >= DAILY_LIMIT then
                 return false,
-                    message,
+                    "No daily sends remain.",
                     "DAILY"
-            else
-                return false,
-                    message ~= ""
-                            and message
-                        or tostring(
-                            first
-                        ),
-                    "REJECTED"
+            end
+
+            scanExactItems()
+
+            local requirements =
+                state.Safety.ExactRequirements(
+                    batchHistory
+                )
+
+            local snapshot = {}
+
+            for recordKey, required in pairs(
+                requirements
+            ) do
+                local record =
+                    state.ExactRecordMap[
+                        recordKey
+                    ]
+
+                local available =
+                    record
+                    and tonumber(
+                        record.Count
+                    )
+                    or 0
+
+                snapshot[recordKey] =
+                    available
+
+                if not record
+                    or not record.Supported
+                    or not record.Category
+                    or available < required
+                then
+                    return false,
+                        "Selected items changed, disappeared, or became protected.",
+                        "INVENTORY"
+                end
+            end
+
+            return true,
+                snapshot,
+                "READY"
+        end
+
+    state.Safety.WaitForExactRemoval =
+        function(
+            batchHistory,
+            beforeSnapshot,
+            timeout
+        )
+            local requirements =
+                state.Safety.ExactRequirements(
+                    batchHistory
+                )
+
+            local deadline =
+                os.clock()
+                + (
+                    tonumber(timeout)
+                    or 8
+                )
+
+            repeat
+                scanExactItems()
+
+                local complete =
+                    true
+
+                for recordKey, required in pairs(
+                    requirements
+                ) do
+                    local record =
+                        state.ExactRecordMap[
+                            recordKey
+                        ]
+
+                    local current =
+                        record
+                        and tonumber(
+                            record.Count
+                        )
+                        or 0
+
+                    local before =
+                        tonumber(
+                            beforeSnapshot[
+                                recordKey
+                            ]
+                        )
+                        or 0
+
+                    if current
+                        > math.max(
+                            0,
+                            before - required
+                        )
+                    then
+                        complete =
+                            false
+
+                        break
+                    end
+                end
+
+                if complete then
+                    return true
+                end
+
+                task.wait(
+                    0.15
+                )
+            until os.clock() >= deadline
+
+            return false
+        end
+
+    state.Safety.ConsumeExactQueue =
+        function(
+            recipientUserId,
+            batchHistory
+        )
+            local queue =
+                exactQueueFor(
+                    recipientUserId
+                )
+
+            for recordKey, amount in pairs(
+                state.Safety.ExactRequirements(
+                    batchHistory
+                )
+            ) do
+                local queued =
+                    queue[
+                        recordKey
+                    ]
+
+                if type(queued) == "table" then
+                    queued.Count =
+                        math.max(
+                            0,
+                            (
+                                tonumber(
+                                    queued.Count
+                                )
+                                or 0
+                            )
+                            - amount
+                        )
+
+                    if queued.Count <= 0 then
+                        queue[
+                            recordKey
+                        ] =
+                            nil
+                    end
+                end
             end
         end
 
-        return false,
-            "Stopped",
-            "STOPPED"
-    end
-
-    local function runExactDelivery(
-        routes,
-        totalItems,
-        totalMails
-    )
-        protectedCall(
-            "Item delivery",
-            function()
-                local packet,
-                    packetError =
-                    getSendPacket()
-
-                if not packet then
-                    itemMessageText.Text =
-                        tostring(
-                            packetError
-                        )
-
-                    return
-                end
-
-                state.Running =
-                    true
-
-                state.Stop =
-                    false
-
-                itemProgressFill.Size =
-                    UDim2.fromScale(
-                        0,
-                        1
+    state.Safety.SendExactPayload =
+        function(
+            packet,
+            recipient,
+            payload,
+            batchHistory
+        )
+            while not state.Stop do
+                local valid,
+                    snapshot,
+                    validationType =
+                    state.Safety.ValidateExactBatch(
+                        batchHistory
                     )
 
-                local completedMails = 0
-                local completedItems = 0
-                local completedPeople = 0
-                local failure
-                local failureType
+                if not valid then
+                    return false,
+                        tostring(
+                            snapshot
+                        ),
+                        validationType,
+                        false
+                end
 
-                renderExactRecipients()
-                updateExactSummary()
+                if not state.Safety.WaitForCooldown() then
+                    return false,
+                        "Stopped",
+                        "STOPPED",
+                        false
+                end
 
-                for _, route in ipairs(
-                    routes
-                ) do
-                    local recipientComplete =
-                        true
+                valid,
+                snapshot,
+                validationType =
+                    state.Safety.ValidateExactBatch(
+                        batchHistory
+                    )
 
-                    local historyRecord = {
-                        Direction = "Sent",
-                        Mode = "Pick Items",
-                        Status = "Failed",
+                if not valid then
+                    return false,
+                        tostring(
+                            snapshot
+                        ),
+                        validationType,
+                        false
+                end
 
-                        OtherUserId =
-                            route.Recipient.UserId,
+                local started =
+                    workspace:GetServerTimeNow()
 
-                        OtherName =
-                            route.Recipient.Name,
+                setStatus(
+                    "Sending",
+                    color.Yellow
+                )
 
-                        AttemptedMails =
-                            route.Mails,
+                local ok,
+                    first,
+                    second =
+                    pcall(function()
+                        return packet:Fire(
+                            recipient.UserId,
+                            payload,
+                            ""
+                        )
+                    end)
 
-                        AcceptedMails = 0,
+                if not ok then
+                    return false,
+                        tostring(
+                            first
+                        ),
+                        "ERROR",
+                        false
+                end
 
-                        PlannedItems =
-                            route.Items,
+                local message =
+                    tostring(
+                        second or ""
+                    )
 
-                        SentItems = 0,
+                if first == true then
+                    state.Safety.RecordAcceptedMail(
+                        started
+                    )
 
-                        TargetValue = 0,
-                        AcceptedValue = 0,
+                    state.Safety.ConsumeExactQueue(
+                        recipient.UserId,
+                        batchHistory
+                    )
 
-                        Items = {},
-                    }
-
-                    local historyItemMap = {}
-
-                    for _, historyItem in ipairs(
-                        route.HistoryItems
-                            or {}
-                    ) do
-                        local copy = {
-                            Key =
-                                tostring(
-                                    historyItem.Key
-                                        or ""
-                                ),
-
-                            Name =
-                                tostring(
-                                    historyItem.Name
-                                        or "Unknown item"
-                                ),
-
-                            Details =
-                                tostring(
-                                    historyItem.Details
-                                        or "Item"
-                                ),
-
-                            Icon =
-                                tostring(
-                                    historyItem.Icon
-                                        or ""
-                                ),
-
-                            Count =
-                                tonumber(
-                                    historyItem.Count
-                                )
-                                or 0,
-
-                            Sent = 0,
-                            Value = 0,
-                        }
-
-                        table.insert(
-                            historyRecord.Items,
-                            copy
+                    local confirmed =
+                        state.Safety.WaitForExactRemoval(
+                            batchHistory,
+                            snapshot,
+                            8
                         )
 
-                        historyItemMap[
-                            copy.Key
-                        ] =
-                            copy
+                    if not confirmed then
+                        return false,
+                            "The server accepted this mail, but inventory removal could not be confirmed.",
+                            "UNCERTAIN",
+                            true
                     end
 
-                    for firstIndex = 1,
-                        #route.Payloads,
-                        BATCH_LIMIT
-                    do
-                        if state.Stop then
-                            recipientComplete =
-                                false
+                    return true,
+                        message,
+                        "CONFIRMED",
+                        true
+                end
 
-                            break
+                local lower =
+                    message:lower()
+
+                local seconds =
+                    tonumber(
+                        lower:match(
+                            "wait%s+(%d+)%s*s"
+                        )
+                    )
+
+                if seconds then
+                    task.wait(
+                        seconds + 0.25
+                    )
+                elseif lower:find(
+                    "daily gift limit",
+                    1,
+                    true
+                ) then
+                    tracker.Used =
+                        DAILY_LIMIT
+
+                    HOLY_MAIL_STATE.TrackerDay =
+                        HolyMailToday()
+
+                    HOLY_MAIL_STATE.TrackerUsed =
+                        DAILY_LIMIT
+
+                    updateQuota()
+                    HolyMailSaveSettings()
+
+                    return false,
+                        message,
+                        "DAILY",
+                        false
+                else
+                    return false,
+                        message ~= ""
+                                and message
+                            or tostring(
+                                first
+                            ),
+                        "REJECTED",
+                        false
+                end
+            end
+
+            return false,
+                "Stopped",
+                "STOPPED",
+                false
+        end
+
+    state.Safety.RunExactDelivery =
+        function(
+            routes,
+            totalItems,
+            totalMails
+        )
+            protectedCall(
+                "Item delivery",
+                function()
+                    local packet,
+                        packetError =
+                        getSendPacket()
+
+                    if not packet then
+                        itemMessageText.Text =
+                            tostring(
+                                packetError
+                            )
+
+                        if type(
+                            state.ExactSession
+                        ) == "table" then
+                            state.ExactSession.Status =
+                                "Paused"
                         end
 
-                        local payload = {}
-                        local batchItems = 0
-                        local batchHistory = {}
+                        return
+                    end
 
-                        for payloadIndex = firstIndex,
-                            math.min(
-                                firstIndex
-                                    + BATCH_LIMIT
-                                    - 1,
-                                #route.Payloads
+                    local session =
+                        state.ExactSession
+
+                    if type(session) ~= "table" then
+                        return
+                    end
+
+                    session.Status =
+                        "Running"
+
+                    state.Running =
+                        true
+
+                    state.Stop =
+                        false
+
+                    itemProgressFill.Size =
+                        UDim2.fromScale(
+                            0,
+                            1
+                        )
+
+                    local completedMails = 0
+                    local completedItems = 0
+                    local completedPeople = 0
+                    local failure
+                    local failureType
+
+                    renderExactRecipients()
+                    updateExactSummary()
+
+                    for _, route in ipairs(
+                        routes
+                    ) do
+                        local recipientComplete =
+                            true
+
+                        local historyRecord = {
+                            Direction = "Sent",
+                            Mode = "Pick Items",
+                            Status = "Failed",
+
+                            OtherUserId =
+                                route.Recipient.UserId,
+
+                            OtherName =
+                                route.Recipient.Name,
+
+                            AttemptedMails =
+                                route.Mails,
+
+                            AcceptedMails = 0,
+
+                            PlannedItems =
+                                route.Items,
+
+                            SentItems = 0,
+
+                            TargetValue = 0,
+                            AcceptedValue = 0,
+
+                            Items = {},
+                        }
+
+                        local historyItemMap = {}
+
+                        for _, historyItem in ipairs(
+                            route.HistoryItems
+                            or {}
+                        ) do
+                            local copy = {
+                                Key =
+                                    tostring(
+                                        historyItem.Key
+                                        or ""
+                                    ),
+
+                                Name =
+                                    tostring(
+                                        historyItem.Name
+                                        or "Unknown item"
+                                    ),
+
+                                Details =
+                                    tostring(
+                                        historyItem.Details
+                                        or "Item"
+                                    ),
+
+                                Icon =
+                                    tostring(
+                                        historyItem.Icon
+                                        or ""
+                                    ),
+
+                                Count =
+                                    tonumber(
+                                        historyItem.Count
+                                    )
+                                    or 0,
+
+                                Sent = 0,
+                                Value = 0,
+                            }
+
+                            table.insert(
+                                historyRecord.Items,
+                                copy
                             )
+
+                            historyItemMap[
+                                copy.Key
+                            ] =
+                                copy
+                        end
+
+                        for firstIndex = 1,
+                            #route.Payloads,
+                            BATCH_LIMIT
                         do
-                            local entry =
-                                route.Payloads[
-                                    payloadIndex
-                                ]
+                            if state.Stop then
+                                recipientComplete =
+                                    false
 
-                            table.insert(
-                                payload,
-                                entry
-                            )
+                                break
+                            end
 
-                            table.insert(
-                                batchHistory,
-                                {
+                            local payload = {}
+                            local batchHistory = {}
+                            local batchItems = 0
+
+                            for payloadIndex = firstIndex,
+                                math.min(
+                                    firstIndex
+                                        + BATCH_LIMIT
+                                        - 1,
+                                    #route.Payloads
+                                )
+                            do
+                                local entry =
+                                    route.Payloads[
+                                        payloadIndex
+                                    ]
+
+                                table.insert(
+                                    payload,
+                                    entry
+                                )
+
+                                local historyEntry = {
                                     Key =
                                         tostring(
                                             route.PayloadHistoryKeys[
@@ -116220,280 +117018,423 @@ function HolyMailCreateHud()
                                         )
                                         or 1,
                                 }
-                            )
 
-                            batchItems +=
-                                tonumber(
-                                    entry.Count
+                                table.insert(
+                                    batchHistory,
+                                    historyEntry
                                 )
-                                or 1
-                        end
 
-                        itemSendButton.Text =
-                            string.format(
-                                "@%s · %d/%d",
-                                route.Recipient.Name,
-                                completedMails + 1,
-                                totalMails
-                            )
+                                batchItems +=
+                                    historyEntry.Count
+                            end
 
-                        local accepted,
-                            response,
-                            responseType =
-                            sendExactPayload(
-                                packet,
-                                route.Recipient,
-                                payload
-                            )
+                            itemSendButton.Text =
+                                string.format(
+                                    "@%s · %d/%d",
+                                    route.Recipient.Name,
+                                    completedMails + 1,
+                                    totalMails
+                                )
 
-                        if not accepted then
-                            recipientComplete =
-                                false
+                            local confirmed,
+                                response,
+                                responseType,
+                                acceptedByServer =
+                                state.Safety.SendExactPayload(
+                                    packet,
+                                    route.Recipient,
+                                    payload,
+                                    batchHistory
+                                )
 
-                            failure =
-                                response
+                            if acceptedByServer then
+                                completedMails +=
+                                    1
 
-                            failureType =
-                                responseType
+                                completedItems +=
+                                    batchItems
 
-                            break
-                        end
+                                session.AcceptedMails =
+                                    (
+                                        tonumber(
+                                            session.AcceptedMails
+                                        )
+                                        or 0
+                                    )
+                                    + 1
 
-                        completedMails +=
-                            1
+                                session.AcceptedItems =
+                                    (
+                                        tonumber(
+                                            session.AcceptedItems
+                                        )
+                                        or 0
+                                    )
+                                    + batchItems
 
-                        completedItems +=
-                            batchItems
+                                historyRecord.AcceptedMails +=
+                                    1
 
-                        historyRecord.AcceptedMails +=
-                            1
+                                historyRecord.SentItems +=
+                                    batchItems
 
-                        historyRecord.SentItems +=
-                            batchItems
+                                for _, acceptedItem in ipairs(
+                                    batchHistory
+                                ) do
+                                    local historyItem =
+                                        historyItemMap[
+                                            acceptedItem.Key
+                                        ]
 
-                        for _, acceptedItem in ipairs(
-                            batchHistory
-                        ) do
-                            local historyItem =
-                                historyItemMap[
-                                    acceptedItem.Key
-                                ]
+                                    if historyItem then
+                                        historyItem.Sent +=
+                                            acceptedItem.Count
+                                    end
+                                end
 
-                            if historyItem then
-                                historyItem.Sent +=
-                                    acceptedItem.Count
+                                itemProgressFill.Size =
+                                    UDim2.fromScale(
+                                        completedMails
+                                            / math.max(
+                                                totalMails,
+                                                1
+                                            ),
+                                        1
+                                    )
+
+                                itemMessageText.Text =
+                                    string.format(
+                                        "Accepted %d of %d items.",
+                                        completedItems,
+                                        totalItems
+                                    )
+                            end
+
+                            if not confirmed then
+                                recipientComplete =
+                                    false
+
+                                failure =
+                                    tostring(
+                                        response
+                                        or "Delivery paused"
+                                    )
+
+                                failureType =
+                                    tostring(
+                                        responseType
+                                        or "PAUSED"
+                                    )
+
+                                if failureType
+                                    == "UNCERTAIN"
+                                then
+                                    session.UncertainBatch = {
+                                        Recipient =
+                                            route.Recipient,
+
+                                        Payload =
+                                            payload,
+
+                                        History =
+                                            batchHistory,
+
+                                        Accepted =
+                                            acceptedByServer == true,
+                                    }
+                                end
+
+                                break
                             end
                         end
 
-                        itemProgressFill.Size =
-                            UDim2.fromScale(
-                                completedMails
-                                    / math.max(
-                                        totalMails,
-                                        1
-                                    ),
-                                1
+                        if failureType == "UNCERTAIN" then
+                            historyRecord.Status =
+                                "Uncertain"
+                        elseif recipientComplete then
+                            historyRecord.Status =
+                                "Sent"
+                        elseif historyRecord.AcceptedMails > 0
+                            or state.Stop
+                        then
+                            historyRecord.Status =
+                                "Partial"
+                        else
+                            historyRecord.Status =
+                                "Failed"
+                        end
+
+                        historyRecord.Error =
+                            failure
+                            or (
+                                state.Stop
+                                and "Stopped by user"
+                                or ""
                             )
 
-                        itemMessageText.Text =
-                            string.format(
-                                "Sent %d of %d items.",
-                                completedItems,
-                                totalItems
-                            )
-                    end
-
-                    if recipientComplete then
-                        historyRecord.Status =
-                            "Sent"
-                    elseif historyRecord.AcceptedMails > 0
-                        or state.Stop
-                    then
-                        historyRecord.Status =
-                            "Partial"
-                    else
-                        historyRecord.Status =
-                            "Failed"
-                    end
-
-                    historyRecord.Error =
-                        failure
-                        or (
-                            state.Stop
-                            and "Stopped by user"
-                            or ""
+                        HolyMailHistoryAdd(
+                            historyRecord
                         )
 
-                    HolyMailHistoryAdd(
-                        historyRecord
+                        if recipientComplete then
+                            completedPeople +=
+                                1
+                        else
+                            break
+                        end
+                    end
+
+                    local stopped =
+                        state.Stop
+                        and not failure
+
+                    local complete =
+                        completedMails == totalMails
+                        and not failure
+                        and not stopped
+
+                    if complete then
+                        session.Status =
+                            "Complete"
+
+                        state.ExactSession =
+                            nil
+                    elseif failureType == "UNCERTAIN" then
+                        session.Status =
+                            "Uncertain"
+                    else
+                        session.Status =
+                            "Paused"
+                    end
+
+                    state.Running =
+                        false
+
+                    state.Stop =
+                        false
+
+                    setStatus(
+                        complete
+                                and "Complete"
+                            or failureType == "UNCERTAIN"
+                                    and "Confirmation uncertain"
+                                or "Paused",
+                        complete
+                                and color.Green
+                            or failureType == "UNCERTAIN"
+                                    and color.Red
+                                or color.Yellow
                     )
 
-                    if recipientComplete then
-                        completedPeople +=
-                            1
-
-                        state.ExactQueues[
-                            route.Recipient.UserId
-                        ] =
-                            {}
-                    else
-                        break
-                    end
-                end
-
-                local stopped =
-                    state.Stop
-                    and not failure
-
-                local complete =
-                    completedMails == totalMails
-                    and not failure
-                    and not stopped
-
-                state.Running =
-                    false
-
-                state.Stop =
-                    false
-
-                itemSendButton.Text =
-                    "Review and send"
-
-                setStatus(
-                    complete
-                            and "Complete"
-                        or stopped
-                                and "Stopped"
-                            or "Paused",
-                    complete
-                            and color.Green
-                        or color.Yellow
-                )
-
-                showModal(
-                    complete
-                            and "Delivery complete"
-                        or failureType == "DAILY"
-                                and "Daily limit reached"
-                            or stopped
-                                    and "Delivery stopped"
-                                or "Delivery paused",
-                    (
-                        failure
-                            and tostring(
-                                failure
-                            )
+                    showModal(
+                        complete
+                                and "Delivery complete"
+                            or failureType == "UNCERTAIN"
+                                    and "Confirmation uncertain"
+                                or failureType == "DAILY"
+                                        and "Daily limit reached"
+                                    or "Delivery paused",
+                        (
+                            failure
+                            and failure
                                 .. "\n\n"
                             or ""
+                        )
+                        .. string.format(
+                            "People completed: %d\nItems accepted: %d\nSends accepted: %d",
+                            completedPeople,
+                            completedItems,
+                            completedMails
+                        ),
+                        nil,
+                        nil,
+                        not complete
                     )
-                    .. string.format(
-                        "People completed: %d\nItems sent: %d\nSends used: %d",
-                        completedPeople,
-                        completedItems,
-                        completedMails
-                    ),
-                    nil,
-                    nil,
-                    not complete
+
+                    task.wait(
+                        0.35
+                    )
+
+                    refreshExactItems()
+
+                    if type(
+                        state.ExactSession
+                    ) == "table" then
+                        if state.ExactSession.Status
+                            == "Uncertain"
+                        then
+                            itemSendButton.Text =
+                                "Review uncertain mail"
+
+                            itemSendButton.Active =
+                                true
+
+                            itemSendButton.BackgroundColor3 =
+                                color.Accent
+                        elseif state.ExactSession.Status
+                            == "Paused"
+                        then
+                            itemSendButton.Text =
+                                "Resume remaining delivery"
+                        end
+                    else
+                        itemSendButton.Text =
+                            "Review and send"
+                    end
+                end
+            )
+        end
+
+    state.Safety.RequestExactDelivery =
+        function()
+            if state.Running then
+                state.Stop =
+                    true
+
+                itemSendButton.Text =
+                    "Stopping after current mail..."
+
+                return
+            end
+
+            local session =
+                state.ExactSession
+
+            if type(session) == "table"
+                and session.Status == "Uncertain"
+            then
+                showModal(
+                    "Confirmation uncertain",
+                    "The server accepted the previous mail, but HOLY could not confirm that its items disappeared.\n\nThat batch was removed from the queue and will never be resent automatically.",
+                    "Continue safely",
+                    function()
+                        session.Status =
+                            "Paused"
+
+                        session.UncertainBatch =
+                            nil
+
+                        refreshExactItems()
+
+                        itemSendButton.Text =
+                            "Resume remaining delivery"
+                    end,
+                    true
                 )
 
-                task.wait(
-                    0.35
-                )
+                return
+            end
+
+            local resuming =
+                type(session) == "table"
+                and session.Status == "Paused"
+
+            local routes,
+                totalItems,
+                totalMails,
+                missing =
+                buildExactRoutes()
+
+            if missing > 0 then
+                itemMessageText.Text =
+                    tostring(
+                        missing
+                    )
+                    .. " remaining items are unavailable, protected, or still need a mail test."
 
                 refreshExactItems()
+
+                return
             end
-        )
-    end
 
-    local function requestExactDelivery()
-        if state.Running then
-            state.Stop =
-                true
+            if #routes == 0
+                or totalItems <= 0
+                or totalMails <= 0
+            then
+                if resuming then
+                    state.ExactSession =
+                        nil
 
-            itemSendButton.Text =
-                "Stopping after this mail..."
+                    itemMessageText.Text =
+                        "The remaining delivery is complete."
 
-            return
-        end
+                    itemMessageText.TextColor3 =
+                        color.Green
 
-        local routes,
-            totalItems,
-            totalMails,
-            missing =
-            buildExactRoutes()
+                    itemSendButton.Text =
+                        "Review and send"
 
-        if missing > 0 then
-            itemMessageText.Text =
-                tostring(
-                    missing
-                )
-                .. " selected items are unavailable or still need a mail test."
+                    refreshExactItems()
+                else
+                    itemMessageText.Text =
+                        "Select at least one supported item."
+                end
 
-            refreshExactItems()
+                return
+            end
 
-            return
-        end
+            local remaining =
+                DAILY_LIMIT
+                - tracker.Used
 
-        if #routes == 0
-            or totalItems <= 0
-            or totalMails <= 0
-        then
-            itemMessageText.Text =
-                "Select at least one supported item."
+            if totalMails > remaining then
+                itemMessageText.Text =
+                    "This needs "
+                    .. tostring(
+                        totalMails
+                    )
+                    .. " sends, but only "
+                    .. tostring(
+                        remaining
+                    )
+                    .. " remain today."
 
-            return
-        end
+                return
+            end
 
-        local remaining =
-            DAILY_LIMIT
-            - tracker.Used
-
-        if totalMails > remaining then
-            itemMessageText.Text =
-                "This needs "
-                .. tostring(
-                    totalMails
-                )
-                .. " sends, but only "
-                .. tostring(
-                    remaining
-                )
-                .. " remain today."
-
-            return
-        end
-
-        local seconds =
-            totalMails <= 1
+            local seconds =
+                totalMails <= 1
                 and 0
                 or (
                     totalMails - 1
                 ) * COOLDOWN
 
-        showModal(
-            "Review before sending",
-            string.format(
-                "People: %d\nItems: %d\nSends: %d\nTime: about %ds",
-                #routes,
-                totalItems,
-                totalMails,
-                math.ceil(
-                    seconds
-                )
-            ),
-            "Send now",
-            function()
-                task.spawn(
-                    runExactDelivery,
-                    routes,
+            showModal(
+                resuming
+                        and "Resume remaining delivery"
+                    or "Review before sending",
+                string.format(
+                    "People: %d\nItems remaining: %d\nSends remaining: %d\nTime: about %ds",
+                    #routes,
                     totalItems,
-                    totalMails
-                )
-            end,
-            true
-        )
-    end
+                    totalMails,
+                    math.ceil(
+                        seconds
+                    )
+                ),
+                resuming
+                        and "Resume"
+                    or "Send now",
+                function()
+                    if not resuming then
+                        state.ExactSession = {
+                            Status = "Ready",
+                            AcceptedMails = 0,
+                            AcceptedItems = 0,
+                            UncertainBatch = nil,
+                        }
+                    end
+
+                    task.spawn(
+                        state.Safety.RunExactDelivery,
+                        routes,
+                        totalItems,
+                        totalMails
+                    )
+                end,
+                true
+            )
+        end
 
     local function applyMailMode(
         selectedMode
@@ -116669,7 +117610,7 @@ function HolyMailCreateHud()
     itemSendButton.MouseButton1Click:Connect(function()
         protectedCall(
             "Exact item send",
-            requestExactDelivery
+            state.Safety.RequestExactDelivery
         )
     end)
 
