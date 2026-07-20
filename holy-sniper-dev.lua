@@ -101148,6 +101148,10 @@ HOLY_MAIL_STATE = {
     AutoClaim = false,
     InboxInterval = "2 seconds",
 
+    ValueStrategy = "Send at least",
+    ExtraLimitMode = "5%",
+    ExtraLimitCustom = "5%",
+
     TrackerDay = os.date("!%Y-%m-%d"),
     TrackerUsed = 0,
 }
@@ -101703,6 +101707,92 @@ function HolyMailNormalizeInboxInterval(value)
         seconds
 end
 
+function HolyMailNormalizeValueStrategy(
+    value
+)
+    value =
+        tostring(
+            value
+            or "Send at least"
+        )
+
+    local allowed = {
+        ["Send at least"] = true,
+        ["Closest amount"] = true,
+        ["Don't go over"] = true,
+    }
+
+    if allowed[value] ~= true then
+        value =
+            "Send at least"
+    end
+
+    return value
+end
+
+function HolyMailNormalizeExtraLimitMode(
+    value
+)
+    value =
+        tostring(
+            value
+            or "5%"
+        )
+
+    local allowed = {
+        ["No limit"] = true,
+        ["1%"] = true,
+        ["5%"] = true,
+        ["10%"] = true,
+        ["Custom"] = true,
+    }
+
+    if allowed[value] ~= true then
+        value =
+            "5%"
+    end
+
+    return value
+end
+
+function HolyMailNormalizeExtraLimitCustom(
+    value
+)
+    value =
+        tostring(
+            value
+            or "5%"
+        )
+            :gsub(
+                "[%c]+",
+                ""
+            )
+            :gsub(
+                "^%s+",
+                ""
+            )
+            :gsub(
+                "%s+$",
+                ""
+            )
+
+    if value == "" then
+        value =
+            "5%"
+    end
+
+    if #value > 24 then
+        value =
+            value:sub(
+                1,
+                24
+            )
+    end
+
+    return value
+end
+
+
 function HolyMailSetHudScale(value)
     local formattedScale =
         HolyMailNormalizeScale(value)
@@ -101814,6 +101904,21 @@ function HolyMailSaveSettings()
             HolyMailNormalizeInboxInterval(
                 HOLY_MAIL_STATE.InboxInterval
                 or "2 seconds"
+            ),
+
+        ValueStrategy =
+            HolyMailNormalizeValueStrategy(
+                HOLY_MAIL_STATE.ValueStrategy
+            ),
+
+        ExtraLimitMode =
+            HolyMailNormalizeExtraLimitMode(
+                HOLY_MAIL_STATE.ExtraLimitMode
+            ),
+
+        ExtraLimitCustom =
+            HolyMailNormalizeExtraLimitCustom(
+                HOLY_MAIL_STATE.ExtraLimitCustom
             ),
 
         HudPosition =
@@ -101940,6 +102045,24 @@ function HolyMailLoadSettings()
             data.InboxInterval
             or HOLY_MAIL_STATE.InboxInterval
             or "2 seconds"
+        )
+
+    HOLY_MAIL_STATE.ValueStrategy =
+        HolyMailNormalizeValueStrategy(
+            data.ValueStrategy
+            or HOLY_MAIL_STATE.ValueStrategy
+        )
+
+    HOLY_MAIL_STATE.ExtraLimitMode =
+        HolyMailNormalizeExtraLimitMode(
+            data.ExtraLimitMode
+            or HOLY_MAIL_STATE.ExtraLimitMode
+        )
+
+    HOLY_MAIL_STATE.ExtraLimitCustom =
+        HolyMailNormalizeExtraLimitCustom(
+            data.ExtraLimitCustom
+            or HOLY_MAIL_STATE.ExtraLimitCustom
         )
 
     HOLY_MAIL_STATE.TrackerDay =
@@ -104423,7 +104546,21 @@ function HolyMailCreateHud()
         Inventory = {},
         Plan = {},
 
-        Strategy = "Send at least",
+        Strategy =
+            HolyMailNormalizeValueStrategy(
+                HOLY_MAIL_STATE.ValueStrategy
+            ),
+
+        ExtraLimitMode =
+            HolyMailNormalizeExtraLimitMode(
+                HOLY_MAIL_STATE.ExtraLimitMode
+            ),
+
+        ExtraLimitCustom =
+            HolyMailNormalizeExtraLimitCustom(
+                HOLY_MAIL_STATE.ExtraLimitCustom
+            ),
+
         Protect = true,
 
         Editing = nil,
@@ -105476,6 +105613,138 @@ function HolyMailCreateHud()
             )
     end
 
+    local function extraLimitCaption()
+        local mode =
+            HolyMailNormalizeExtraLimitMode(
+                state.ExtraLimitMode
+            )
+
+        if mode == "No limit" then
+            return "No limit"
+        end
+
+        local value =
+            mode == "Custom"
+            and HolyMailNormalizeExtraLimitCustom(
+                state.ExtraLimitCustom
+            )
+            or mode
+
+        if value:sub(1, 1) == "+" then
+            return value
+        end
+
+        return "+"
+            .. value
+    end
+
+    local function getMaximumExtra(
+        target
+    )
+        target =
+            math.max(
+                0,
+                tonumber(target)
+                or 0
+            )
+
+        local mode =
+            HolyMailNormalizeExtraLimitMode(
+                state.ExtraLimitMode
+            )
+
+        if mode == "No limit" then
+            return math.huge
+        end
+
+        if mode == "1%"
+            or mode == "5%"
+            or mode == "10%"
+        then
+            local percentage =
+                tonumber(
+                    mode:match(
+                        "[%d%.]+"
+                    )
+                )
+                or 5
+
+            return target
+                * percentage
+                / 100
+        end
+
+        local custom =
+            HolyMailNormalizeExtraLimitCustom(
+                state.ExtraLimitCustom
+            )
+
+        if custom:find(
+            "%",
+            1,
+            true
+        ) then
+            local percentage =
+                tonumber(
+                    custom
+                        :gsub(
+                            "%%",
+                            ""
+                        )
+                        :gsub(
+                            "%s+",
+                            ""
+                        )
+                )
+
+            if percentage
+                and percentage >= 0
+            then
+                return target
+                    * percentage
+                    / 100
+            end
+        else
+            local fixedValue =
+                parseValue(
+                    custom
+                )
+
+            if fixedValue
+                and fixedValue >= 0
+            then
+                return fixedValue
+            end
+        end
+
+        return target
+            * 0.05
+    end
+
+    local function updateStrategyButton()
+        if state.Strategy
+            == "Send at least"
+        then
+            strategyButton.Text =
+                "Send at least · "
+                .. (
+                    state.ExtraLimitMode
+                        == "No limit"
+                        and "No limit"
+                        or (
+                            "Max "
+                            .. extraLimitCaption()
+                        )
+                )
+        else
+            strategyButton.Text =
+                state.Strategy
+        end
+    end
+
+    updateStrategyButton()
+
+
     local function renderRecipients()
         clearRows(
             routeList,
@@ -105800,12 +106069,15 @@ function HolyMailCreateHud()
         target
     )
         local sorted =
-            table.clone(available)
+            table.clone(
+                available
+            )
 
         table.sort(
             sorted,
             function(a, b)
-                return a.Value > b.Value
+                return a.Value
+                    > b.Value
             end
         )
 
@@ -105813,8 +106085,20 @@ function HolyMailCreateHud()
         local used = {}
         local total = 0
 
-        for _, fruit in ipairs(sorted) do
-            if total + fruit.Value <= target then
+        local allocation = {
+            GuardBlocked = false,
+            UnsafeValue = nil,
+            UnsafeExtra = nil,
+            MaxExtra = nil,
+            MaxAllowed = nil,
+        }
+
+        for _, fruit in ipairs(
+            sorted
+        ) do
+            if total + fruit.Value
+                <= target
+            then
                 table.insert(
                     chosen,
                     fruit
@@ -105828,13 +106112,108 @@ function HolyMailCreateHud()
             end
         end
 
-        if state.Strategy ~= "Don't go over"
+        if state.Strategy
+            == "Send at least"
+            and total < target
+        then
+            local maximumExtra =
+                getMaximumExtra(
+                    target
+                )
+
+            local maximumAllowed =
+                maximumExtra == math.huge
+                    and math.huge
+                    or target
+                        + maximumExtra
+
+            allocation.MaxExtra =
+                maximumExtra
+
+            allocation.MaxAllowed =
+                maximumAllowed
+
+            local bestSafe
+            local bestSafeExtra
+
+            local bestUnsafe
+            local bestUnsafeExtra
+
+            for _, fruit in ipairs(
+                sorted
+            ) do
+                if not used[fruit.Id] then
+                    local candidateValue =
+                        total
+                        + fruit.Value
+
+                    if candidateValue
+                        >= target
+                    then
+                        local candidateExtra =
+                            candidateValue
+                            - target
+
+                        if candidateExtra
+                            <= maximumExtra
+                        then
+                            if not bestSafe
+                                or candidateExtra
+                                    < bestSafeExtra
+                            then
+                                bestSafe =
+                                    fruit
+
+                                bestSafeExtra =
+                                    candidateExtra
+                            end
+                        elseif not bestUnsafe
+                            or candidateExtra
+                                < bestUnsafeExtra
+                        then
+                            bestUnsafe =
+                                fruit
+
+                            bestUnsafeExtra =
+                                candidateExtra
+                        end
+                    end
+                end
+            end
+
+            if bestSafe then
+                table.insert(
+                    chosen,
+                    bestSafe
+                )
+
+                used[bestSafe.Id] =
+                    true
+
+                total +=
+                    bestSafe.Value
+            elseif bestUnsafe then
+                allocation.GuardBlocked =
+                    true
+
+                allocation.UnsafeValue =
+                    total
+                    + bestUnsafe.Value
+
+                allocation.UnsafeExtra =
+                    allocation.UnsafeValue
+                    - target
+            end
+        elseif state.Strategy
+            == "Closest amount"
             and total < target
         then
             local best
             local difference
 
-            for _, fruit in ipairs(sorted) do
+            for _, fruit in ipairs(
+                sorted
+            ) do
                 if not used[fruit.Id] then
                     local current =
                         math.abs(
@@ -105844,7 +106223,8 @@ function HolyMailCreateHud()
                         )
 
                     if not best
-                        or current < difference
+                        or current
+                            < difference
                     then
                         best =
                             fruit
@@ -105858,7 +106238,8 @@ function HolyMailCreateHud()
             if best then
                 local below =
                     math.abs(
-                        target - total
+                        target
+                        - total
                     )
 
                 local above =
@@ -105868,13 +106249,14 @@ function HolyMailCreateHud()
                         - best.Value
                     )
 
-                if state.Strategy == "Send at least"
-                    or above < below
-                then
+                if above < below then
                     table.insert(
                         chosen,
                         best
                     )
+
+                    used[best.Id] =
+                        true
 
                     total +=
                         best.Value
@@ -105883,7 +106265,8 @@ function HolyMailCreateHud()
         end
 
         return chosen,
-            total
+            total,
+            allocation
     end
 
     rebuildPlan =
@@ -105933,15 +106316,25 @@ function HolyMailCreateHud()
             local totalValue = 0
             local totalMails = 0
             local incomplete = 0
+            local overpayBlocked = 0
 
             for routeIndex, recipient in ipairs(
                 state.Recipients
             ) do
-                local chosen, chosenValue =
+                local chosen,
+                    chosenValue,
+                    allocation =
                     allocate(
                         available,
                         recipient.Target
                     )
+
+                allocation =
+                    type(allocation) == "table"
+                    and allocation
+                    or {
+                        GuardBlocked = false,
+                    }
 
                 local selected = {}
 
@@ -105965,14 +106358,22 @@ function HolyMailCreateHud()
                     remaining
 
                 local complete =
-                    (
-                        state.Strategy == "Send at least"
-                        and chosenValue >= recipient.Target
+                    allocation.GuardBlocked ~= true
+                    and (
+                        (
+                            state.Strategy == "Send at least"
+                            and chosenValue >= recipient.Target
+                        )
+                        or (
+                            state.Strategy ~= "Send at least"
+                            and #chosen > 0
+                        )
                     )
-                    or (
-                        state.Strategy ~= "Send at least"
-                        and #chosen > 0
-                    )
+
+                if allocation.GuardBlocked == true then
+                    overpayBlocked +=
+                        1
+                end
 
                 if not complete then
                     incomplete +=
@@ -106015,6 +106416,21 @@ function HolyMailCreateHud()
 
                     Complete =
                         complete,
+
+                    GuardBlocked =
+                        allocation.GuardBlocked == true,
+
+                    UnsafeValue =
+                        allocation.UnsafeValue,
+
+                    UnsafeExtra =
+                        allocation.UnsafeExtra,
+
+                    MaxExtra =
+                        allocation.MaxExtra,
+
+                    MaxAllowed =
+                        allocation.MaxAllowed,
                 }
 
                 table.insert(
@@ -106274,23 +106690,27 @@ function HolyMailCreateHud()
 
                     text(
                         row,
-                        entry.Complete
-                                and "Ready"
-                            or "Needs value",
+                        entry.GuardBlocked
+                                and "Cannot reach safely"
+                            or entry.Complete
+                                    and "Ready"
+                                or "Needs value",
                         UDim2.fromOffset(
-                            105,
+                            150,
                             24
                         ),
                         UDim2.new(
                             1,
-                            -117,
+                            -162,
                             0,
                             7
                         ),
                         9,
-                        entry.Complete
-                                and color.Green
-                            or color.Yellow,
+                        entry.GuardBlocked
+                                and color.Red
+                            or entry.Complete
+                                    and color.Green
+                                or color.Yellow,
                         Enum.TextXAlignment.Right,
                         Enum.Font.GothamBold
                     )
@@ -106525,6 +106945,36 @@ function HolyMailCreateHud()
                             .. "s"
                     or "Immediate"
 
+            local remainingUses =
+                math.max(
+                    0,
+                    DAILY_LIMIT
+                    - tracker.Used
+                )
+
+            local canSend =
+                #plan > 0
+                and totalMails > 0
+                and incomplete == 0
+                and overpayBlocked == 0
+                and totalMails <= remainingUses
+
+            sendButton.Active =
+                canSend
+
+            sendButton.AutoButtonColor =
+                canSend
+
+            sendButton.BackgroundColor3 =
+                canSend
+                        and color.Accent
+                    or color.Hover
+
+            sendButton.TextColor3 =
+                canSend
+                        and color.Text
+                    or color.Muted
+
             if #inventory == 0
                 and unvalued > 0
             then
@@ -106536,13 +106986,26 @@ function HolyMailCreateHud()
             elseif #state.Recipients == 0 then
                 messageText.Text =
                     "Add a recipient and target."
+            elseif overpayBlocked > 0 then
+                messageText.Text =
+                    tostring(
+                        overpayBlocked
+                    )
+                    .. (
+                        overpayBlocked == 1
+                            and " target cannot be reached within the maximum extra value."
+                            or " targets cannot be reached within the maximum extra value."
+                    )
+
+                messageText.TextColor3 =
+                    color.Red
             elseif incomplete > 0 then
                 messageText.Text =
-                    tostring(incomplete)
+                    tostring(
+                        incomplete
+                    )
                     .. " target(s) cannot be completed."
-            elseif totalMails
-                > DAILY_LIMIT - tracker.Used
-            then
+            elseif totalMails > remainingUses then
                 messageText.Text =
                     "This needs more sends than you have left today."
             else
@@ -106725,6 +107188,512 @@ function HolyMailCreateHud()
                 callback()
             end)
         end
+    end
+
+    local function showStrategySettings()
+        if state.Running
+            or state.Busy
+        then
+            return
+        end
+
+        closeModal()
+
+        overlay.Visible =
+            true
+
+        local modal =
+            create(
+                "Frame",
+                {
+                    AnchorPoint =
+                        Vector2.new(
+                            0.5,
+                            0.5
+                        ),
+
+                    Position =
+                        UDim2.fromScale(
+                            0.5,
+                            0.5
+                        ),
+
+                    Size =
+                        UDim2.fromOffset(
+                            610,
+                            405
+                        ),
+
+                    BackgroundColor3 =
+                        color.Card,
+
+                    ZIndex =
+                        51,
+                },
+                overlay
+            )
+
+        round(
+            modal,
+            18
+        )
+
+        outline(
+            modal,
+            color.Border
+        )
+
+        local heading =
+            text(
+                modal,
+                "Value Strategy",
+                UDim2.new(
+                    1,
+                    -36,
+                    0,
+                    28
+                ),
+                UDim2.fromOffset(
+                    18,
+                    16
+                ),
+                18,
+                color.Text,
+                nil,
+                Enum.Font.GothamBold
+            )
+
+        heading.ZIndex =
+            52
+
+        local subtitle =
+            text(
+                modal,
+                "Choose how HOLY selects fruits and how much extra value is allowed.",
+                UDim2.new(
+                    1,
+                    -36,
+                    0,
+                    20
+                ),
+                UDim2.fromOffset(
+                    18,
+                    47
+                ),
+                10,
+                color.Muted
+            )
+
+        subtitle.ZIndex =
+            52
+
+        local draftStrategy =
+            HolyMailNormalizeValueStrategy(
+                state.Strategy
+            )
+
+        local draftLimit =
+            HolyMailNormalizeExtraLimitMode(
+                state.ExtraLimitMode
+            )
+
+        local draftCustom =
+            HolyMailNormalizeExtraLimitCustom(
+                state.ExtraLimitCustom
+            )
+
+        local strategyChoices = {
+            "Send at least",
+            "Closest amount",
+            "Don't go over",
+        }
+
+        local limitChoices = {
+            "No limit",
+            "1%",
+            "5%",
+            "10%",
+            "Custom",
+        }
+
+        local strategyButtons = {}
+        local limitButtons = {}
+
+        text(
+            modal,
+            "STRATEGY",
+            UDim2.fromOffset(
+                200,
+                18
+            ),
+            UDim2.fromOffset(
+                18,
+                82
+            ),
+            9,
+            color.Muted,
+            nil,
+            Enum.Font.GothamBold
+        ).ZIndex =
+            52
+
+        for index, choice in ipairs(
+            strategyChoices
+        ) do
+            local choiceButton =
+                button(
+                    modal,
+                    choice,
+                    UDim2.fromOffset(
+                        184,
+                        40
+                    ),
+                    UDim2.fromOffset(
+                        18
+                        + (
+                            index - 1
+                        ) * 196,
+                        105
+                    ),
+                    false
+                )
+
+            choiceButton.ZIndex =
+                53
+
+            choiceButton.TextSize =
+                10
+
+            strategyButtons[choice] =
+                choiceButton
+        end
+
+        text(
+            modal,
+            "MAXIMUM EXTRA VALUE",
+            UDim2.fromOffset(
+                260,
+                18
+            ),
+            UDim2.fromOffset(
+                18,
+                166
+            ),
+            9,
+            color.Muted,
+            nil,
+            Enum.Font.GothamBold
+        ).ZIndex =
+            52
+
+        for index, choice in ipairs(
+            limitChoices
+        ) do
+            local choiceButton =
+                button(
+                    modal,
+                    choice,
+                    UDim2.fromOffset(
+                        106,
+                        38
+                    ),
+                    UDim2.fromOffset(
+                        18
+                        + (
+                            index - 1
+                        ) * 116,
+                        190
+                    ),
+                    false
+                )
+
+            choiceButton.ZIndex =
+                53
+
+            choiceButton.TextSize =
+                9
+
+            limitButtons[choice] =
+                choiceButton
+        end
+
+        local customBox =
+            create(
+                "TextBox",
+                {
+                    BackgroundColor3 =
+                        color.Field,
+
+                    Size =
+                        UDim2.new(
+                            1,
+                            -36,
+                            0,
+                            43
+                        ),
+
+                    Position =
+                        UDim2.fromOffset(
+                            18,
+                            248
+                        ),
+
+                    Text =
+                        draftCustom,
+
+                    PlaceholderText =
+                        "Example: 2.5% or $5M",
+
+                    TextColor3 =
+                        color.Text,
+
+                    PlaceholderColor3 =
+                        color.Muted,
+
+                    Font =
+                        Enum.Font.GothamMedium,
+
+                    TextSize =
+                        11,
+
+                    ClearTextOnFocus =
+                        false,
+
+                    ZIndex =
+                        53,
+                },
+                modal
+            )
+
+        round(
+            customBox,
+            10
+        )
+
+        outline(
+            customBox,
+            color.Border
+        )
+
+        local customHint =
+            text(
+                modal,
+                "Custom accepts a percentage such as 2.5% or a fixed value such as $5M.",
+                UDim2.new(
+                    1,
+                    -36,
+                    0,
+                    18
+                ),
+                UDim2.fromOffset(
+                    18,
+                    296
+                ),
+                9,
+                color.Muted
+            )
+
+        customHint.ZIndex =
+            52
+
+        local function refreshChoices()
+            for choice, choiceButton in pairs(
+                strategyButtons
+            ) do
+                local selected =
+                    choice == draftStrategy
+
+                choiceButton.BackgroundColor3 =
+                    selected
+                            and color.Accent
+                        or color.Field
+
+                choiceButton.TextColor3 =
+                    selected
+                            and color.Text
+                        or color.Secondary
+            end
+
+            for choice, choiceButton in pairs(
+                limitButtons
+            ) do
+                local selected =
+                    choice == draftLimit
+
+                choiceButton.BackgroundColor3 =
+                    selected
+                            and color.Accent
+                        or color.Field
+
+                choiceButton.TextColor3 =
+                    selected
+                            and color.Text
+                        or color.Secondary
+            end
+
+            customBox.Visible =
+                draftLimit == "Custom"
+
+            customHint.Visible =
+                draftLimit == "Custom"
+        end
+
+        for choice, choiceButton in pairs(
+            strategyButtons
+        ) do
+            choiceButton.MouseButton1Click:Connect(function()
+                draftStrategy =
+                    choice
+
+                refreshChoices()
+            end)
+        end
+
+        for choice, choiceButton in pairs(
+            limitButtons
+        ) do
+            choiceButton.MouseButton1Click:Connect(function()
+                draftLimit =
+                    choice
+
+                refreshChoices()
+            end)
+        end
+
+        refreshChoices()
+
+        local cancel =
+            button(
+                modal,
+                "Cancel",
+                UDim2.fromOffset(
+                    175,
+                    46
+                ),
+                UDim2.fromOffset(
+                    18,
+                    339
+                ),
+                false
+            )
+
+        cancel.ZIndex =
+            53
+
+        cancel.MouseButton1Click:Connect(
+            closeModal
+        )
+
+        local save =
+            button(
+                modal,
+                "Save settings",
+                UDim2.fromOffset(
+                    381,
+                    46
+                ),
+                UDim2.fromOffset(
+                    211,
+                    339
+                ),
+                true
+            )
+
+        save.ZIndex =
+            53
+
+        save.MouseButton1Click:Connect(function()
+            if draftLimit == "Custom" then
+                local custom =
+                    HolyMailNormalizeExtraLimitCustom(
+                        customBox.Text
+                    )
+
+                local valid =
+                    false
+
+            if custom:find(
+                "%",
+                1,
+                true
+            ) then
+                    local percentage =
+                        tonumber(
+                            custom
+                                :gsub(
+                                    "%%",
+                                    ""
+                                )
+                                :gsub(
+                                    "%s+",
+                                    ""
+                                )
+                        )
+
+                    valid =
+                        percentage ~= nil
+                        and percentage >= 0
+                else
+                    local fixed =
+                        parseValue(
+                            custom
+                        )
+
+                    valid =
+                        fixed ~= nil
+                        and fixed >= 0
+                end
+
+                if not valid then
+                    customHint.Text =
+                        "Enter a valid percentage like 2.5% or value like $5M."
+
+                    customHint.TextColor3 =
+                        color.Red
+
+                    return
+                end
+
+                draftCustom =
+                    custom
+            end
+
+            state.Strategy =
+                HolyMailNormalizeValueStrategy(
+                    draftStrategy
+                )
+
+            state.ExtraLimitMode =
+                HolyMailNormalizeExtraLimitMode(
+                    draftLimit
+                )
+
+            state.ExtraLimitCustom =
+                HolyMailNormalizeExtraLimitCustom(
+                    draftCustom
+                )
+
+            HOLY_MAIL_STATE.ValueStrategy =
+                state.Strategy
+
+            HOLY_MAIL_STATE.ExtraLimitMode =
+                state.ExtraLimitMode
+
+            HOLY_MAIL_STATE.ExtraLimitCustom =
+                state.ExtraLimitCustom
+
+            HolyMailSaveSettings()
+
+            updateStrategyButton()
+            closeModal()
+
+            task.spawn(function()
+                protectedCall(
+                    "Strategy settings",
+                    rebuildPlan
+                )
+            end)
+        end)
     end
 
     showFruitPreview =
@@ -108083,8 +109052,11 @@ function HolyMailCreateHud()
         local fruits = 0
         local value = 0
         local incomplete = false
+        local overpayBlocked = false
 
-        for _, entry in ipairs(state.Plan) do
+        for _, entry in ipairs(
+            state.Plan
+        ) do
             mails +=
                 entry.Mails
 
@@ -108097,6 +109069,26 @@ function HolyMailCreateHud()
             incomplete =
                 incomplete
                 or not entry.Complete
+
+            overpayBlocked =
+                overpayBlocked
+                or entry.GuardBlocked == true
+        end
+
+        if overpayBlocked then
+            messageText.Text =
+                "Cannot reach one or more targets within the maximum extra value."
+
+            messageText.TextColor3 =
+                color.Red
+
+            sendButton.Active =
+                false
+
+            sendButton.AutoButtonColor =
+                false
+
+            return
         end
 
         if incomplete
@@ -108104,6 +109096,9 @@ function HolyMailCreateHud()
         then
             messageText.Text =
                 "The delivery is incomplete and cannot start."
+
+            messageText.TextColor3 =
+                color.Red
 
             return
         end
@@ -108113,6 +109108,9 @@ function HolyMailCreateHud()
         then
             messageText.Text =
                 "This needs more sends than you have left today."
+
+            messageText.TextColor3 =
+                color.Red
 
             return
         end
@@ -108124,15 +109122,26 @@ function HolyMailCreateHud()
                 mails - 1
             ) * COOLDOWN
 
+        local maximumExtraText =
+            state.Strategy == "Send at least"
+                    and extraLimitCaption()
+                or "Not used"
+
         showModal(
             "Review before sending",
             string.format(
-                "People: %d\nFruits: %d\nTotal value: %s\nSends: %d\nTime: about %ds",
+                "Strategy: %s\nMaximum extra: %s\nPeople: %d\nFruits: %d\nTotal value: %s\nSends: %d\nTime: about %ds",
+                state.Strategy,
+                maximumExtraText,
                 #state.Plan,
                 fruits,
-                formatValue(value),
+                formatValue(
+                    value
+                ),
                 mails,
-                math.ceil(seconds)
+                math.ceil(
+                    seconds
+                )
             ),
             "Send now",
             function()
@@ -108315,12 +109324,6 @@ function HolyMailCreateHud()
         )
     end)
 
-    local strategies = {
-        "Send at least",
-        "Closest amount",
-        "Don't go over",
-    }
-
     strategyButton.MouseButton1Click:Connect(function()
         if state.Running
             or state.Busy
@@ -108328,26 +109331,7 @@ function HolyMailCreateHud()
             return
         end
 
-        local index =
-            table.find(
-                strategies,
-                state.Strategy
-            ) or 1
-
-        state.Strategy =
-            strategies[
-                index % #strategies + 1
-            ]
-
-        strategyButton.Text =
-            state.Strategy
-
-        task.spawn(function()
-            protectedCall(
-                "Strategy",
-                rebuildPlan
-            )
-        end)
+        showStrategySettings()
     end)
 
     favoriteButton.MouseButton1Click:Connect(function()
