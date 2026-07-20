@@ -100848,17 +100848,296 @@ local HOLY_MAIL_BATCH_LIMIT = 20
 local HOLY_MAIL_COOLDOWN = 10.05
 local HOLY_MAIL_INBOX_CAPACITY = 100
 
+local HOLY_MAIL_ACCOUNT_USER_ID =
+    math.max(
+        0,
+        math.floor(
+            tonumber(
+                LocalPlayer.UserId
+            )
+            or 0
+        )
+    )
+
+local HOLY_MAIL_LEGACY_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumMailSettings.json"
+
+local HOLY_MAIL_LEGACY_HISTORY_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumMailHistory.json"
+
+local HOLY_MAIL_MIGRATION_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumMailMigration.json"
+
 local HOLY_MAIL_SETTINGS_FILE =
-    UI_SETTINGS_FOLDER .. "/HolyPremiumMailSettings.json"
+    UI_SETTINGS_FOLDER
+    .. "/HolyMail_"
+    .. tostring(
+        HOLY_MAIL_ACCOUNT_USER_ID
+    )
+    .. "_Settings.json"
 
 local HOLY_MAIL_HISTORY_FILE =
-    UI_SETTINGS_FOLDER .. "/HolyPremiumMailHistory.json"
+    UI_SETTINGS_FOLDER
+    .. "/HolyMail_"
+    .. tostring(
+        HOLY_MAIL_ACCOUNT_USER_ID
+    )
+    .. "_History.json"
 
 local HOLY_MAIL_HISTORY_LIMIT =
     200
 
 local HolyMailTweenService =
     game:GetService("TweenService")
+
+local function HolyMailAccountFileExists(
+    filePath
+)
+    if type(filePath) ~= "string"
+        or filePath == ""
+        or type(isfile) ~= "function"
+    then
+        return false
+    end
+
+    local success,
+        exists =
+        pcall(
+            isfile,
+            filePath
+        )
+
+    return success == true
+        and exists == true
+end
+
+local function HolyMailReadJsonFile(
+    filePath
+)
+    if not HolyMailAccountFileExists(
+        filePath
+    ) then
+        return nil,
+            nil
+    end
+
+    local readOk,
+        raw =
+        pcall(
+            readfile,
+            filePath
+        )
+
+    if readOk ~= true
+        or type(raw) ~= "string"
+        or raw == ""
+    then
+        return nil,
+            nil
+    end
+
+    local decodeOk,
+        decoded =
+        pcall(function()
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+        or type(decoded) ~= "table"
+    then
+        return nil,
+            raw
+    end
+
+    return decoded,
+        raw
+end
+
+local function HolyMailWriteJsonFile(
+    filePath,
+    data
+)
+    if HolyCanUseFiles() ~= true
+        or type(filePath) ~= "string"
+        or type(data) ~= "table"
+    then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+            return HttpService:JSONEncode(
+                data
+            )
+        end)
+
+    if encodeOk ~= true
+        or type(encoded) ~= "string"
+    then
+        return false
+    end
+
+    local writeOk =
+        pcall(
+            writefile,
+            filePath,
+            encoded
+        )
+
+    return writeOk == true
+end
+
+local function HolyMailCopyLegacyFile(
+    legacyPath,
+    accountPath
+)
+    if HolyMailAccountFileExists(
+        accountPath
+    ) then
+        return true
+    end
+
+    local decoded,
+        raw =
+        HolyMailReadJsonFile(
+            legacyPath
+        )
+
+    if type(decoded) ~= "table"
+        or type(raw) ~= "string"
+        or raw == ""
+    then
+        return false
+    end
+
+    local writeOk =
+        pcall(
+            writefile,
+            accountPath,
+            raw
+        )
+
+    return writeOk == true
+end
+
+local function HolyMailPrepareAccountFiles()
+    if HolyCanUseFiles() ~= true
+        or HOLY_MAIL_ACCOUNT_USER_ID <= 0
+    then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local migration =
+        HolyMailReadJsonFile(
+            HOLY_MAIL_MIGRATION_FILE
+        )
+
+    if type(migration) ~= "table" then
+        migration = {
+            Version = 1,
+        }
+    end
+
+    local migrationOwner =
+        math.floor(
+            tonumber(
+                migration.OwnerUserId
+            )
+            or 0
+        )
+
+    if migrationOwner <= 0 then
+        migrationOwner =
+            HOLY_MAIL_ACCOUNT_USER_ID
+
+        migration.OwnerUserId =
+            HOLY_MAIL_ACCOUNT_USER_ID
+
+        migration.OwnerName =
+            tostring(
+                LocalPlayer.Name
+            )
+
+        migration.ClaimedAt =
+            os.time()
+
+        if not HolyMailWriteJsonFile(
+            HOLY_MAIL_MIGRATION_FILE,
+            migration
+        ) then
+            return false
+        end
+    end
+
+    if migrationOwner
+        ~= HOLY_MAIL_ACCOUNT_USER_ID
+    then
+        return true
+    end
+
+    local settingsReady =
+        HolyMailAccountFileExists(
+            HOLY_MAIL_SETTINGS_FILE
+        )
+
+    if not settingsReady then
+        settingsReady =
+            HolyMailCopyLegacyFile(
+                HOLY_MAIL_LEGACY_SETTINGS_FILE,
+                HOLY_MAIL_SETTINGS_FILE
+            )
+    end
+
+    local historyReady =
+        HolyMailAccountFileExists(
+            HOLY_MAIL_HISTORY_FILE
+        )
+
+    if not historyReady then
+        historyReady =
+            HolyMailCopyLegacyFile(
+                HOLY_MAIL_LEGACY_HISTORY_FILE,
+                HOLY_MAIL_HISTORY_FILE
+            )
+    end
+
+    migration.Version =
+        1
+
+    migration.OwnerUserId =
+        HOLY_MAIL_ACCOUNT_USER_ID
+
+    migration.OwnerName =
+        tostring(
+            LocalPlayer.Name
+        )
+
+    migration.SettingsMigrated =
+        settingsReady == true
+
+    migration.HistoryMigrated =
+        historyReady == true
+
+    migration.LastCheckedAt =
+        os.time()
+
+    HolyMailWriteJsonFile(
+        HOLY_MAIL_MIGRATION_FILE,
+        migration
+    )
+
+    return true
+end
 
 HOLY_MAIL_STATE = {
     HudEnabled = false,
@@ -100909,7 +101188,16 @@ HOLY_MAIL_RUNTIME = {
 }
 
 HOLY_MAIL_HISTORY = {
-    Version = 1,
+    Version = 2,
+
+    UserId =
+        HOLY_MAIL_ACCOUNT_USER_ID,
+
+    Username =
+        tostring(
+            LocalPlayer.Name
+        ),
+
     Records = {},
 }
 
@@ -100975,7 +101263,16 @@ end
 
 function HolyMailHistoryLoad()
     HOLY_MAIL_HISTORY = {
-        Version = 1,
+        Version = 2,
+
+        UserId =
+            HOLY_MAIL_ACCOUNT_USER_ID,
+
+        Username =
+            tostring(
+                LocalPlayer.Name
+            ),
+
         Records = {},
     }
 
@@ -101023,6 +101320,32 @@ function HolyMailHistoryLoad()
     then
         return false
     end
+
+    local storedUserId =
+        math.floor(
+            tonumber(
+                decoded.UserId
+            )
+            or 0
+        )
+
+    if storedUserId > 0
+        and storedUserId
+            ~= HOLY_MAIL_ACCOUNT_USER_ID
+    then
+        return false
+    end
+
+    HOLY_MAIL_HISTORY.Version =
+        2
+
+    HOLY_MAIL_HISTORY.UserId =
+        HOLY_MAIL_ACCOUNT_USER_ID
+
+    HOLY_MAIL_HISTORY.Username =
+        tostring(
+            LocalPlayer.Name
+        )
 
     for _, record in ipairs(
         decoded.Records
@@ -101080,6 +101403,25 @@ function HolyMailHistoryAdd(record)
         type(record.Items) == "table"
             and record.Items
             or {}
+
+    record.AccountUserId =
+        HOLY_MAIL_ACCOUNT_USER_ID
+
+    record.AccountUsername =
+        tostring(
+            LocalPlayer.Name
+        )
+
+    HOLY_MAIL_HISTORY.Version =
+        2
+
+    HOLY_MAIL_HISTORY.UserId =
+        HOLY_MAIL_ACCOUNT_USER_ID
+
+    HOLY_MAIL_HISTORY.Username =
+        tostring(
+            LocalPlayer.Name
+        )
 
     table.insert(
         HOLY_MAIL_HISTORY.Records,
@@ -101442,6 +101784,17 @@ function HolyMailSaveSettings()
             or nil
 
     local payload = {
+        Version =
+            2,
+
+        UserId =
+            HOLY_MAIL_ACCOUNT_USER_ID,
+
+        Username =
+            tostring(
+                LocalPlayer.Name
+            ),
+
         HudEnabled =
             HOLY_MAIL_STATE.HudEnabled == true,
 
@@ -101543,6 +101896,23 @@ function HolyMailLoadSettings()
 
     if decodeOk ~= true
         or type(data) ~= "table"
+    then
+        HolyMailCheckDay()
+
+        return false
+    end
+
+    local storedUserId =
+        math.floor(
+            tonumber(
+                data.UserId
+            )
+            or 0
+        )
+
+    if storedUserId > 0
+        and storedUserId
+            ~= HOLY_MAIL_ACCOUNT_USER_ID
     then
         HolyMailCheckDay()
 
@@ -102443,6 +102813,7 @@ function HolyMailSetAutoClaim(value)
     return enabled
 end
 
+HolyMailPrepareAccountFiles()
 HolyMailLoadSettings()
 HolyMailHistoryLoad()
 
@@ -104616,6 +104987,138 @@ function HolyMailCreateHud()
             mutation
     end
 
+    local function valuePreviewFruitIcon(
+        item,
+        info
+    )
+        local candidates = {}
+
+        if type(info) == "table" then
+            table.insert(
+                candidates,
+                info.IMG
+            )
+
+            table.insert(
+                candidates,
+                info.Icon
+            )
+
+            table.insert(
+                candidates,
+                info.Image
+            )
+
+            table.insert(
+                candidates,
+                info.ImageId
+            )
+
+            table.insert(
+                candidates,
+                info.FruitImage
+            )
+
+            table.insert(
+                candidates,
+                info.FruitIcon
+            )
+
+            table.insert(
+                candidates,
+                info.TextureId
+            )
+        end
+
+        if typeof(item) == "Instance" then
+            table.insert(
+                candidates,
+                item:GetAttribute("IMG")
+            )
+
+            table.insert(
+                candidates,
+                item:GetAttribute("Icon")
+            )
+
+            table.insert(
+                candidates,
+                item:GetAttribute("Image")
+            )
+
+            table.insert(
+                candidates,
+                item:GetAttribute("ImageId")
+            )
+
+            table.insert(
+                candidates,
+                item:GetAttribute("FruitImage")
+            )
+
+            table.insert(
+                candidates,
+                item:GetAttribute("FruitIcon")
+            )
+
+            table.insert(
+                candidates,
+                item:GetAttribute("TextureId")
+            )
+
+            if item:IsA("Tool") then
+                table.insert(
+                    candidates,
+                    item.TextureId
+                )
+            end
+        end
+
+        for _, candidate in ipairs(
+            candidates
+        ) do
+            local icon =
+                HolyMailHistoryNormalizeIcon(
+                    candidate
+                )
+
+            if icon ~= "" then
+                return icon
+            end
+        end
+
+        if typeof(item) == "Instance" then
+            for _, descendant in ipairs(
+                item:GetDescendants()
+            ) do
+                local rawIcon
+
+                if descendant:IsA("ImageLabel")
+                    or descendant:IsA("ImageButton")
+                then
+                    rawIcon =
+                        descendant.Image
+                elseif descendant:IsA("Decal")
+                    or descendant:IsA("Texture")
+                then
+                    rawIcon =
+                        descendant.Texture
+                end
+
+                local icon =
+                    HolyMailHistoryNormalizeIcon(
+                        rawIcon
+                    )
+
+                if icon ~= "" then
+                    return icon
+                end
+            end
+        end
+
+        return ""
+    end
+
     local function readFruit(item)
         if not (
             item:IsA("Tool")
@@ -104781,6 +105284,12 @@ function HolyMailCreateHud()
                     and mutation
                     or "Normal",
 
+            Icon =
+                valuePreviewFruitIcon(
+                    item,
+                    info
+                ),
+
             Value =
                 math.floor(
                     value + 0.5
@@ -104924,6 +105433,48 @@ function HolyMailCreateHud()
     end
 
     local rebuildPlan
+    local showFruitPreview
+
+    local function formatSignedMailValue(
+        value
+    )
+        value =
+            tonumber(value)
+            or 0
+
+        local prefix =
+            value > 0
+                and "+"
+                or value < 0
+                    and "-"
+                    or ""
+
+        return prefix
+            .. formatValue(
+                math.abs(value)
+            )
+    end
+
+    local function formatSignedMailPercent(
+        value
+    )
+        value =
+            tonumber(value)
+            or 0
+
+        local prefix =
+            value > 0
+                and "+"
+                or value < 0
+                    and "-"
+                    or ""
+
+        return prefix
+            .. string.format(
+                "%.1f%%",
+                math.abs(value)
+            )
+    end
 
     local function renderRecipients()
         clearRows(
@@ -105441,6 +105992,22 @@ function HolyMailCreateHud()
                     Value =
                         chosenValue,
 
+                    Extra =
+                        chosenValue
+                        - recipient.Target,
+
+                    ExtraPercent =
+                        recipient.Target > 0
+                        and (
+                            (
+                                chosenValue
+                                - recipient.Target
+                            )
+                            / recipient.Target
+                            * 100
+                        )
+                        or 0,
+
                     Mails =
                         math.ceil(
                             #chosen / BATCH_LIMIT
@@ -105653,7 +106220,7 @@ function HolyMailCreateHud()
                                         1,
                                         -2,
                                         0,
-                                        66
+                                        118
                                     ),
 
                                 LayoutOrder =
@@ -105676,12 +106243,12 @@ function HolyMailCreateHud()
                         row,
                         entry.Recipient.UserId,
                         UDim2.fromOffset(
-                            38,
-                            38
+                            32,
+                            32
                         ),
                         UDim2.fromOffset(
-                            11,
-                            14
+                            12,
+                            8
                         )
                     )
 
@@ -105691,13 +106258,13 @@ function HolyMailCreateHud()
                             .. entry.Recipient.Name,
                         UDim2.new(
                             1,
-                            -268,
+                            -180,
                             0,
-                            20
+                            24
                         ),
                         UDim2.fromOffset(
-                            59,
-                            8
+                            54,
+                            7
                         ),
                         11,
                         color.Text,
@@ -105707,71 +106274,204 @@ function HolyMailCreateHud()
 
                     text(
                         row,
-                        string.format(
-                            "%d fruits - %d sends",
-                            #entry.Fruits,
-                            entry.Mails
-                        ),
-                        UDim2.new(
-                            1,
-                            -268,
-                            0,
-                            18
-                        ),
-                        UDim2.fromOffset(
-                            59,
-                            34
-                        ),
-                        9,
-                        color.Muted
-                    )
-
-                    text(
-                        row,
-                        formatValue(
-                            entry.Recipient.Target
-                        )
-                            .. " -> "
-                            .. formatValue(
-                                entry.Value
-                            ),
-                        UDim2.fromOffset(
-                            200,
-                            22
-                        ),
-                        UDim2.new(
-                            1,
-                            -212,
-                            0,
-                            9
-                        ),
-                        11,
-                        color.Text,
-                        Enum.TextXAlignment.Right,
-                        Enum.Font.GothamBold
-                    )
-
-                    text(
-                        row,
                         entry.Complete
                                 and "Ready"
-                            or "Not enough fruit value",
+                            or "Needs value",
                         UDim2.fromOffset(
-                            200,
-                            18
+                            105,
+                            24
                         ),
                         UDim2.new(
                             1,
-                            -212,
+                            -117,
                             0,
-                            36
+                            7
                         ),
                         9,
                         entry.Complete
                                 and color.Green
                             or color.Yellow,
-                        Enum.TextXAlignment.Right
+                        Enum.TextXAlignment.Right,
+                        Enum.Font.GothamBold
                     )
+
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Border,
+
+                            BackgroundTransparency =
+                                0.25,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -24,
+                                    0,
+                                    1
+                                ),
+
+                            Position =
+                                UDim2.fromOffset(
+                                    12,
+                                    39
+                                ),
+                        },
+                        row
+                    )
+
+                    local function addPreviewStat(
+                        titleValue,
+                        valueText,
+                        x,
+                        valueColor
+                    )
+                        text(
+                            row,
+                            titleValue,
+                            UDim2.fromOffset(
+                                104,
+                                15
+                            ),
+                            UDim2.fromOffset(
+                                x,
+                                43
+                            ),
+                            8,
+                            color.Muted,
+                            nil,
+                            Enum.Font.GothamBold
+                        )
+
+                        text(
+                            row,
+                            valueText,
+                            UDim2.fromOffset(
+                                104,
+                                20
+                            ),
+                            UDim2.fromOffset(
+                                x,
+                                58
+                            ),
+                            10,
+                            valueColor
+                                or color.Text,
+                            nil,
+                            Enum.Font.GothamSemibold
+                        )
+                    end
+
+                    addPreviewStat(
+                        "TARGET",
+                        formatValue(
+                            entry.Recipient.Target
+                        ),
+                        12,
+                        color.Text
+                    )
+
+                    addPreviewStat(
+                        "SENDING",
+                        formatValue(
+                            entry.Value
+                        ),
+                        120,
+                        color.Text
+                    )
+
+                    addPreviewStat(
+                        "EXTRA "
+                            .. formatSignedMailPercent(
+                                entry.ExtraPercent
+                            ),
+                        formatSignedMailValue(
+                            entry.Extra
+                        ),
+                        228,
+                        entry.Extra >= 0
+                                and color.Green
+                            or color.Yellow
+                    )
+
+                    addPreviewStat(
+                        "FRUITS",
+                        tostring(
+                            #entry.Fruits
+                        ),
+                        336,
+                        color.Text
+                    )
+
+                    addPreviewStat(
+                        "MAIL USES",
+                        tostring(
+                            entry.Mails
+                        ),
+                        444,
+                        color.Text
+                    )
+
+                    local viewButton =
+                        button(
+                            row,
+                            #entry.Fruits > 0
+                                    and "View Selected Fruits"
+                                or "No Fruits Selected",
+                            UDim2.new(
+                                1,
+                                -24,
+                                0,
+                                25
+                            ),
+                            UDim2.fromOffset(
+                                12,
+                                84
+                            ),
+                            false
+                        )
+
+                    viewButton.TextSize =
+                        9
+
+                    viewButton.TextColor3 =
+                        #entry.Fruits > 0
+                                and color.Accent
+                            or color.Muted
+
+                    viewButton.Active =
+                        #entry.Fruits > 0
+
+                    local viewStroke =
+                        viewButton:FindFirstChildOfClass(
+                            "UIStroke"
+                        )
+
+                    if viewStroke
+                        and #entry.Fruits > 0
+                    then
+                        viewStroke.Color =
+                            Color3.fromRGB(
+                                67,
+                                135,
+                                235
+                            )
+                    end
+
+                    viewButton.MouseButton1Click:Connect(function()
+                        if not viewButton.Active then
+                            return
+                        end
+
+                        if type(showFruitPreview)
+                            == "function"
+                        then
+                            showFruitPreview(
+                                entry
+                            )
+                        end
+                    end)
                 end
             end
 
@@ -106026,6 +106726,704 @@ function HolyMailCreateHud()
             end)
         end
     end
+
+    showFruitPreview =
+        function(entry)
+            if type(entry) ~= "table" then
+                return
+            end
+
+            closeModal()
+
+            overlay.Visible =
+                true
+
+            local modal =
+                create(
+                    "Frame",
+                    {
+                        AnchorPoint =
+                            Vector2.new(
+                                0.5,
+                                0.5
+                            ),
+
+                        Position =
+                            UDim2.fromScale(
+                                0.5,
+                                0.5
+                            ),
+
+                        Size =
+                            UDim2.fromOffset(
+                                650,
+                                540
+                            ),
+
+                        BackgroundColor3 =
+                            color.Card,
+
+                        ZIndex =
+                            51,
+                    },
+                    overlay
+                )
+
+            round(
+                modal,
+                18
+            )
+
+            outline(
+                modal,
+                color.Border
+            )
+
+            local heading =
+                text(
+                    modal,
+                    "Selected Fruits",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        26
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        13
+                    ),
+                    17,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamBold
+                )
+
+            heading.ZIndex =
+                52
+
+            local subtitleLabel =
+                text(
+                    modal,
+                    "@"
+                        .. tostring(
+                            entry.Recipient
+                            and entry.Recipient.Name
+                            or "Unknown"
+                        )
+                        .. "  ·  "
+                        .. tostring(
+                            #(
+                                entry.Fruits
+                                or {}
+                            )
+                        )
+                        .. " fruits  ·  "
+                        .. tostring(
+                            entry.Mails
+                            or 0
+                        )
+                        .. (
+                            tonumber(
+                                entry.Mails
+                            ) == 1
+                                and " mail"
+                                or " mails"
+                        ),
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        20
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        40
+                    ),
+                    9,
+                    color.Muted
+                )
+
+            subtitleLabel.ZIndex =
+                52
+
+            local summaryStrip =
+                create(
+                    "Frame",
+                    {
+                        BackgroundColor3 =
+                            color.Field,
+
+                        Size =
+                            UDim2.new(
+                                1,
+                                -36,
+                                0,
+                                70
+                            ),
+
+                        Position =
+                            UDim2.fromOffset(
+                                18,
+                                69
+                            ),
+
+                        ZIndex =
+                            52,
+                    },
+                    modal
+                )
+
+            round(
+                summaryStrip,
+                11
+            )
+
+            outline(
+                summaryStrip,
+                color.Border
+            )
+
+            local function addModalStat(
+                titleValue,
+                valueText,
+                x,
+                width,
+                valueColor
+            )
+                local titleLabel =
+                    text(
+                        summaryStrip,
+                        titleValue,
+                        UDim2.fromOffset(
+                            width,
+                            18
+                        ),
+                        UDim2.fromOffset(
+                            x,
+                            11
+                        ),
+                        9,
+                        color.Muted,
+                        Enum.TextXAlignment.Center,
+                        Enum.Font.GothamBold
+                    )
+
+                titleLabel.ZIndex =
+                    53
+
+                local valueLabel =
+                    text(
+                        summaryStrip,
+                        valueText,
+                        UDim2.fromOffset(
+                            width,
+                            25
+                        ),
+                        UDim2.fromOffset(
+                            x,
+                            32
+                        ),
+                        13,
+                        valueColor
+                            or color.Text,
+                        Enum.TextXAlignment.Center,
+                        Enum.Font.GothamBold
+                    )
+
+                valueLabel.ZIndex =
+                    53
+            end
+
+            addModalStat(
+                "TARGET",
+                formatValue(
+                    entry.Recipient
+                    and entry.Recipient.Target
+                    or 0
+                ),
+                8,
+                186,
+                color.Text
+            )
+
+            addModalStat(
+                "SENDING",
+                formatValue(
+                    entry.Value
+                    or 0
+                ),
+                204,
+                186,
+                color.Text
+            )
+
+            addModalStat(
+                "EXTRA "
+                    .. formatSignedMailPercent(
+                        entry.ExtraPercent
+                        or 0
+                    ),
+                formatSignedMailValue(
+                    entry.Extra
+                    or 0
+                ),
+                400,
+                186,
+                (
+                    tonumber(
+                        entry.Extra
+                    )
+                    or 0
+                ) >= 0
+                        and color.Green
+                    or color.Yellow
+            )
+
+            local fruitList =
+                create(
+                    "ScrollingFrame",
+                    {
+                        BackgroundTransparency =
+                            1,
+
+                        BorderSizePixel =
+                            0,
+
+                        Size =
+                            UDim2.new(
+                                1,
+                                -36,
+                                0,
+                                326
+                            ),
+
+                        Position =
+                            UDim2.fromOffset(
+                                18,
+                                151
+                            ),
+
+                        CanvasSize =
+                            UDim2.fromOffset(
+                                0,
+                                0
+                            ),
+
+                        AutomaticCanvasSize =
+                            Enum.AutomaticSize.Y,
+
+                        ScrollingDirection =
+                            Enum.ScrollingDirection.Y,
+
+                        ScrollBarThickness =
+                            3,
+
+                        ScrollBarImageColor3 =
+                            color.Border,
+
+                        ClipsDescendants =
+                            true,
+
+                        ZIndex =
+                            52,
+                    },
+                    modal
+                )
+
+            create(
+                "UIListLayout",
+                {
+                    Padding =
+                        UDim.new(
+                            0,
+                            6
+                        ),
+
+                    SortOrder =
+                        Enum.SortOrder.LayoutOrder,
+                },
+                fruitList
+            )
+
+            local fruits =
+                type(entry.Fruits) == "table"
+                and entry.Fruits
+                or {}
+
+            local layoutOrder =
+                0
+
+            if #fruits == 0 then
+                local emptyLabel =
+                    text(
+                        fruitList,
+                        "No fruits were selected for this recipient.",
+                        UDim2.new(
+                            1,
+                            -4,
+                            0,
+                            120
+                        ),
+                        UDim2.fromOffset(
+                            0,
+                            0
+                        ),
+                        11,
+                        color.Muted,
+                        Enum.TextXAlignment.Center,
+                        Enum.Font.GothamMedium
+                    )
+
+                emptyLabel.LayoutOrder =
+                    1
+
+                emptyLabel.ZIndex =
+                    53
+            else
+                for firstIndex = 1,
+                    #fruits,
+                    BATCH_LIMIT
+                do
+                    local lastIndex =
+                        math.min(
+                            firstIndex
+                                + BATCH_LIMIT
+                                - 1,
+                            #fruits
+                        )
+
+                    local batchNumber =
+                        math.floor(
+                            (
+                                firstIndex - 1
+                            )
+                            / BATCH_LIMIT
+                        )
+                        + 1
+
+                    local batchValue =
+                        0
+
+                    for fruitIndex = firstIndex,
+                        lastIndex
+                    do
+                        batchValue +=
+                            tonumber(
+                                fruits[
+                                    fruitIndex
+                                ].Value
+                            )
+                            or 0
+                    end
+
+                    layoutOrder +=
+                        1
+
+                    local batchHeader =
+                        create(
+                            "Frame",
+                            {
+                                BackgroundColor3 =
+                                    color.Hover,
+
+                                Size =
+                                    UDim2.new(
+                                        1,
+                                        -4,
+                                        0,
+                                        31
+                                    ),
+
+                                LayoutOrder =
+                                    layoutOrder,
+
+                                ZIndex =
+                                    52,
+                            },
+                            fruitList
+                        )
+
+                    round(
+                        batchHeader,
+                        9
+                    )
+
+                    local batchLabel =
+                        text(
+                            batchHeader,
+                            "MAIL "
+                                .. tostring(
+                                    batchNumber
+                                )
+                                .. "  ·  "
+                                .. tostring(
+                                    lastIndex
+                                    - firstIndex
+                                    + 1
+                                )
+                                .. "/"
+                                .. tostring(
+                                    BATCH_LIMIT
+                                )
+                                .. " FRUITS  ·  "
+                                .. formatValue(
+                                    batchValue
+                                ),
+                            UDim2.new(
+                                1,
+                                -24,
+                                1,
+                                0
+                            ),
+                            UDim2.fromOffset(
+                                12,
+                                0
+                            ),
+                            9,
+                            color.Secondary,
+                            nil,
+                            Enum.Font.GothamBold
+                        )
+
+                    batchLabel.ZIndex =
+                        53
+
+                    for fruitIndex = firstIndex,
+                        lastIndex
+                    do
+                        local fruit =
+                            fruits[
+                                fruitIndex
+                            ]
+
+                        layoutOrder +=
+                            1
+
+                        local fruitRow =
+                            create(
+                                "Frame",
+                                {
+                                    BackgroundColor3 =
+                                        color.Field,
+
+                                    Size =
+                                        UDim2.new(
+                                            1,
+                                            -4,
+                                            0,
+                                            54
+                                        ),
+
+                                    LayoutOrder =
+                                        layoutOrder,
+
+                                    ZIndex =
+                                        52,
+                                },
+                                fruitList
+                            )
+
+                        round(
+                            fruitRow,
+                            10
+                        )
+
+                        outline(
+                            fruitRow,
+                            color.Border
+                        )
+
+                        local iconHolder =
+                            create(
+                                "Frame",
+                                {
+                                    BackgroundColor3 =
+                                        color.Hover,
+
+                                    Size =
+                                        UDim2.fromOffset(
+                                            40,
+                                            40
+                                        ),
+
+                                    Position =
+                                        UDim2.fromOffset(
+                                            8,
+                                            7
+                                        ),
+
+                                    ZIndex =
+                                        53,
+                                },
+                                fruitRow
+                            )
+
+                        round(
+                            iconHolder,
+                            9
+                        )
+
+                        local fruitIcon =
+                            create(
+                                "ImageLabel",
+                                {
+                                    BackgroundTransparency =
+                                        1,
+
+                                    Image =
+                                        tostring(
+                                            fruit.Icon
+                                            or ""
+                                        ),
+
+                                    Size =
+                                        UDim2.new(
+                                            1,
+                                            -6,
+                                            1,
+                                            -6
+                                        ),
+
+                                    Position =
+                                        UDim2.fromOffset(
+                                            3,
+                                            3
+                                        ),
+
+                                    ScaleType =
+                                        Enum.ScaleType.Fit,
+
+                                    ZIndex =
+                                        54,
+                                },
+                                iconHolder
+                            )
+
+                        round(
+                            fruitIcon,
+                            7
+                        )
+
+                        local fruitName =
+                            text(
+                                fruitRow,
+                                tostring(
+                                    fruit.Name
+                                    or "Unknown fruit"
+                                ),
+                                UDim2.new(
+                                    1,
+                                    -230,
+                                    0,
+                                    21
+                                ),
+                                UDim2.fromOffset(
+                                    58,
+                                    6
+                                ),
+                                10,
+                                color.Text,
+                                nil,
+                                Enum.Font.GothamSemibold
+                            )
+
+                        fruitName.ZIndex =
+                            53
+
+                        local details =
+                            tostring(
+                                fruit.Mutation
+                                or "Normal"
+                            )
+
+                        if fruit.Favorite == true then
+                            details ..=
+                                "  ·  Favorite"
+                        end
+
+                        details ..=
+                            "  ·  Fruit "
+                            .. tostring(
+                                fruitIndex
+                            )
+
+                        local detailLabel =
+                            text(
+                                fruitRow,
+                                details,
+                                UDim2.new(
+                                    1,
+                                    -230,
+                                    0,
+                                    18
+                                ),
+                                UDim2.fromOffset(
+                                    58,
+                                    29
+                                ),
+                                8,
+                                fruit.Favorite == true
+                                        and color.Yellow
+                                    or color.Muted
+                            )
+
+                        detailLabel.ZIndex =
+                            53
+
+                        local valueLabel =
+                            text(
+                                fruitRow,
+                                formatValue(
+                                    fruit.Value
+                                    or 0
+                                ),
+                                UDim2.fromOffset(
+                                    150,
+                                    54
+                                ),
+                                UDim2.new(
+                                    1,
+                                    -164,
+                                    0,
+                                    0
+                                ),
+                                11,
+                                color.Text,
+                                Enum.TextXAlignment.Right,
+                                Enum.Font.GothamBold
+                            )
+
+                        valueLabel.ZIndex =
+                            53
+                    end
+                end
+            end
+
+            local closeButton =
+                button(
+                    modal,
+                    "Close",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        38
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        489
+                    ),
+                    false
+                )
+
+            closeButton.ZIndex =
+                53
+
+            closeButton.MouseButton1Click:Connect(
+                closeModal
+            )
+        end
 
     local function getSendPacket()
         local sharedModules =
