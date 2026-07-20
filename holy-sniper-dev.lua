@@ -103538,6 +103538,15 @@ function HolyMailCreateHud()
                 BackgroundColor3 =
                     color.Back,
 
+                Active =
+                    true,
+
+                InputSink =
+                    Enum.InputSink.All,
+
+                Selectable =
+                    false,
+
                 ClipsDescendants =
                     true,
             },
@@ -104688,6 +104697,15 @@ function HolyMailCreateHud()
                 BackgroundTransparency =
                     0.2,
 
+                Active =
+                    true,
+
+                InputSink =
+                    Enum.InputSink.All,
+
+                Selectable =
+                    false,
+
                 Size =
                     UDim2.fromScale(
                         1,
@@ -105834,7 +105852,11 @@ function HolyMailCreateHud()
         for _, child in ipairs(
             container:GetChildren()
         ) do
-            if child ~= layout then
+            if child ~= layout
+                and not child:IsA(
+                    "UIPadding"
+                )
+            then
                 child:Destroy()
             end
         end
@@ -108160,13 +108182,6 @@ function HolyMailCreateHud()
                         optionList,
                         optionLayout
                     )
-
-                    if optionPadding.Parent
-                        ~= optionList
-                    then
-                        optionPadding.Parent =
-                            optionList
-                    end
 
                     local options =
                         draft.Tab == "Fruits"
