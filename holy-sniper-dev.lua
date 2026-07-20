@@ -1787,6 +1787,14 @@ HOLY_DEV_UI_STATE = {
     ShowHolyLoadingScreen = true,
     SettingsDashboard = "Interface",
 
+    TopLayerColorEnabled = false,
+
+    TopLayerColor = {
+        R = 211,
+        G = 190,
+        B = 150,
+    },
+
     AutoSkipLoading = true,
     AntiAfk = true,
     AntiKnockback = false,
@@ -4082,6 +4090,51 @@ function HolySaveUISettings()
                 or "Interface"
             ),
 
+        TopLayerColorEnabled =
+            HOLY_DEV_UI_STATE.TopLayerColorEnabled
+            == true,
+
+        TopLayerColor = {
+            R =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            HOLY_DEV_UI_STATE.TopLayerColor
+                            and HOLY_DEV_UI_STATE.TopLayerColor.R
+                        )
+                        or 211
+                    ),
+                    0,
+                    255
+                ),
+
+            G =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            HOLY_DEV_UI_STATE.TopLayerColor
+                            and HOLY_DEV_UI_STATE.TopLayerColor.G
+                        )
+                        or 190
+                    ),
+                    0,
+                    255
+                ),
+
+            B =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            HOLY_DEV_UI_STATE.TopLayerColor
+                            and HOLY_DEV_UI_STATE.TopLayerColor.B
+                        )
+                        or 150
+                    ),
+                    0,
+                    255
+                ),
+        },
+
         AutoSkipLoading =
             HOLY_DEV_UI_STATE.AutoSkipLoading == true,
 
@@ -4320,6 +4373,56 @@ function HolyLoadUISettings()
     HOLY_DEV_UI_STATE.SettingsDashboard =
         settingsDashboard
 
+    if type(data.TopLayerColorEnabled) == "boolean" then
+
+        HOLY_DEV_UI_STATE.TopLayerColorEnabled =
+            data.TopLayerColorEnabled
+    end
+
+    if type(data.TopLayerColor) == "table" then
+
+        HOLY_DEV_UI_STATE.TopLayerColor = {
+            R =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            data.TopLayerColor.R
+                            or data.TopLayerColor.r
+                        )
+                        or 211
+                    ),
+                    0,
+                    255
+                ),
+
+            G =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            data.TopLayerColor.G
+                            or data.TopLayerColor.g
+                        )
+                        or 190
+                    ),
+                    0,
+                    255
+                ),
+
+            B =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            data.TopLayerColor.B
+                            or data.TopLayerColor.b
+                        )
+                        or 150
+                    ),
+                    0,
+                    255
+                ),
+        }
+    end
+
     if type(data.AutoSkipLoading) == "boolean" then
 
         HOLY_DEV_UI_STATE.AutoSkipLoading =
@@ -4414,6 +4517,425 @@ function HolyLoadUISettings()
 
     return true
 end
+
+
+--==================================================
+-- [2.005] TOP LAYER COLOR
+--==================================================
+
+local previousTopLayerRuntime =
+    type(HOLY_TOP_LAYER_RUNTIME) == "table"
+    and HOLY_TOP_LAYER_RUNTIME
+    or nil
+
+if previousTopLayerRuntime
+and previousTopLayerRuntime.WatchConnection then
+
+    pcall(function()
+
+        previousTopLayerRuntime.WatchConnection:Disconnect()
+    end)
+end
+
+HOLY_TOP_LAYER_RUNTIME = {
+    OriginalColors =
+        previousTopLayerRuntime
+        and previousTopLayerRuntime.OriginalColors
+        or setmetatable(
+            {},
+            {
+                __mode = "k",
+            }
+        ),
+
+    PrimaryOriginal =
+        previousTopLayerRuntime
+        and previousTopLayerRuntime.PrimaryOriginal
+        or nil,
+
+    WatchConnection = nil,
+    ApplyGeneration = 0,
+    SaveGeneration = 0,
+}
+
+function HolyTopLayerGetParts()
+
+    local baseplate =
+        workspace:FindFirstChild(
+            "Baseplate"
+        )
+
+    local topLayer =
+        baseplate
+        and baseplate:FindFirstChild(
+            "TopLayer"
+        )
+        or nil
+
+    local parts = {}
+
+    if not topLayer then
+
+        return parts,
+            nil
+    end
+
+    if topLayer:IsA("BasePart") then
+
+        table.insert(
+            parts,
+            topLayer
+        )
+
+    else
+
+        for _, descendant in ipairs(
+            topLayer:GetDescendants()
+        ) do
+
+            if descendant:IsA("BasePart") then
+
+                table.insert(
+                    parts,
+                    descendant
+                )
+            end
+        end
+    end
+
+    return parts,
+        topLayer
+end
+
+function HolyTopLayerGetSavedColor()
+
+    local saved =
+        type(HOLY_DEV_UI_STATE.TopLayerColor) == "table"
+        and HOLY_DEV_UI_STATE.TopLayerColor
+        or {}
+
+    return Color3.fromRGB(
+        math.clamp(
+            math.floor(
+                tonumber(saved.R)
+                or 211
+            ),
+            0,
+            255
+        ),
+
+        math.clamp(
+            math.floor(
+                tonumber(saved.G)
+                or 190
+            ),
+            0,
+            255
+        ),
+
+        math.clamp(
+            math.floor(
+                tonumber(saved.B)
+                or 150
+            ),
+            0,
+            255
+        )
+    )
+end
+
+function HolyTopLayerCaptureOriginal()
+
+    local parts =
+        HolyTopLayerGetParts()
+
+    for _, part in ipairs(parts) do
+
+        if HOLY_TOP_LAYER_RUNTIME.OriginalColors[
+            part
+        ] == nil then
+
+            HOLY_TOP_LAYER_RUNTIME.OriginalColors[
+                part
+            ] =
+                part.Color
+        end
+
+        if HOLY_TOP_LAYER_RUNTIME.PrimaryOriginal == nil then
+
+            HOLY_TOP_LAYER_RUNTIME.PrimaryOriginal =
+                HOLY_TOP_LAYER_RUNTIME.OriginalColors[
+                    part
+                ]
+        end
+    end
+
+    return #parts > 0
+end
+
+function HolyTopLayerRestore()
+
+    local parts =
+        HolyTopLayerGetParts()
+
+    for _, part in ipairs(parts) do
+
+        local original =
+            HOLY_TOP_LAYER_RUNTIME.OriginalColors[
+                part
+            ]
+
+        if typeof(original) == "Color3" then
+
+            pcall(function()
+
+                part.Color =
+                    original
+            end)
+        end
+    end
+
+    return #parts > 0
+end
+
+function HolyTopLayerApply()
+
+    HolyTopLayerCaptureOriginal()
+
+    if HOLY_DEV_UI_STATE.TopLayerColorEnabled ~= true then
+
+        return HolyTopLayerRestore()
+    end
+
+    local selectedColor =
+        HolyTopLayerGetSavedColor()
+
+    local parts =
+        HolyTopLayerGetParts()
+
+    for _, part in ipairs(parts) do
+
+        pcall(function()
+
+            part.Color =
+                selectedColor
+        end)
+    end
+
+    return #parts > 0
+end
+
+function HolyTopLayerQueueSave()
+
+    HOLY_TOP_LAYER_RUNTIME.SaveGeneration +=
+        1
+
+    local generation =
+        HOLY_TOP_LAYER_RUNTIME.SaveGeneration
+
+    task.delay(
+        0.3,
+        function()
+
+            if HOLY_TOP_LAYER_RUNTIME.SaveGeneration
+                ~= generation
+            then
+
+                return
+            end
+
+            HolySaveUISettings()
+        end
+    )
+end
+
+function HolyTopLayerSetColor(value)
+
+    if typeof(value) ~= "Color3" then
+
+        return false
+    end
+
+    HOLY_DEV_UI_STATE.TopLayerColor = {
+        R =
+            math.clamp(
+                math.floor(
+                    value.R * 255
+                    + 0.5
+                ),
+                0,
+                255
+            ),
+
+        G =
+            math.clamp(
+                math.floor(
+                    value.G * 255
+                    + 0.5
+                ),
+                0,
+                255
+            ),
+
+        B =
+            math.clamp(
+                math.floor(
+                    value.B * 255
+                    + 0.5
+                ),
+                0,
+                255
+            ),
+    }
+
+    if HOLY_DEV_UI_STATE.TopLayerColorEnabled == true then
+
+        HolyTopLayerApply()
+    end
+
+    HolyTopLayerQueueSave()
+
+    return true
+end
+
+function HolyTopLayerSetEnabled(value)
+
+    HOLY_DEV_UI_STATE.TopLayerColorEnabled =
+        value == true
+
+    HolyTopLayerApply()
+    HolySaveUISettings()
+
+    return HOLY_DEV_UI_STATE.TopLayerColorEnabled
+end
+
+function HolyTopLayerReset()
+
+    HolyTopLayerCaptureOriginal()
+
+    local original =
+        HOLY_TOP_LAYER_RUNTIME.PrimaryOriginal
+
+    HOLY_DEV_UI_STATE.TopLayerColorEnabled =
+        false
+
+    if typeof(original) == "Color3" then
+
+        HOLY_DEV_UI_STATE.TopLayerColor = {
+            R =
+                math.floor(
+                    original.R * 255
+                    + 0.5
+                ),
+
+            G =
+                math.floor(
+                    original.G * 255
+                    + 0.5
+                ),
+
+            B =
+                math.floor(
+                    original.B * 255
+                    + 0.5
+                ),
+        }
+    end
+
+    HolyTopLayerRestore()
+    HolySaveUISettings()
+
+    return original
+end
+
+function HolyTopLayerScheduleApply()
+
+    HOLY_TOP_LAYER_RUNTIME.ApplyGeneration +=
+        1
+
+    local generation =
+        HOLY_TOP_LAYER_RUNTIME.ApplyGeneration
+
+    task.delay(
+        0.1,
+        function()
+
+            if HOLY_TOP_LAYER_RUNTIME.ApplyGeneration
+                ~= generation
+            then
+
+                return
+            end
+
+            HolyTopLayerApply()
+        end
+    )
+end
+
+function HolyTopLayerStart()
+
+    HolyTopLayerApply()
+
+    if HOLY_TOP_LAYER_RUNTIME.WatchConnection then
+
+        HOLY_TOP_LAYER_RUNTIME.WatchConnection:Disconnect()
+    end
+
+    HOLY_TOP_LAYER_RUNTIME.WatchConnection =
+        workspace.DescendantAdded:Connect(function(instance)
+
+            local current =
+                instance
+
+            while current
+            and current ~= workspace
+            do
+
+                if current.Name == "TopLayer" then
+
+                    local parent =
+                        current.Parent
+
+                    if parent
+                    and parent.Name == "Baseplate"
+                    and parent.Parent == workspace
+                    then
+
+                        HolyTopLayerScheduleApply()
+
+                        return
+                    end
+                end
+
+                current =
+                    current.Parent
+            end
+        end)
+
+    return true
+end
+
+function HolyTopLayerStop(restoreOriginal)
+
+    if HOLY_TOP_LAYER_RUNTIME.WatchConnection then
+
+        pcall(function()
+
+            HOLY_TOP_LAYER_RUNTIME.WatchConnection:Disconnect()
+        end)
+
+        HOLY_TOP_LAYER_RUNTIME.WatchConnection =
+            nil
+    end
+
+    if restoreOriginal == true then
+
+        HolyTopLayerRestore()
+    end
+
+    return true
+end
+
 
 --==================================================
 -- [2.01] PERFORMANCE MONITOR
@@ -85010,6 +85532,8 @@ HolyLoadGroupboxSettings()
 HolyLoadVisualSettings()
 HolyWateringRejoinLoadSettings()
 
+HolyTopLayerStart()
+
 if HOLY_DEV_UI_STATE.AutoSkipLoading == true then
 
     HolyLoadingStartAutoSkip(
@@ -86743,6 +87267,10 @@ if type(Library.OnUnload) == "function" then
         Library:OnUnload(function()
 
             HolyPerformanceMonitorStop(
+                true
+            )
+
+            HolyTopLayerStop(
                 true
             )
 
@@ -114590,6 +115118,14 @@ local SettingsLayoutBox =
         "panels-top-left"
     )
 
+local SettingsWorldBox =
+    HolyAddRightGroupbox(
+        Tabs.Settings,
+        "Settings.WorldAppearance",
+        "World Appearance",
+        "palette"
+    )
+
 local SettingsThemeEditorBox =
     HolyAddLeftGroupbox(
         Tabs.Settings,
@@ -132210,6 +132746,11 @@ function HolySettingsRefreshDashboard()
     )
 
     HolySetGroupboxVisible(
+        SettingsWorldBox,
+        showInterface
+    )
+
+    HolySetGroupboxVisible(
         SettingsThemeEditorBox,
         showThemes
     )
@@ -133002,6 +133543,97 @@ SettingsUIBox:AddToggle(
 
     HolySaveUISettings()
 end)
+
+local HolyTopLayerColorToggle =
+    SettingsWorldBox:AddToggle(
+        "HolyTopLayerColorEnabled",
+        {
+            Text =
+                "Custom Top Layer Color",
+
+            Default =
+                HOLY_DEV_UI_STATE.TopLayerColorEnabled
+                == true,
+
+            Tooltip =
+                "Changes workspace.Baseplate.TopLayer locally. Other players cannot see this color.",
+        }
+    )
+
+HolyTopLayerColorToggle:OnChanged(function(value)
+
+    HolyTopLayerSetEnabled(
+        value == true
+    )
+end)
+
+local HolyTopLayerColorLabel =
+    SettingsWorldBox:AddLabel(
+        "Top Layer Color"
+    )
+
+HolyTopLayerColorLabel:AddColorPicker(
+    "HolyTopLayerColor",
+    {
+        Default =
+            HolyTopLayerGetSavedColor(),
+
+        Title =
+            "Top Layer Color",
+    }
+)
+
+Options.HolyTopLayerColor:OnChanged(function(value)
+
+    HolyTopLayerSetColor(
+        value
+    )
+end)
+
+SettingsWorldBox:AddLabel(
+    "Only changes the visible TopLayer on your client."
+)
+
+SettingsWorldBox:AddButton({
+    Text =
+        "Restore Game Default",
+
+    Func =
+        function()
+
+            local original =
+                HolyTopLayerReset()
+
+            local toggle =
+                Toggles.HolyTopLayerColorEnabled
+
+            if type(toggle) == "table"
+            and toggle.Value ~= false
+            and type(toggle.SetValue) == "function"
+            then
+
+                toggle:SetValue(
+                    false
+                )
+            end
+
+            local picker =
+                Options.HolyTopLayerColor
+
+            if typeof(original) == "Color3"
+            and type(picker) == "table"
+            and type(picker.SetValueRGB) == "function"
+            then
+
+                picker:SetValueRGB(
+                    original
+                )
+            end
+        end,
+
+    Tooltip =
+        "Disables the override and restores the original TopLayer color captured from the game.",
+})
 
 SettingsPerformanceBox:AddToggle(
     "HolyPerformanceMonitor",
