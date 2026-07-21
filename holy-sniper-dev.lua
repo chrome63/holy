@@ -114211,6 +114211,9 @@ function HolyMailCreateHud()
     itemModeButton.TextSize =
         12
 
+    state.Fleet.Build =
+        function()
+
     ------------------------------------------------------------------------
     -- FLEET MANAGER
     ------------------------------------------------------------------------
@@ -116469,7 +116472,19 @@ function HolyMailCreateHud()
         end
     end)
 
+    state.Fleet.Page =
+        fleetPage
+
+    state.Fleet.StatusLabel =
+        fleetStatus
+
     state.Fleet.Commit()
+        end
+
+    state.Fleet.Build()
+
+    state.Fleet.Build =
+        nil
 
     local inboxPage =
         create(
@@ -118055,7 +118070,7 @@ function HolyMailCreateHud()
             expanded
             and tabName == "Send"
 
-        fleetPage.Visible =
+        state.Fleet.Page.Visible =
             expanded
             and tabName == "Fleet"
 
@@ -118100,7 +118115,11 @@ function HolyMailCreateHud()
             subtitle.Text =
                 "Manage alt accounts"
 
-            refreshFleetPage()
+            if type(
+                state.Fleet.Refresh
+            ) == "function" then
+                state.Fleet.Refresh()
+            end
         elseif tabName == "Inbox" then
             subtitle.Text =
                 "Claim incoming mail"
@@ -118139,7 +118158,7 @@ function HolyMailCreateHud()
             content,
 
         Fleet =
-            fleetPage,
+            state.Fleet.Page,
 
         Inbox =
             inboxPage,
@@ -123454,10 +123473,10 @@ function HolyMailCreateHud()
     state.Fleet.LoadIntoItems =
         function()
             if state.RecipientChangesLocked() then
-                fleetStatus.Text =
+                state.Fleet.StatusLabel.Text =
                     "Finish or safely end the current delivery first."
 
-                fleetStatus.TextColor3 =
+                state.Fleet.StatusLabel.TextColor3 =
                     color.Yellow
 
                 return
@@ -123467,10 +123486,10 @@ function HolyMailCreateHud()
                 state.Fleet.EnabledAccounts()
 
             if #accounts == 0 then
-                fleetStatus.Text =
+                state.Fleet.StatusLabel.Text =
                     "This group has no enabled accounts."
 
-                fleetStatus.TextColor3 =
+                state.Fleet.StatusLabel.TextColor3 =
                     color.Red
 
                 return
