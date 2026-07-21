@@ -107707,6 +107707,10 @@ function HolyMailCreateHud()
 
                 FruitOptionsMap = {},
                 MutationOptionsMap = {},
+
+                FruitIcons = {},
+                FruitOwned = {},
+                MutationOwned = {},
             }
 
             draft.AddOption =
@@ -107745,10 +107749,25 @@ function HolyMailCreateHud()
             for _, fruit in ipairs(
                 inventory
             ) do
-                draft.AddOption(
-                    draft.FruitOptionsMap,
-                    fruit.Name
-                )
+                local fruitKey =
+                    HolyMailFilterKey(
+                        fruit.Name
+                    )
+
+                if fruitKey ~= "" then
+                    draft.FruitOwned[
+                        fruitKey
+                    ] =
+                        (
+                            tonumber(
+                                draft.FruitOwned[
+                                    fruitKey
+                                ]
+                            )
+                            or 0
+                        )
+                        + 1
+                end
 
                 local mutationText =
                     tostring(
@@ -107762,24 +107781,173 @@ function HolyMailCreateHud()
                 for part in mutationText:gmatch(
                     "[^,%|/;]+"
                 ) do
-                    if HolyMailFilterKey(
-                        part
-                    ) ~= "" then
+                    local mutationKey =
+                        HolyMailFilterKey(
+                            part
+                        )
+
+                    if mutationKey ~= "" then
                         foundMutation =
                             true
 
-                        draft.AddOption(
-                            draft.MutationOptionsMap,
-                            part
-                        )
+                        draft.MutationOwned[
+                            mutationKey
+                        ] =
+                            (
+                                tonumber(
+                                    draft.MutationOwned[
+                                        mutationKey
+                                    ]
+                                )
+                                or 0
+                            )
+                            + 1
                     end
                 end
 
                 if not foundMutation then
-                    draft.AddOption(
-                        draft.MutationOptionsMap,
-                        "Normal"
+                    draft.MutationOwned.normal =
+                        (
+                            tonumber(
+                                draft.MutationOwned.normal
+                            )
+                            or 0
+                        )
+                        + 1
+                end
+            end
+
+            local seedData
+
+            if type(
+                HolyShopRequireModule
+            ) == "function" then
+                local ok,
+                    result =
+                    pcall(
+                        HolyShopRequireModule,
+                        "SharedModules.SeedData"
                     )
+
+                if ok
+                    and type(result) == "table"
+                then
+                    seedData =
+                        result
+                end
+            end
+
+            if type(seedData) == "table" then
+                for _, row in pairs(
+                    seedData
+                ) do
+                    if type(row) == "table"
+                        and row.MutationSeed
+                            ~= true
+                    then
+                        local fruitName =
+                            tostring(
+                                row.FruitName
+                                or row.SeedName
+                                or row.CropName
+                                or row.Name
+                                or ""
+                            )
+                                :gsub(
+                                    "[%c]+",
+                                    ""
+                                )
+                                :gsub(
+                                    "^%s+",
+                                    ""
+                                )
+                                :gsub(
+                                    "%s+$",
+                                    ""
+                                )
+
+                        local fruitKey =
+                            HolyMailFilterKey(
+                                fruitName
+                            )
+
+                        if fruitKey ~= "" then
+                            draft.AddOption(
+                                draft.FruitOptionsMap,
+                                fruitName
+                            )
+
+                            local icon =
+                                valuePreviewFruitIcon(
+                                    nil,
+                                    row
+                                )
+
+                            if icon ~= "" then
+                                draft.FruitIcons[
+                                    fruitKey
+                                ] =
+                                    icon
+                            end
+                        end
+                    end
+                end
+            end
+
+            if type(
+                HolySellGetFruitDropdownValues
+            ) == "function" then
+                local ok,
+                    fruitValues =
+                    pcall(
+                        HolySellGetFruitDropdownValues
+                    )
+
+                if ok
+                    and type(fruitValues)
+                        == "table"
+                then
+                    for _, fruitName in ipairs(
+                        fruitValues
+                    ) do
+                        if HolyMailFilterKey(
+                            fruitName
+                        ) ~= "all"
+                        then
+                            draft.AddOption(
+                                draft.FruitOptionsMap,
+                                fruitName
+                            )
+                        end
+                    end
+                end
+            end
+
+            if type(
+                HolyFarmBuildMutationNameCache
+            ) == "function" then
+                local ok,
+                    mutationCache =
+                    pcall(
+                        HolyFarmBuildMutationNameCache,
+                        true
+                    )
+
+                if ok
+                    and type(mutationCache)
+                        == "table"
+                    and type(
+                        mutationCache.Values
+                    ) == "table"
+                then
+                    for _, mutationName in ipairs(
+                        mutationCache.Values
+                    ) do
+                        draft.AddOption(
+                            draft.MutationOptionsMap,
+                            mutationName
+                        )
+                    end
                 end
             end
 
@@ -107830,16 +107998,24 @@ function HolyMailCreateHud()
             table.sort(
                 draft.FruitOptions,
                 function(left, right)
-                    return left:lower()
-                        < right:lower()
+                    return tostring(
+                        left
+                    ):lower()
+                        < tostring(
+                            right
+                        ):lower()
                 end
             )
 
             table.sort(
                 draft.MutationOptions,
                 function(left, right)
-                    return left:lower()
-                        < right:lower()
+                    return tostring(
+                        left
+                    ):lower()
+                        < tostring(
+                            right
+                        ):lower()
                 end
             )
 
@@ -107915,7 +108091,7 @@ function HolyMailCreateHud()
             local subtitle =
                 text(
                     modal,
-                    "Nothing selected means All. Fruit and mutation filters work together.",
+                    "All in-game options are shown. Owned counts come from your current inventory.",
                     UDim2.new(
                         1,
                         -36,
@@ -108231,23 +108407,40 @@ function HolyMailCreateHud()
                                     optionKey
                                 ] ~= nil
 
+                            local ownedMap =
+                                draft.Tab == "Fruits"
+                                and draft.FruitOwned
+                                or draft.MutationOwned
+
+                            local owned =
+                                tonumber(
+                                    ownedMap[
+                                        optionKey
+                                    ]
+                                )
+                                or 0
+
+                            local icon =
+                                draft.Tab == "Fruits"
+                                and tostring(
+                                    draft.FruitIcons[
+                                        optionKey
+                                    ]
+                                    or ""
+                                )
+                                or ""
+
                             local optionButton =
                                 button(
                                     optionList,
                                     isSelected
-                                            and (
-                                                "✓  "
-                                                .. display
-                                            )
-                                            or (
-                                                "     "
-                                                .. display
-                                            ),
+                                        and "✓"
+                                        or "",
                                     UDim2.new(
                                         1,
                                         -4,
                                         0,
-                                        38
+                                        42
                                     ),
                                     UDim2.fromOffset(
                                         0,
@@ -108263,7 +108456,7 @@ function HolyMailCreateHud()
                                 53
 
                             optionButton.TextSize =
-                                10
+                                14
 
                             optionButton.TextXAlignment =
                                 Enum.TextXAlignment.Left
@@ -108285,6 +108478,96 @@ function HolyMailCreateHud()
                                 },
                                 optionButton
                             )
+
+                            local nameOffset =
+                                34
+
+                            if icon ~= "" then
+                                create(
+                                    "ImageLabel",
+                                    {
+                                        BackgroundTransparency =
+                                            1,
+
+                                        Image =
+                                            icon,
+
+                                        Size =
+                                            UDim2.fromOffset(
+                                                26,
+                                                26
+                                            ),
+
+                                        Position =
+                                            UDim2.fromOffset(
+                                                34,
+                                                8
+                                            ),
+
+                                        ScaleType =
+                                            Enum.ScaleType.Fit,
+
+                                        ZIndex =
+                                            54,
+                                    },
+                                    optionButton
+                                )
+
+                                nameOffset =
+                                    68
+                            end
+
+                            local optionName =
+                                text(
+                                    optionButton,
+                                    display,
+                                    UDim2.new(
+                                        1,
+                                        -nameOffset
+                                            - 126,
+                                        1,
+                                        0
+                                    ),
+                                    UDim2.fromOffset(
+                                        nameOffset,
+                                        0
+                                    ),
+                                    10,
+                                    color.Text,
+                                    Enum.TextXAlignment.Left,
+                                    Enum.Font.GothamSemibold
+                                )
+
+                            optionName.ZIndex =
+                                54
+
+                            local ownedText =
+                                text(
+                                    optionButton,
+                                    "Owned: "
+                                        .. tostring(
+                                            owned
+                                        ),
+                                    UDim2.fromOffset(
+                                        104,
+                                        42
+                                    ),
+                                    UDim2.new(
+                                        1,
+                                        -116,
+                                        0,
+                                        0
+                                    ),
+                                    9,
+                                    owned > 0
+                                        and color.Green
+                                        or color.Muted,
+                                    Enum.TextXAlignment.Right,
+                                    Enum.Font.GothamMedium
+                                )
+
+                            ownedText.ZIndex =
+                                54
 
                             optionButton.MouseButton1Click:Connect(function()
                                 if selected[
