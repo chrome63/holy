@@ -1635,6 +1635,19 @@ local UI_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyDevUISettings.json"
 
+local HOLY_ACCOUNT_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyAccountAuth.json"
+
+local HOLY_ACCOUNT_LEGACY_TOKEN_FILE =
+    "HOLY_account_token.txt"
+
+local HOLY_ACCOUNT_API_BASE =
+    "https://holy-fleet-api.benjicapalot041.workers.dev"
+
+local HOLY_ACCOUNT_HEARTBEAT_INTERVAL =
+    20
+
 local THEME_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumThemes.json"
@@ -1811,6 +1824,60 @@ HOLY_DEV_UI_STATE = {
     HideMiddle = false,
     DeleteBackpack = false,
 }
+
+local HOLY_ACCOUNT_ENVIRONMENT =
+    (
+        type(getgenv) == "function"
+        and getgenv()
+    )
+    or _G
+
+local previousAccountRuntime =
+    HOLY_ACCOUNT_ENVIRONMENT
+    and HOLY_ACCOUNT_ENVIRONMENT
+        .HOLY_ACCOUNT_RUNTIME
+    or nil
+
+if type(previousAccountRuntime) == "table" then
+
+    previousAccountRuntime.Active =
+        false
+
+    previousAccountRuntime.Generation =
+        (
+            tonumber(
+                previousAccountRuntime.Generation
+            )
+            or 0
+        )
+        + 1
+end
+
+local HOLY_ACCOUNT_RUNTIME = {
+    Active = false,
+    Generation = 0,
+
+    Token = nil,
+    Account = nil,
+    Source = nil,
+    NeedsMigration = false,
+
+    Status = "Not connected",
+    Message = "Generate a pairing code on HOLY HUB to connect this Roblox account.",
+
+    PairingBusy = false,
+    HeartbeatBusy = false,
+
+    Interval =
+        HOLY_ACCOUNT_HEARTBEAT_INTERVAL,
+
+    LastHeartbeat = 0,
+
+    UI = {},
+}
+
+HOLY_ACCOUNT_ENVIRONMENT.HOLY_ACCOUNT_RUNTIME =
+    HOLY_ACCOUNT_RUNTIME
 
 HOLY_SERVER_PICK_STYLES = {
     "Recommended",
@@ -4013,6 +4080,1173 @@ function HolyEnsureFolder()
     return ok == true
 end
 
+function HolyAccountTokenValid(value)
+
+    local token =
+        HolyCleanText(
+            value
+        )
+
+    if #token < 32
+    or #token > 128 then
+
+        return false
+    end
+
+    return token:match(
+        "^[%w_-]+$"
+    ) ~= nil
+end
+
+function HolyAccountReadFile(path)
+
+    if type(readfile) ~= "function"
+    or type(isfile) ~= "function" then
+
+        return nil
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                path
+            )
+    end)
+
+    if exists ~= true then
+        return nil
+    end
+
+    local ok,
+        contents =
+        pcall(function()
+
+            return readfile(
+                path
+            )
+        end)
+
+    if ok ~= true
+    or type(contents) ~= "string" then
+
+        return nil
+    end
+
+    contents =
+        HolyCleanText(
+            contents
+        )
+
+    if contents == "" then
+        return nil
+    end
+
+    return contents
+end
+
+function HolyAccountDecodeStoredToken(contents)
+
+    contents =
+        HolyCleanText(
+            contents
+        )
+
+    if HolyAccountTokenValid(
+        contents
+    ) == true then
+
+        return contents
+    end
+
+    local ok,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                contents
+            )
+        end)
+
+    if ok ~= true
+    or type(data) ~= "table" then
+
+        return nil
+    end
+
+    local token =
+        HolyCleanText(
+            data.AccountToken
+            or data.account_token
+            or data.Token
+            or data.token
+        )
+
+    if HolyAccountTokenValid(
+        token
+    ) ~= true then
+
+        return nil
+    end
+
+    return token
+end
+
+function HolyAccountLoadSavedToken()
+
+    local token =
+        HolyAccountDecodeStoredToken(
+            HolyAccountReadFile(
+                HOLY_ACCOUNT_SETTINGS_FILE
+            )
+            or ""
+        )
+
+    local source =
+        token
+        and "official"
+        or nil
+
+    if not token then
+
+        local environmentToken =
+            HOLY_ACCOUNT_ENVIRONMENT
+            and HOLY_ACCOUNT_ENVIRONMENT
+                .HOLY_ACCOUNT_TOKEN
+            or nil
+
+        if HolyAccountTokenValid(
+            environmentToken
+        ) == true then
+
+            token =
+                HolyCleanText(
+                    environmentToken
+                )
+
+            source =
+                "environment"
+        end
+    end
+
+    if not token then
+
+        token =
+            HolyAccountDecodeStoredToken(
+                HolyAccountReadFile(
+                    HOLY_ACCOUNT_LEGACY_TOKEN_FILE
+                )
+                or ""
+            )
+
+        if token then
+
+            source =
+                "legacy"
+        end
+    end
+
+    HOLY_ACCOUNT_RUNTIME.Token =
+        token
+
+    HOLY_ACCOUNT_RUNTIME.Source =
+        source
+
+    HOLY_ACCOUNT_RUNTIME.NeedsMigration =
+        token ~= nil
+        and source ~= "official"
+
+    HOLY_ACCOUNT_RUNTIME.Account =
+        nil
+
+    if token then
+
+        HOLY_ACCOUNT_ENVIRONMENT.HOLY_ACCOUNT_TOKEN =
+            token
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Checking"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            "Authenticating the saved account..."
+
+        return true
+    end
+
+    HOLY_ACCOUNT_RUNTIME.Status =
+        type(
+            HolyGetRequestFunction()
+        ) == "function"
+        and "Not connected"
+        or "Unsupported executor"
+
+    HOLY_ACCOUNT_RUNTIME.Message =
+        type(
+            HolyGetRequestFunction()
+        ) == "function"
+        and "Generate a pairing code on HOLY HUB to connect this Roblox account."
+        or "This executor does not support HTTP requests."
+
+    return false
+end
+
+function HolyAccountSaveToken(token)
+
+    token =
+        HolyCleanText(
+            token
+        )
+
+    if HolyAccountTokenValid(
+        token
+    ) ~= true
+    or HolyCanUseFiles() ~= true then
+
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local ok,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode({
+                Version =
+                    1,
+
+                AccountToken =
+                    token,
+
+                RobloxUserId =
+                    tostring(
+                        LocalPlayer.UserId
+                    ),
+
+                RobloxUsername =
+                    LocalPlayer.Name,
+            })
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                HOLY_ACCOUNT_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    if writeOk == true then
+
+        HOLY_ACCOUNT_RUNTIME.Source =
+            "official"
+
+        HOLY_ACCOUNT_RUNTIME.NeedsMigration =
+            false
+    end
+
+    return writeOk == true
+end
+
+function HolyAccountDeleteStoredFile(path)
+
+    if type(isfile) ~= "function" then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                path
+            )
+    end)
+
+    if exists ~= true then
+        return true
+    end
+
+    if type(delfile) == "function" then
+
+        return pcall(
+            delfile,
+            path
+        )
+    end
+
+    if type(writefile) == "function" then
+
+        return pcall(
+            writefile,
+            path,
+            ""
+        )
+    end
+
+    return false
+end
+
+function HolyAccountClearInvalidToken()
+
+    HOLY_ACCOUNT_RUNTIME.Active =
+        false
+
+    HOLY_ACCOUNT_RUNTIME.Generation =
+        HOLY_ACCOUNT_RUNTIME.Generation
+        + 1
+
+    HOLY_ACCOUNT_RUNTIME.Token =
+        nil
+
+    HOLY_ACCOUNT_RUNTIME.Account =
+        nil
+
+    HOLY_ACCOUNT_RUNTIME.Source =
+        nil
+
+    HOLY_ACCOUNT_RUNTIME.NeedsMigration =
+        false
+
+    HOLY_ACCOUNT_ENVIRONMENT.HOLY_ACCOUNT_TOKEN =
+        nil
+
+    HolyAccountDeleteStoredFile(
+        HOLY_ACCOUNT_SETTINGS_FILE
+    )
+
+    HolyAccountDeleteStoredFile(
+        HOLY_ACCOUNT_LEGACY_TOKEN_FILE
+    )
+end
+
+function HolyAccountFriendlyError(value)
+
+    local code =
+        HolyCleanText(
+            value
+            or "request_failed"
+        )
+
+    local messages = {
+        invalid_pairing_code =
+            "That pairing code is invalid.",
+
+        pairing_code_used =
+            "That pairing code has already been used.",
+
+        pairing_code_revoked =
+            "That pairing code was replaced. Generate a new one.",
+
+        pairing_code_expired =
+            "That pairing code expired. Generate a new one.",
+
+        account_already_linked =
+            "This Roblox account is already linked. Use the device where its saved login was created.",
+
+        account_limit_reached =
+            "Your HOLY workspace has no available account slots.",
+
+        pairing_conflict =
+            "The pairing code changed while connecting. Generate a new one.",
+
+        account_token_required =
+            "The saved account login is missing.",
+
+        invalid_account_token =
+            "The saved account login is invalid. Pair this account again.",
+
+        account_token_revoked =
+            "The saved account login was revoked.",
+
+        account_unlinked =
+            "This Roblox account is no longer linked.",
+
+        account_identity_mismatch =
+            "The saved login belongs to a different Roblox account.",
+
+        invalid_roblox_user_id =
+            "The current Roblox account ID was rejected.",
+
+        invalid_roblox_username =
+            "The current Roblox username was rejected.",
+
+        internal_server_error =
+            "The HOLY account service had a server error.",
+    }
+
+    if messages[code] then
+        return messages[code]
+    end
+
+    local friendly =
+        code:gsub(
+            "_",
+            " "
+        )
+
+    return friendly:sub(1, 1):upper()
+        .. friendly:sub(2)
+end
+
+function HolyAccountRequest(
+    path,
+    method,
+    payload,
+    accountToken
+)
+
+    local requestFunction =
+        HolyGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        return 0,
+            nil,
+            "HTTP requests are not supported by this executor."
+    end
+
+    local headers = {
+        ["Accept"] =
+            "application/json",
+
+        ["Content-Type"] =
+            "application/json",
+
+        ["Cache-Control"] =
+            "no-cache",
+    }
+
+    if HolyAccountTokenValid(
+        accountToken
+    ) == true then
+
+        headers["Authorization"] =
+            "Bearer "
+            .. HolyCleanText(
+                accountToken
+            )
+    end
+
+    local body =
+        nil
+
+    if type(payload) == "table" then
+
+        local encodeOk,
+            encoded =
+            pcall(function()
+
+                return HttpService:JSONEncode(
+                    payload
+                )
+            end)
+
+        if encodeOk ~= true then
+
+            return 0,
+                nil,
+                "Could not encode the account request."
+        end
+
+        body =
+            encoded
+    end
+
+    local requestOk,
+        response =
+        pcall(function()
+
+            return requestFunction({
+                Url =
+                    HOLY_ACCOUNT_API_BASE
+                    .. tostring(
+                        path
+                        or ""
+                    ),
+
+                Method =
+                    tostring(
+                        method
+                        or "POST"
+                    ),
+
+                Headers =
+                    headers,
+
+                Body =
+                    body,
+            })
+        end)
+
+    if requestOk ~= true then
+
+        return 0,
+            nil,
+            "Could not reach the HOLY account service."
+    end
+
+    local statusCode =
+        0
+
+    local responseBody =
+        nil
+
+    if type(response) == "table" then
+
+        statusCode =
+            tonumber(
+                response.StatusCode
+                or response.Status
+                or response.status_code
+                or 0
+            )
+            or 0
+
+        responseBody =
+            response.Body
+            or response.body
+            or response.ResponseBody
+            or response.responseBody
+
+    elseif type(response) == "string" then
+
+        responseBody =
+            response
+    end
+
+    if type(responseBody) ~= "string"
+    or responseBody == "" then
+
+        return statusCode,
+            nil,
+            "The HOLY account service returned an empty response."
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                responseBody
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return statusCode,
+            nil,
+            "The HOLY account service returned an invalid response."
+    end
+
+    return statusCode,
+        data,
+        nil
+end
+
+function HolyAccountRefreshUI()
+
+    local ui =
+        HOLY_ACCOUNT_RUNTIME.UI
+        or {}
+
+    local status =
+        tostring(
+            HOLY_ACCOUNT_RUNTIME.Status
+            or "Not connected"
+        )
+
+    if ui.StatusLabel
+    and type(ui.StatusLabel.SetText) == "function" then
+
+        ui.StatusLabel:SetText(
+            "Status: "
+            .. status
+        )
+    end
+
+    local account =
+        HOLY_ACCOUNT_RUNTIME.Account
+
+    local username =
+        type(account) == "table"
+        and HolyCleanText(
+            account.roblox_username
+            or account.RobloxUsername
+        )
+        or ""
+
+    local alias =
+        type(account) == "table"
+        and HolyCleanText(
+            account.alias
+            or account.Alias
+        )
+        or ""
+
+    local displayName =
+        alias ~= ""
+        and alias
+        or username
+
+    if alias ~= ""
+    and username ~= "" then
+
+        displayName =
+            alias
+            .. " (@"
+            .. username
+            .. ")"
+    end
+
+    if displayName == "" then
+
+        displayName =
+            "Not linked"
+    end
+
+    if ui.AccountLabel
+    and type(ui.AccountLabel.SetText) == "function" then
+
+        ui.AccountLabel:SetText(
+            "Account: "
+            .. displayName
+        )
+    end
+
+    if ui.DetailLabel
+    and type(ui.DetailLabel.SetText) == "function" then
+
+        ui.DetailLabel:SetText(
+            tostring(
+                HOLY_ACCOUNT_RUNTIME.Message
+                or ""
+            )
+        )
+    end
+
+    local heartbeatDisabled =
+        HolyAccountTokenValid(
+            HOLY_ACCOUNT_RUNTIME.Token
+        ) ~= true
+        or HOLY_ACCOUNT_RUNTIME.HeartbeatBusy == true
+        or HOLY_ACCOUNT_RUNTIME.PairingBusy == true
+
+    if ui.RefreshButton
+    and type(ui.RefreshButton.SetDisabled) == "function" then
+
+        ui.RefreshButton:SetDisabled(
+            heartbeatDisabled
+        )
+    end
+
+    local pairingDisabled =
+        HOLY_ACCOUNT_RUNTIME.PairingBusy == true
+        or HOLY_ACCOUNT_RUNTIME.HeartbeatBusy == true
+        or status == "Online"
+
+    if ui.ConnectButton
+    and type(ui.ConnectButton.SetDisabled) == "function" then
+
+        ui.ConnectButton:SetDisabled(
+            pairingDisabled
+        )
+    end
+
+    if ui.PairingInput
+    and type(ui.PairingInput.SetDisabled) == "function" then
+
+        ui.PairingInput:SetDisabled(
+            pairingDisabled
+        )
+    end
+end
+
+function HolyAccountStopHeartbeat(reason)
+
+    HOLY_ACCOUNT_RUNTIME.Active =
+        false
+
+    HOLY_ACCOUNT_RUNTIME.Generation =
+        HOLY_ACCOUNT_RUNTIME.Generation
+        + 1
+
+    if reason ~= "unload"
+    and reason ~= "replace" then
+
+        HolyAccountRefreshUI()
+    end
+end
+
+function HolyAccountSendHeartbeat(notifyUser)
+
+    if HOLY_ACCOUNT_RUNTIME.HeartbeatBusy == true
+    or HOLY_ACCOUNT_RUNTIME.PairingBusy == true then
+
+        return false
+    end
+
+    local token =
+        HOLY_ACCOUNT_RUNTIME.Token
+
+    if HolyAccountTokenValid(
+        token
+    ) ~= true then
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Not connected"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            "Generate a pairing code on HOLY HUB to connect this Roblox account."
+
+        HolyAccountRefreshUI()
+
+        return false
+    end
+
+    HOLY_ACCOUNT_RUNTIME.HeartbeatBusy =
+        true
+
+    if HOLY_ACCOUNT_RUNTIME.Status ~= "Online" then
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Checking"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            "Authenticating the saved account..."
+    end
+
+    HolyAccountRefreshUI()
+
+    local statusCode,
+        data,
+        requestError =
+        HolyAccountRequest(
+            "/api/account/heartbeat",
+            "POST",
+            {
+                roblox_user_id =
+                    tostring(
+                        LocalPlayer.UserId
+                    ),
+
+                roblox_username =
+                    LocalPlayer.Name,
+            },
+            token
+        )
+
+    HOLY_ACCOUNT_RUNTIME.HeartbeatBusy =
+        false
+
+    if statusCode == 200
+    and type(data) == "table"
+    and data.ok == true
+    and type(data.account) == "table" then
+
+        HOLY_ACCOUNT_RUNTIME.Account =
+            data.account
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Online"
+
+        local nextIn =
+            type(data.heartbeat) == "table"
+            and tonumber(
+                data.heartbeat.next_in
+            )
+            or HOLY_ACCOUNT_HEARTBEAT_INTERVAL
+
+        HOLY_ACCOUNT_RUNTIME.Interval =
+            math.clamp(
+                nextIn
+                or HOLY_ACCOUNT_HEARTBEAT_INTERVAL,
+                10,
+                60
+            )
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            "Automatic heartbeat every "
+            .. tostring(
+                math.floor(
+                    HOLY_ACCOUNT_RUNTIME.Interval
+                    + 0.5
+                )
+            )
+            .. " seconds."
+
+        HOLY_ACCOUNT_RUNTIME.LastHeartbeat =
+            os.time()
+
+        if HOLY_ACCOUNT_RUNTIME.NeedsMigration == true then
+
+            HolyAccountSaveToken(
+                token
+            )
+        end
+
+        HolyAccountRefreshUI()
+
+        if notifyUser == true then
+
+            HolyNotify(
+                "HOLY Account",
+                "Connection verified for "
+                .. tostring(
+                    data.account.roblox_username
+                    or LocalPlayer.Name
+                )
+                .. ".",
+                4
+            )
+        end
+
+        return true
+    end
+
+    local errorCode =
+        type(data) == "table"
+        and data.error
+        or nil
+
+    local message =
+        requestError
+        or HolyAccountFriendlyError(
+            errorCode
+            or (
+                statusCode > 0
+                and "request_failed"
+                or "service_unreachable"
+            )
+        )
+
+    if statusCode == 401
+    and (
+        errorCode == "account_token_required"
+        or errorCode == "invalid_account_token"
+        or errorCode == "account_token_revoked"
+        or errorCode == "account_unlinked"
+    ) then
+
+        HolyAccountClearInvalidToken()
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Not connected"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            message
+
+    elseif statusCode == 403
+    and errorCode == "account_identity_mismatch" then
+
+        HolyAccountStopHeartbeat(
+            "identity mismatch"
+        )
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Wrong Roblox account"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            "This saved login belongs to another Roblox account. Generate a fresh pairing code for "
+            .. LocalPlayer.Name
+            .. "."
+
+        message =
+            HOLY_ACCOUNT_RUNTIME.Message
+
+    else
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Connection issue"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            message
+            .. " Retrying automatically."
+    end
+
+    HolyAccountRefreshUI()
+
+    if notifyUser == true then
+
+        HolyNotify(
+            "HOLY Account",
+            message,
+            6
+        )
+    end
+
+    return false
+end
+
+function HolyAccountStartHeartbeat()
+
+    if HolyAccountTokenValid(
+        HOLY_ACCOUNT_RUNTIME.Token
+    ) ~= true then
+
+        return false
+    end
+
+    if type(
+        HolyGetRequestFunction()
+    ) ~= "function" then
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Unsupported executor"
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            "This executor does not support HTTP requests."
+
+        HolyAccountRefreshUI()
+
+        return false
+    end
+
+    HolyAccountStopHeartbeat(
+        "replace"
+    )
+
+    HOLY_ACCOUNT_RUNTIME.Active =
+        true
+
+    local generation =
+        HOLY_ACCOUNT_RUNTIME.Generation
+
+    task.spawn(function()
+
+        while HOLY_ACCOUNT_RUNTIME.Active == true
+        and HOLY_ACCOUNT_RUNTIME.Generation == generation do
+
+            HolyAccountSendHeartbeat(
+                false
+            )
+
+            local elapsed =
+                0
+
+            local interval =
+                math.clamp(
+                    tonumber(
+                        HOLY_ACCOUNT_RUNTIME.Interval
+                    )
+                    or HOLY_ACCOUNT_HEARTBEAT_INTERVAL,
+                    10,
+                    60
+                )
+
+            while elapsed < interval
+            and HOLY_ACCOUNT_RUNTIME.Active == true
+            and HOLY_ACCOUNT_RUNTIME.Generation == generation do
+
+                task.wait(
+                    0.5
+                )
+
+                elapsed =
+                    elapsed
+                    + 0.5
+            end
+        end
+    end)
+
+    return true
+end
+
+function HolyAccountNormalizePairingCode(value)
+
+    local compact =
+        tostring(
+            value
+            or ""
+        ):upper():gsub(
+            "[^A-Z0-9]",
+            ""
+        )
+
+    if #compact ~= 8
+    or compact:match(
+        "^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]+$"
+    ) == nil then
+
+        return nil
+    end
+
+    return compact:sub(1, 4)
+        .. "-"
+        .. compact:sub(5, 8)
+end
+
+function HolyAccountRedeemPairingCode(value)
+
+    if HOLY_ACCOUNT_RUNTIME.PairingBusy == true
+    or HOLY_ACCOUNT_RUNTIME.HeartbeatBusy == true then
+
+        return false
+    end
+
+    if value == nil
+    and HOLY_ACCOUNT_RUNTIME.UI.PairingInput then
+
+        value =
+            HOLY_ACCOUNT_RUNTIME.UI
+                .PairingInput.Value
+    end
+
+    local code =
+        HolyAccountNormalizePairingCode(
+            value
+        )
+
+    if not code then
+
+        HolyNotify(
+            "HOLY Account",
+            "Enter the 8-character code shown on HOLY HUB.",
+            5
+        )
+
+        return false
+    end
+
+    HOLY_ACCOUNT_RUNTIME.PairingBusy =
+        true
+
+    HOLY_ACCOUNT_RUNTIME.Status =
+        "Connecting"
+
+    HOLY_ACCOUNT_RUNTIME.Message =
+        "Redeeming the one-use pairing code..."
+
+    HolyAccountRefreshUI()
+
+    local statusCode,
+        data,
+        requestError =
+        HolyAccountRequest(
+            "/api/pairing/redeem",
+            "POST",
+            {
+                code =
+                    code,
+
+                roblox_user_id =
+                    tostring(
+                        LocalPlayer.UserId
+                    ),
+
+                roblox_username =
+                    LocalPlayer.Name,
+            }
+        )
+
+    HOLY_ACCOUNT_RUNTIME.PairingBusy =
+        false
+
+    if statusCode == 201
+    and type(data) == "table"
+    and data.ok == true
+    and HolyAccountTokenValid(
+        data.account_token
+    ) == true then
+
+        local token =
+            HolyCleanText(
+                data.account_token
+            )
+
+        HOLY_ACCOUNT_RUNTIME.Token =
+            token
+
+        HOLY_ACCOUNT_RUNTIME.Account =
+            type(data.account) == "table"
+            and data.account
+            or nil
+
+        HOLY_ACCOUNT_RUNTIME.Status =
+            "Checking"
+
+        HOLY_ACCOUNT_ENVIRONMENT.HOLY_ACCOUNT_TOKEN =
+            token
+
+        local saved =
+            HolyAccountSaveToken(
+                token
+            )
+
+        HOLY_ACCOUNT_RUNTIME.Message =
+            saved == true
+            and "Account linked. Starting automatic heartbeats..."
+            or "Account linked for this session, but this executor could not save the login."
+
+        local pairingInput =
+            HOLY_ACCOUNT_RUNTIME.UI.PairingInput
+
+        if pairingInput
+        and type(pairingInput.SetValue) == "function" then
+
+            pairingInput:SetValue(
+                "",
+                true
+            )
+        end
+
+        HolyAccountRefreshUI()
+
+        HolyNotify(
+            "HOLY Account",
+            saved == true
+            and "Roblox account connected and saved."
+            or "Roblox account connected for this session.",
+            5
+        )
+
+        HolyAccountStartHeartbeat()
+
+        return true
+    end
+
+    local message =
+        requestError
+        or HolyAccountFriendlyError(
+            type(data) == "table"
+            and data.error
+            or "pairing_request_failed"
+        )
+
+    HOLY_ACCOUNT_RUNTIME.Status =
+        HolyAccountTokenValid(
+            HOLY_ACCOUNT_RUNTIME.Token
+        ) == true
+        and "Connection paused"
+        or "Not connected"
+
+    HOLY_ACCOUNT_RUNTIME.Message =
+        message
+
+    HolyAccountRefreshUI()
+
+    HolyNotify(
+        "HOLY Account",
+        message,
+        6
+    )
+
+    return false
+end
+
 function HolySaveUISettings()
 
     if HolyCanUseFiles() ~= true then
@@ -4364,7 +5598,8 @@ function HolyLoadUISettings()
 
     if settingsDashboard ~= "Themes"
     and settingsDashboard ~= "Session"
-    and settingsDashboard ~= "Performance" then
+    and settingsDashboard ~= "Performance"
+    and settingsDashboard ~= "Account" then
 
         settingsDashboard =
             "Interface"
@@ -87274,6 +88509,10 @@ if type(Library.OnUnload) == "function" then
                 true
             )
 
+            HolyAccountStopHeartbeat(
+                "unload"
+            )
+
             if type(HOLY_MAIL_RUNTIME) == "table"
             and type(HOLY_MAIL_RUNTIME.Stop) == "function" then
 
@@ -124562,6 +125801,22 @@ local SettingsPerformanceBox =
         "gauge"
     )
 
+local SettingsAccountBox =
+    HolyAddLeftGroupbox(
+        Tabs.Settings,
+        "Settings.Account",
+        "HOLY Account",
+        "circle-user-round"
+    )
+
+local SettingsPairingBox =
+    HolyAddRightGroupbox(
+        Tabs.Settings,
+        "Settings.Pairing",
+        "Secure Pairing",
+        "link"
+    )
+
 HolyStartupLoadingStep(
     3,
     "Restoring controls",
@@ -142131,6 +143386,9 @@ function HolySettingsRefreshDashboard()
     local showPerformance =
         dashboard == "Performance"
 
+    local showAccount =
+        dashboard == "Account"
+
     HolySetGroupboxVisible(
         SettingsUIBox,
         showInterface
@@ -142170,6 +143428,16 @@ function HolySettingsRefreshDashboard()
         SettingsPerformanceBox,
         showPerformance
     )
+
+    HolySetGroupboxVisible(
+        SettingsAccountBox,
+        showAccount
+    )
+
+    HolySetGroupboxVisible(
+        SettingsPairingBox,
+        showAccount
+    )
 end
 
 function HolySettingsSetDashboard(value)
@@ -142182,7 +143450,8 @@ function HolySettingsSetDashboard(value)
 
     if value ~= "Themes"
     and value ~= "Session"
-    and value ~= "Performance" then
+    and value ~= "Performance"
+    and value ~= "Account" then
 
         value =
             "Interface"
@@ -142212,6 +143481,7 @@ SettingsModeControl =
             "Themes",
             "Session",
             "Performance",
+            "Account",
         },
 
         Default =
@@ -142236,6 +143506,106 @@ SettingsModeControl =
     })
 
 HolySettingsRefreshDashboard()
+
+HOLY_ACCOUNT_RUNTIME.UI.StatusLabel =
+    SettingsAccountBox:AddLabel(
+        "Status: Not connected"
+    )
+
+HOLY_ACCOUNT_RUNTIME.UI.AccountLabel =
+    SettingsAccountBox:AddLabel(
+        "Account: Not linked"
+    )
+
+HOLY_ACCOUNT_RUNTIME.UI.DetailLabel =
+    SettingsAccountBox:AddLabel(
+        "Generate a pairing code on HOLY HUB to connect this Roblox account."
+    )
+
+HOLY_ACCOUNT_RUNTIME.UI.RefreshButton =
+    SettingsAccountBox:AddButton({
+        Text =
+            "Check Connection",
+
+        Func =
+            function()
+
+                task.spawn(function()
+
+                    HolyAccountSendHeartbeat(
+                        true
+                    )
+                end)
+            end,
+
+        Tooltip =
+            "Immediately verifies the saved account login and refreshes Online status.",
+    })
+
+SettingsAccountBox:AddLabel(
+    "Your private account token is never shown in the interface or console."
+)
+
+HOLY_ACCOUNT_RUNTIME.UI.PairingInput =
+    SettingsPairingBox:AddInput(
+        "HolyAccountPairingCode",
+        {
+            Text =
+                "Pairing Code",
+
+            Default =
+                "",
+
+            Placeholder =
+                "ABCD-EFGH",
+
+            AllowEmpty =
+                true,
+
+            EmptyReset =
+                "",
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            MaxLength =
+                9,
+
+            Tooltip =
+                "Generate a one-use code on the HOLY HUB dashboard, then enter it here.",
+        }
+    )
+
+HOLY_ACCOUNT_RUNTIME.UI.ConnectButton =
+    SettingsPairingBox:AddButton({
+        Text =
+            "Connect Account",
+
+        Func =
+            function()
+
+                task.spawn(function()
+
+                    HolyAccountRedeemPairingCode()
+                end)
+            end,
+
+        Tooltip =
+            "Redeems the one-use code for this Roblox account and saves its permanent login locally.",
+    })
+
+SettingsPairingBox:AddLabel(
+    "Codes expire after 10 minutes and can only be used once."
+)
+
+SettingsPairingBox:AddLabel(
+    "Never share pairing codes or saved account files."
+)
+
+HolyAccountRefreshUI()
 
 local HolyQuickThemePicker =
     SettingsUIBox:AddThemePicker(
@@ -146642,6 +148012,16 @@ HolySetGroupboxVisible(
 --==================================================
 -- [8] FINISH
 --==================================================
+
+HolyAccountLoadSavedToken()
+HolyAccountRefreshUI()
+
+if HolyAccountTokenValid(
+    HOLY_ACCOUNT_RUNTIME.Token
+) == true then
+
+    HolyAccountStartHeartbeat()
+end
 
 if type(HolyRareAlertStart) == "function" then
 
