@@ -1648,6 +1648,15 @@ local HOLY_ACCOUNT_API_BASE =
 local HOLY_ACCOUNT_HEARTBEAT_INTERVAL =
     20
 
+local HOLY_ACCOUNT_MAIL_JOB_INTERVAL =
+    3
+
+local HOLY_ACCOUNT_MAIL_CONFIRM_TIMEOUT =
+    10
+
+local HOLY_ACCOUNT_MAIL_SEND_COOLDOWN =
+    10.25
+
 local THEME_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumThemes.json"
@@ -1867,6 +1876,11 @@ local HOLY_ACCOUNT_RUNTIME = {
 
     PairingBusy = false,
     HeartbeatBusy = false,
+
+    MailJobBusy = false,
+    MailJobStatus = "Waiting for account connection",
+    MailJobPendingReport = nil,
+    MailJobNextSendClock = 0,
 
     InventoryBusy = false,
     InventoryStatus = "Waiting for account connection",
@@ -5863,6 +5877,810 @@ function HolyAccountQueueMailInventorySync(
     return true
 end
 
+function HolyAccountMailJobSetStatus(value)
+
+    HOLY_ACCOUNT_RUNTIME.MailJobStatus =
+        tostring(value or "Watching for queued orders")
+
+    HolyAccountRefreshUI()
+end
+
+function HolyAccountMailJobGetPacket()
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local networkingModule =
+        sharedModules
+        and sharedModules:FindFirstChild("Networking")
+
+    if not networkingModule
+    or not networkingModule:IsA("ModuleScript") then
+
+        return nil,
+            "SharedModules.Networking was not found"
+    end
+
+    local ok, networking =
+        pcall(require, networkingModule)
+
+    local packet =
+        ok
+        and type(networking) == "table"
+        and type(networking.Mailbox) == "table"
+        and networking.Mailbox.SendBatch
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            "Networking.Mailbox.SendBatch is unavailable"
+    end
+
+    return packet
+end
+
+function HolyAccountMailJobLocalInventory()
+
+    local ok, items =
+        pcall(HolyAccountBuildMailInventory)
+
+    if not ok
+    or type(items) ~= "table" then
+
+        return nil,
+            "Could not scan the current inventory"
+    end
+
+    local itemMap = {}
+
+    for _, item in ipairs(items) do
+
+        if type(item) == "table" then
+
+            local id =
+                HolyCleanText(item.client_item_id)
+
+            if id ~= "" then
+                itemMap[id] = item
+            end
+        end
+    end
+
+    return itemMap
+end
+
+function HolyAccountMailJobBuildBatch(job)
+
+    if type(job) ~= "table"
+    or type(job.recipient) ~= "table"
+    or type(job.items) ~= "table" then
+
+        return nil,
+            "The claimed mail job was malformed",
+            "failed"
+    end
+
+    local recipientUserId =
+        math.floor(
+            tonumber(job.recipient.roblox_user_id)
+            or 0
+        )
+
+    if recipientUserId <= 0
+    or recipientUserId == LocalPlayer.UserId then
+
+        return nil,
+            "The mail recipient is invalid",
+            "failed"
+    end
+
+    if #job.items < 1
+    or #job.items > 20 then
+
+        return nil,
+            "The claimed mail job has an invalid row count",
+            "failed"
+    end
+
+    local localItems, scanError =
+        HolyAccountMailJobLocalInventory()
+
+    if type(localItems) ~= "table" then
+
+        return nil,
+            scanError or "Inventory scan failed",
+            "retry"
+    end
+
+    local batch = {
+        RecipientUserId = recipientUserId,
+
+        RecipientName =
+            HolyCleanText(
+                job.recipient.roblox_username
+                or job.recipient.alias
+            ),
+
+        Payload = {},
+        Before = {},
+        Required = {},
+        Total = 0,
+    }
+
+    for _, jobItem in ipairs(job.items) do
+
+        if type(jobItem) ~= "table" then
+            return nil,
+                "One claimed mail row was malformed",
+                "failed"
+        end
+
+        local id =
+            HolyCleanText(jobItem.client_item_id)
+
+        local quantity =
+            math.floor(
+                tonumber(jobItem.quantity)
+                or 0
+            )
+
+        local localItem =
+            localItems[id]
+
+        local available =
+            type(localItem) == "table"
+            and math.max(
+                0,
+                math.floor(
+                    tonumber(localItem.quantity)
+                    or 0
+                )
+            )
+            or 0
+
+        if id == ""
+        or quantity <= 0 then
+
+            return nil,
+                "One claimed mail row was invalid",
+                "failed"
+        end
+
+        if available < quantity then
+
+            return nil,
+                tostring(jobItem.item_name or "A selected item")
+                .. " is no longer available in the requested quantity",
+                "failed"
+        end
+
+        if localItem.is_favorited == true
+        and jobItem.allow_favorited ~= true then
+
+            return nil,
+                tostring(jobItem.item_name or "A selected item")
+                .. " is now favorited and protected",
+                "failed"
+        end
+
+        local metadata =
+            type(localItem.metadata) == "table"
+            and localItem.metadata
+            or {}
+
+        local category =
+            HolyCleanText(
+                metadata.mail_category
+                or jobItem.mail_category
+            )
+
+        local itemKey =
+            HolyCleanText(
+                metadata.mail_item_key
+                or jobItem.mail_item_key
+            )
+
+        if category ~= "HarvestedFruits"
+        and category ~= "Eggs" then
+
+            return nil,
+                "One selected item has an unsupported mail category",
+                "failed"
+        end
+
+        if itemKey == "" then
+            return nil,
+                "One selected item is missing its in-game mail key",
+                "failed"
+        end
+
+        table.insert(
+            batch.Payload,
+            {
+                ItemKey = itemKey,
+                Count = quantity,
+                Category = category,
+            }
+        )
+
+        batch.Before[id] = available
+
+        batch.Required[id] =
+            (batch.Required[id] or 0)
+            + quantity
+
+        batch.Total =
+            batch.Total
+            + quantity
+    end
+
+    return batch
+end
+
+function HolyAccountMailJobWaitForRemoval(batch)
+
+    local deadline =
+        os.clock()
+        + HOLY_ACCOUNT_MAIL_CONFIRM_TIMEOUT
+
+    repeat
+
+        local currentItems =
+            HolyAccountMailJobLocalInventory()
+
+        if type(currentItems) == "table" then
+
+            local complete = true
+
+            for id, required in pairs(batch.Required) do
+
+                local currentItem =
+                    currentItems[id]
+
+                local current =
+                    type(currentItem) == "table"
+                    and math.max(
+                        0,
+                        math.floor(
+                            tonumber(currentItem.quantity)
+                            or 0
+                        )
+                    )
+                    or 0
+
+                if current
+                    > math.max(
+                        0,
+                        (batch.Before[id] or 0)
+                            - required
+                    )
+                then
+                    complete = false
+                    break
+                end
+            end
+
+            if complete then
+                return true
+            end
+        end
+
+        task.wait(0.2)
+
+    until os.clock() >= deadline
+
+    return false
+end
+
+function HolyAccountMailJobReport(
+    claimId,
+    result,
+    errorText
+)
+
+    local statusCode, data, requestError =
+        HolyAccountRequest(
+            "/api/account/mail/jobs/report",
+            "POST",
+            {
+                roblox_user_id =
+                    tostring(LocalPlayer.UserId),
+
+                claim_id = claimId,
+                result = result,
+
+                error =
+                    tostring(errorText or ""):sub(1, 500),
+            },
+            HOLY_ACCOUNT_RUNTIME.Token
+        )
+
+    if statusCode == 200
+    and type(data) == "table"
+    and data.ok == true then
+        return true
+    end
+
+    if statusCode == 409
+    and type(data) == "table"
+    and data.error == "mail_claim_not_found" then
+        return true
+    end
+
+    return false,
+        requestError
+        or HolyAccountFriendlyError(
+            type(data) == "table"
+            and data.error
+            or "mail_job_result_failed"
+        )
+end
+
+function HolyAccountMailJobSubmitResult(
+    claimId,
+    result,
+    errorText
+)
+
+    HOLY_ACCOUNT_RUNTIME.MailJobPendingReport = {
+        ClaimId = claimId,
+        Result = result,
+        Error = tostring(errorText or ""),
+    }
+
+    local reported, reportError =
+        HolyAccountMailJobReport(
+            claimId,
+            result,
+            errorText
+        )
+
+    if reported then
+        HOLY_ACCOUNT_RUNTIME.MailJobPendingReport = nil
+        return true
+    end
+
+    HolyAccountMailJobSetStatus(
+        "Result saved; API report retry pending: "
+        .. tostring(reportError or "service unavailable")
+    )
+
+    return false
+end
+
+function HolyAccountMailJobRetryPendingReport()
+
+    local pending =
+        HOLY_ACCOUNT_RUNTIME.MailJobPendingReport
+
+    if type(pending) ~= "table" then
+        return true
+    end
+
+    local reported, reportError =
+        HolyAccountMailJobReport(
+            pending.ClaimId,
+            pending.Result,
+            pending.Error
+        )
+
+    if not reported then
+
+        HolyAccountMailJobSetStatus(
+            "Waiting to report the previous result: "
+            .. tostring(reportError or "service unavailable")
+        )
+
+        return false
+    end
+
+    local wasSent =
+        pending.Result == "sent"
+
+    HOLY_ACCOUNT_RUNTIME.MailJobPendingReport = nil
+
+    if wasSent then
+        HolyAccountQueueMailInventorySync(true, false)
+    end
+
+    HolyAccountMailJobSetStatus(
+        wasSent
+        and "Previous delivery reported successfully"
+        or "Previous order result reported successfully"
+    )
+
+    return true
+end
+
+function HolyAccountMailJobRecordAccepted()
+
+    HOLY_ACCOUNT_RUNTIME.MailJobNextSendClock =
+        os.clock()
+        + HOLY_ACCOUNT_MAIL_SEND_COOLDOWN
+
+    if type(HolyMailCheckDay) == "function" then
+        pcall(HolyMailCheckDay)
+    end
+
+    if type(HOLY_MAIL_STATE) == "table" then
+
+        HOLY_MAIL_STATE.TrackerUsed =
+            math.clamp(
+                math.floor(
+                    tonumber(HOLY_MAIL_STATE.TrackerUsed)
+                    or 0
+                )
+                + 1,
+                0,
+                50
+            )
+
+        if type(HolyMailSaveSettings) == "function" then
+            pcall(HolyMailSaveSettings)
+        end
+    end
+
+    if type(HOLY_MAIL_RUNTIME) == "table"
+    and type(HOLY_MAIL_RUNTIME.UpdateQuota) == "function" then
+        pcall(HOLY_MAIL_RUNTIME.UpdateQuota)
+    end
+end
+
+function HolyAccountProcessMailJob()
+
+    if HOLY_ACCOUNT_RUNTIME.MailJobBusy == true
+    or HOLY_ACCOUNT_RUNTIME.Status ~= "Online"
+    or HOLY_ACCOUNT_RUNTIME.InventoryBusy == true
+    or HOLY_ACCOUNT_RUNTIME.HeartbeatBusy == true
+    or HOLY_ACCOUNT_RUNTIME.PairingBusy == true then
+        return false
+    end
+
+    local deliveryState =
+        type(HOLY_MAIL_RUNTIME) == "table"
+        and HOLY_MAIL_RUNTIME.DeliveryState
+        or nil
+
+    if type(deliveryState) == "table"
+    and deliveryState.Running == true then
+
+        HolyAccountMailJobSetStatus(
+            "Waiting for the current manual delivery"
+        )
+
+        return false
+    end
+
+    if os.clock()
+        < (HOLY_ACCOUNT_RUNTIME.MailJobNextSendClock or 0)
+    then
+        return false
+    end
+
+    HOLY_ACCOUNT_RUNTIME.MailJobBusy = true
+
+    local activeClaimId = ""
+
+    local processOk, processError =
+        xpcall(
+            function()
+
+                if not HolyAccountMailJobRetryPendingReport() then
+                    return
+                end
+
+                local packet, packetError =
+                    HolyAccountMailJobGetPacket()
+
+                if not packet then
+                    HolyAccountMailJobSetStatus(packetError)
+                    return
+                end
+
+                HolyAccountMailJobSetStatus(
+                    "Checking for queued orders..."
+                )
+
+                local statusCode, data, requestError =
+                    HolyAccountRequest(
+                        "/api/account/mail/jobs/claim",
+                        "POST",
+                        {
+                            roblox_user_id =
+                                tostring(LocalPlayer.UserId),
+                        },
+                        HOLY_ACCOUNT_RUNTIME.Token
+                    )
+
+                if statusCode ~= 200
+                or type(data) ~= "table"
+                or data.ok ~= true then
+
+                    HolyAccountMailJobSetStatus(
+                        "Order check failed: "
+                        .. tostring(
+                            requestError
+                            or HolyAccountFriendlyError(
+                                type(data) == "table"
+                                and data.error
+                                or "mail_job_claim_failed"
+                            )
+                        )
+                    )
+
+                    return
+                end
+
+                if type(data.job) ~= "table" then
+                    HolyAccountMailJobSetStatus(
+                        "Watching for queued orders"
+                    )
+
+                    return
+                end
+
+                activeClaimId =
+                    HolyCleanText(data.job.claim_id)
+
+                if activeClaimId == "" then
+                    error("Claimed order has no claim ID")
+                end
+
+                local batch, batchError, invalidResult =
+                    HolyAccountMailJobBuildBatch(data.job)
+
+                if type(batch) ~= "table" then
+
+                    HolyAccountMailJobSubmitResult(
+                        activeClaimId,
+                        invalidResult == "retry"
+                            and "retry"
+                            or "failed",
+                        batchError or "Inventory validation failed"
+                    )
+
+                    activeClaimId = ""
+
+                    HolyAccountMailJobSetStatus(
+                        "Order not sent: "
+                        .. tostring(batchError)
+                    )
+
+                    return
+                end
+
+                deliveryState =
+                    type(HOLY_MAIL_RUNTIME) == "table"
+                    and HOLY_MAIL_RUNTIME.DeliveryState
+                    or nil
+
+                if type(deliveryState) == "table"
+                and deliveryState.Running == true then
+
+                    HolyAccountMailJobSubmitResult(
+                        activeClaimId,
+                        "retry",
+                        "A manual delivery started"
+                    )
+
+                    activeClaimId = ""
+                    return
+                end
+
+                local recipientName =
+                    batch.RecipientName ~= ""
+                    and batch.RecipientName
+                    or tostring(batch.RecipientUserId)
+
+                HolyAccountMailJobSetStatus(
+                    "Sending "
+                    .. tostring(batch.Total)
+                    .. (batch.Total == 1 and " item" or " items")
+                    .. " to "
+                    .. recipientName
+                    .. "..."
+                )
+
+                local fireOk, accepted, serverMessage =
+                    pcall(function()
+
+                        return packet:Fire(
+                            batch.RecipientUserId,
+                            batch.Payload,
+                            "Created from HOLY HUB"
+                        )
+                    end)
+
+                if not fireOk then
+
+                    HolyAccountMailJobSubmitResult(
+                        activeClaimId,
+                        "uncertain",
+                        "Mailbox call ended without a confirmed result: "
+                        .. tostring(accepted)
+                    )
+
+                    activeClaimId = ""
+
+                    HolyAccountMailJobSetStatus(
+                        "Delivery paused because its result is uncertain"
+                    )
+
+                    return
+                end
+
+                local responseText =
+                    tostring(serverMessage or "")
+
+                if accepted == true then
+
+                    HolyAccountMailJobRecordAccepted()
+
+                    if not HolyAccountMailJobWaitForRemoval(batch) then
+
+                        HolyAccountMailJobSubmitResult(
+                            activeClaimId,
+                            "uncertain",
+                            "Server accepted the mail, but inventory removal was not confirmed"
+                        )
+
+                        activeClaimId = ""
+
+                        HolyAccountMailJobSetStatus(
+                            "Mail accepted; confirmation paused for safety"
+                        )
+
+                        return
+                    end
+
+                    local reported =
+                        HolyAccountMailJobSubmitResult(
+                            activeClaimId,
+                            "sent",
+                            ""
+                        )
+
+                    activeClaimId = ""
+
+                    if reported then
+                        HolyAccountQueueMailInventorySync(
+                            true,
+                            false
+                        )
+                    end
+
+                    HolyAccountMailJobSetStatus(
+                        reported
+                        and (
+                            "Delivered "
+                            .. tostring(batch.Total)
+                            .. (
+                                batch.Total == 1
+                                and " item"
+                                or " items"
+                            )
+                            .. " to "
+                            .. recipientName
+                        )
+                        or "Delivery confirmed; API report retry pending"
+                    )
+
+                    return
+                end
+
+                local waitSeconds =
+                    tonumber(
+                        responseText:lower():match(
+                            "wait%s+(%d+)%s*s"
+                        )
+                    )
+
+                if waitSeconds then
+
+                    HOLY_ACCOUNT_RUNTIME.MailJobNextSendClock =
+                        os.clock()
+                        + waitSeconds
+                        + 0.25
+
+                    HolyAccountMailJobSubmitResult(
+                        activeClaimId,
+                        "retry",
+                        responseText ~= ""
+                            and responseText
+                            or "Mailbox cooldown"
+                    )
+
+                    activeClaimId = ""
+
+                    HolyAccountMailJobSetStatus(
+                        "Mailbox cooldown; retrying safely"
+                    )
+
+                    return
+                end
+
+                HolyAccountMailJobSubmitResult(
+                    activeClaimId,
+                    "failed",
+                    responseText ~= ""
+                        and responseText
+                        or "The server rejected this mail"
+                )
+
+                activeClaimId = ""
+
+                HolyAccountMailJobSetStatus(
+                    "Order failed: "
+                    .. (
+                        responseText ~= ""
+                        and responseText
+                        or "server rejected the mail"
+                    )
+                )
+            end,
+            function(value)
+
+                return tostring(value)
+            end
+        )
+
+    if not processOk then
+
+        if activeClaimId ~= "" then
+
+            HolyAccountMailJobSubmitResult(
+                activeClaimId,
+                "uncertain",
+                "Processor error after claim: "
+                .. tostring(processError)
+            )
+        end
+
+        HolyAccountMailJobSetStatus(
+            "Order processor paused: "
+            .. tostring(processError)
+        )
+    end
+
+    HOLY_ACCOUNT_RUNTIME.MailJobBusy = false
+
+    HolyAccountRefreshUI()
+
+    return processOk == true
+end
+
+function HolyAccountStartMailJobWorker(generation)
+
+    task.spawn(function()
+
+        task.wait(2)
+
+        while HOLY_ACCOUNT_RUNTIME.Active == true
+        and HOLY_ACCOUNT_RUNTIME.Generation == generation do
+
+            if HOLY_ACCOUNT_RUNTIME.Status == "Online" then
+
+                HolyAccountProcessMailJob()
+            end
+
+            local elapsed = 0
+
+            while elapsed < HOLY_ACCOUNT_MAIL_JOB_INTERVAL
+            and HOLY_ACCOUNT_RUNTIME.Active == true
+            and HOLY_ACCOUNT_RUNTIME.Generation == generation do
+
+                task.wait(0.5)
+
+                elapsed =
+                    elapsed
+                    + 0.5
+            end
+        end
+    end)
+end
+
 function HolyAccountRefreshUI()
 
     local ui =
@@ -5951,6 +6769,18 @@ function HolyAccountRefreshUI()
             "Inventory: "
             .. tostring(
                 HOLY_ACCOUNT_RUNTIME.InventoryStatus
+                or "Waiting for account connection"
+            )
+        )
+    end
+
+    if ui.MailJobLabel
+    and type(ui.MailJobLabel.SetText) == "function" then
+
+        ui.MailJobLabel:SetText(
+            "Mail Orders: "
+            .. tostring(
+                HOLY_ACCOUNT_RUNTIME.MailJobStatus
                 or "Waiting for account connection"
             )
         )
@@ -6299,6 +7129,10 @@ function HolyAccountStartHeartbeat()
             end
         end
     end)
+
+    HolyAccountStartMailJobWorker(
+        generation
+    )
 
     return true
 end
@@ -144783,6 +145617,11 @@ HOLY_ACCOUNT_RUNTIME.UI.RefreshButton =
 HOLY_ACCOUNT_RUNTIME.UI.InventoryLabel =
     SettingsAccountBox:AddLabel(
         "Inventory: Waiting for account connection"
+    )
+
+HOLY_ACCOUNT_RUNTIME.UI.MailJobLabel =
+    SettingsAccountBox:AddLabel(
+        "Mail Orders: Waiting for account connection"
     )
 
 HOLY_ACCOUNT_RUNTIME.UI.SyncInventoryButton =
