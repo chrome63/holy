@@ -101158,6 +101158,11 @@ HOLY_MAIL_STATE = {
     SavedRecipients = {},
     RecentRecipients = {},
 
+    FleetAccounts = {},
+    FleetGroups = {
+        "Ungrouped",
+    },
+
     TrackerDay = os.date("!%Y-%m-%d"),
     TrackerUsed = 0,
 }
@@ -102108,6 +102113,200 @@ function HolyMailNormalizeRecipientRecords(
     return output
 end
 
+function HolyMailNormalizeFleetGroupName(
+    value
+)
+    local groupName =
+        HolyMailRecipientText(
+            value,
+            24
+        )
+
+    if groupName == ""
+        or groupName:lower() == "all"
+    then
+        return "Ungrouped"
+    end
+
+    return groupName
+end
+
+function HolyMailNormalizeFleetGroups(
+    value
+)
+    local output = {
+        "Ungrouped",
+    }
+
+    local seen = {
+        ungrouped = true,
+    }
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for _, rawGroup in pairs(
+        value
+    ) do
+        local groupName =
+            HolyMailNormalizeFleetGroupName(
+                rawGroup
+            )
+
+        local key =
+            groupName:lower()
+
+        if not seen[key]
+            and #output < 20
+        then
+            seen[key] =
+                true
+
+            table.insert(
+                output,
+                groupName
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyMailNormalizeFleetAccounts(
+    value
+)
+    local output = {}
+    local seen = {}
+    local sequence = 0
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for _, record in pairs(
+        value
+    ) do
+        if type(record) == "table" then
+            sequence +=
+                1
+
+            local userId =
+                math.floor(
+                    tonumber(
+                        record.UserId
+                            or record.Id
+                    )
+                    or 0
+                )
+
+            local username =
+                HolyMailRecipientText(
+                    record.Name
+                        or record.Username,
+                    32
+                )
+
+            if userId > 0
+                and userId
+                    ~= HOLY_MAIL_ACCOUNT_USER_ID
+                and username ~= ""
+                and not seen[userId]
+            then
+                seen[userId] =
+                    true
+
+                local addedAt =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(
+                                record.AddedAt
+                            )
+                            or os.time()
+                        )
+                    )
+
+                table.insert(
+                    output,
+                    {
+                        UserId =
+                            userId,
+
+                        Name =
+                            username,
+
+                        Label =
+                            HolyMailRecipientText(
+                                record.Label
+                                    or username,
+                                36
+                            ),
+
+                        Group =
+                            HolyMailNormalizeFleetGroupName(
+                                record.Group
+                            ),
+
+                        Enabled =
+                            record.Enabled
+                                ~= false,
+
+                        Priority =
+                            math.max(
+                                1,
+                                math.floor(
+                                    tonumber(
+                                        record.Priority
+                                    )
+                                    or sequence
+                                )
+                            ),
+
+                        AddedAt =
+                            addedAt,
+                    }
+                )
+
+                if #output >= 100 then
+                    break
+                end
+            end
+        end
+    end
+
+    table.sort(
+        output,
+        function(left, right)
+            if left.Priority
+                ~= right.Priority
+            then
+                return left.Priority
+                    < right.Priority
+            end
+
+            if left.AddedAt
+                ~= right.AddedAt
+            then
+                return left.AddedAt
+                    < right.AddedAt
+            end
+
+            return left.Name:lower()
+                < right.Name:lower()
+        end
+    )
+
+    for index, record in ipairs(
+        output
+    ) do
+        record.Priority =
+            index
+    end
+
+    return output
+end
+
 function HolyMailResolveRecipient(
     value
 )
@@ -102459,6 +102658,16 @@ function HolyMailSaveSettings()
                 false
             ),
 
+        FleetAccounts =
+            HolyMailNormalizeFleetAccounts(
+                HOLY_MAIL_STATE.FleetAccounts
+            ),
+
+        FleetGroups =
+            HolyMailNormalizeFleetGroups(
+                HOLY_MAIL_STATE.FleetGroups
+            ),
+
         HudPosition =
             position,
 
@@ -102633,6 +102842,22 @@ function HolyMailLoadSettings()
                 or {},
             8,
             false
+        )
+
+    HOLY_MAIL_STATE.FleetAccounts =
+        HolyMailNormalizeFleetAccounts(
+            data.FleetAccounts
+                or HOLY_MAIL_STATE.FleetAccounts
+                or {}
+        )
+
+    HOLY_MAIL_STATE.FleetGroups =
+        HolyMailNormalizeFleetGroups(
+            data.FleetGroups
+                or HOLY_MAIL_STATE.FleetGroups
+                or {
+                    "Ungrouped",
+                }
         )
 
     HOLY_MAIL_STATE.TrackerDay =
@@ -105182,6 +105407,39 @@ function HolyMailCreateHud()
                 nil,
 
             ItemButton =
+                nil,
+        },
+
+        Fleet = {
+            Accounts =
+                HolyMailNormalizeFleetAccounts(
+                    HOLY_MAIL_STATE.FleetAccounts
+                ),
+
+            Groups =
+                HolyMailNormalizeFleetGroups(
+                    HOLY_MAIL_STATE.FleetGroups
+                ),
+
+            ActiveGroup =
+                "All",
+
+            Search =
+                "",
+
+            EditUserId =
+                nil,
+
+            EditOriginalName =
+                "",
+
+            ImportBusy =
+                false,
+
+            ImportDraft =
+                {},
+
+            LoadedGroup =
                 nil,
         },
 
@@ -109491,15 +109749,15 @@ function HolyMailCreateHud()
                 draft.Render()
             end)
 
-            state.SavedRecipients.ValueButton.MouseButton1Click:Connect(function()
-                state.SavedRecipients.Show(
-                    recipientBox
-                )
-            end)
-
             draft.UpdateFavorite()
             draft.Render()
         end
+
+    state.SavedRecipients.ValueButton.MouseButton1Click:Connect(function()
+        state.SavedRecipients.Show(
+            recipientBox
+        )
+    end)
 
     state.Filters.Show =
         function()
@@ -113833,21 +114091,27 @@ function HolyMailCreateHud()
     )
 
     addMainTab(
-        "Inbox",
-        "Inbox",
+        "Fleet",
+        "Fleet",
         104
     )
 
     addMainTab(
-        "History",
-        "History",
+        "Inbox",
+        "Inbox",
         194
+    )
+
+    addMainTab(
+        "History",
+        "History",
+        284
     )
 
     addMainTab(
         "Settings",
         "Settings",
-        284
+        374
     )
 
     local sendModeBar =
@@ -113946,6 +114210,2266 @@ function HolyMailCreateHud()
 
     itemModeButton.TextSize =
         12
+
+    ------------------------------------------------------------------------
+    -- FLEET MANAGER
+    ------------------------------------------------------------------------
+
+    local fleetPage =
+        create(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Size =
+                    UDim2.fromOffset(
+                        896,
+                        580
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        110
+                    ),
+
+                Visible =
+                    false,
+            },
+            window
+        )
+
+    local fleetGroupCard =
+        card(
+            fleetPage,
+            UDim2.fromOffset(
+                244,
+                580
+            ),
+            UDim2.fromOffset(
+                0,
+                0
+            )
+        )
+
+    local fleetAccountCard =
+        card(
+            fleetPage,
+            UDim2.fromOffset(
+                640,
+                580
+            ),
+            UDim2.fromOffset(
+                256,
+                0
+            )
+        )
+
+    text(
+        fleetGroupCard,
+        "ALT FLEET",
+        UDim2.fromOffset(
+            130,
+            20
+        ),
+        UDim2.fromOffset(
+            18,
+            14
+        ),
+        12,
+        color.Secondary,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local fleetStats =
+        text(
+            fleetGroupCard,
+            "0 / 0 ENABLED",
+            UDim2.fromOffset(
+                190,
+                20
+            ),
+            UDim2.fromOffset(
+                18,
+                42
+            ),
+            11,
+            color.Muted
+        )
+
+    local fleetGroupBox =
+        box(
+            fleetGroupCard,
+            "New group",
+            UDim2.fromOffset(
+                146,
+                38
+            ),
+            UDim2.fromOffset(
+                18,
+                78
+            )
+        )
+
+    local fleetGroupAdd =
+        button(
+            fleetGroupCard,
+            "+",
+            UDim2.fromOffset(
+                56,
+                38
+            ),
+            UDim2.fromOffset(
+                170,
+                78
+            ),
+            true
+        )
+
+    fleetGroupAdd.TextSize =
+        17
+
+    local fleetGroupList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.fromOffset(
+                        208,
+                        196
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        18,
+                        126
+                    ),
+
+                CanvasSize =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                AutomaticCanvasSize =
+                    Enum.AutomaticSize.Y,
+
+                ScrollBarThickness =
+                    3,
+
+                ScrollBarImageColor3 =
+                    color.Border,
+            },
+            fleetGroupCard
+        )
+
+    local fleetGroupLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding =
+                    UDim.new(
+                        0,
+                        5
+                    ),
+
+                SortOrder =
+                    Enum.SortOrder.LayoutOrder,
+            },
+            fleetGroupList
+        )
+
+    local fleetDeleteGroup =
+        button(
+            fleetGroupCard,
+            "Delete selected group",
+            UDim2.fromOffset(
+                208,
+                38
+            ),
+            UDim2.fromOffset(
+                18,
+                332
+            ),
+            false
+        )
+
+    fleetDeleteGroup.TextSize =
+        11
+
+    text(
+        fleetGroupCard,
+        "BUILD ROUTE",
+        UDim2.fromOffset(
+            160,
+            20
+        ),
+        UDim2.fromOffset(
+            18,
+            390
+        ),
+        11,
+        color.Muted,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local fleetTargetBox =
+        box(
+            fleetGroupCard,
+            "Target each, e.g. $2B",
+            UDim2.fromOffset(
+                208,
+                40
+            ),
+            UDim2.fromOffset(
+                18,
+                418
+            )
+        )
+
+    local fleetLoadValue =
+        button(
+            fleetGroupCard,
+            "Load · Target Each",
+            UDim2.fromOffset(
+                208,
+                38
+            ),
+            UDim2.fromOffset(
+                18,
+                468
+            ),
+            true
+        )
+
+    local fleetLoadItems =
+        button(
+            fleetGroupCard,
+            "Load · Pick Items",
+            UDim2.fromOffset(
+                208,
+                38
+            ),
+            UDim2.fromOffset(
+                18,
+                516
+            ),
+            false
+        )
+
+    fleetLoadValue.TextSize =
+        11
+
+    fleetLoadItems.TextSize =
+        11
+
+    text(
+        fleetAccountCard,
+        "ACCOUNTS",
+        UDim2.fromOffset(
+            150,
+            20
+        ),
+        UDim2.fromOffset(
+            16,
+            14
+        ),
+        12,
+        color.Secondary,
+        nil,
+        Enum.Font.GothamBold
+    )
+
+    local fleetCount =
+        text(
+            fleetAccountCard,
+            "0 shown",
+            UDim2.fromOffset(
+                220,
+                20
+            ),
+            UDim2.new(
+                1,
+                -236,
+                0,
+                14
+            ),
+            11,
+            color.Muted,
+            Enum.TextXAlignment.Right
+        )
+
+    local fleetSearchBox =
+        box(
+            fleetAccountCard,
+            "Search accounts...",
+            UDim2.fromOffset(
+                442,
+                38
+            ),
+            UDim2.fromOffset(
+                16,
+                42
+            )
+        )
+
+    local fleetImportButton =
+        button(
+            fleetAccountCard,
+            "Bulk Import",
+            UDim2.fromOffset(
+                150,
+                38
+            ),
+            UDim2.fromOffset(
+                474,
+                42
+            ),
+            false
+        )
+
+    local fleetUsernameBox =
+        box(
+            fleetAccountCard,
+            "Username or User ID",
+            UDim2.fromOffset(
+                248,
+                38
+            ),
+            UDim2.fromOffset(
+                16,
+                88
+            )
+        )
+
+    local fleetLabelBox =
+        box(
+            fleetAccountCard,
+            "Label",
+            UDim2.fromOffset(
+                190,
+                38
+            ),
+            UDim2.fromOffset(
+                272,
+                88
+            )
+        )
+
+    local fleetSaveAccount =
+        button(
+            fleetAccountCard,
+            "+ Add",
+            UDim2.fromOffset(
+                154,
+                38
+            ),
+            UDim2.fromOffset(
+                470,
+                88
+            ),
+            true
+        )
+
+    local fleetAccountList =
+        create(
+            "ScrollingFrame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        -32,
+                        0,
+                        400
+                    ),
+
+                Position =
+                    UDim2.fromOffset(
+                        16,
+                        136
+                    ),
+
+                CanvasSize =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                AutomaticCanvasSize =
+                    Enum.AutomaticSize.Y,
+
+                ScrollBarThickness =
+                    3,
+
+                ScrollBarImageColor3 =
+                    color.Border,
+            },
+            fleetAccountCard
+        )
+
+    local fleetAccountLayout =
+        create(
+            "UIListLayout",
+            {
+                Padding =
+                    UDim.new(
+                        0,
+                        6
+                    ),
+
+                SortOrder =
+                    Enum.SortOrder.LayoutOrder,
+            },
+            fleetAccountList
+        )
+
+    local fleetStatus =
+        text(
+            fleetAccountCard,
+            "Create a group or import your alt accounts.",
+            UDim2.new(
+                1,
+                -32,
+                0,
+                28
+            ),
+            UDim2.fromOffset(
+                16,
+                542
+            ),
+            11,
+            color.Muted
+        )
+
+    local refreshFleetPage
+
+    local function fleetGroupExists(
+        groupName
+    )
+        for _, existing in ipairs(
+            state.Fleet.Groups
+        ) do
+            if existing:lower()
+                == tostring(
+                    groupName
+                ):lower()
+            then
+                return true,
+                    existing
+            end
+        end
+
+        return false,
+            nil
+    end
+
+    local function fleetFindAccount(
+        userId
+    )
+        for index, record in ipairs(
+            state.Fleet.Accounts
+        ) do
+            if record.UserId == userId then
+                return record,
+                    index
+            end
+        end
+
+        return nil,
+            nil
+    end
+
+    local function fleetSelectedGroup()
+        if state.Fleet.ActiveGroup == "All" then
+            return "Ungrouped"
+        end
+
+        return HolyMailNormalizeFleetGroupName(
+            state.Fleet.ActiveGroup
+        )
+    end
+
+    state.Fleet.Commit =
+        function()
+            state.Fleet.Accounts =
+                HolyMailNormalizeFleetAccounts(
+                    state.Fleet.Accounts
+                )
+
+            state.Fleet.Groups =
+                HolyMailNormalizeFleetGroups(
+                    state.Fleet.Groups
+                )
+
+            for _, account in ipairs(
+                state.Fleet.Accounts
+            ) do
+                local exists =
+                    fleetGroupExists(
+                        account.Group
+                    )
+
+                if not exists then
+                    if #state.Fleet.Groups < 20 then
+                        table.insert(
+                            state.Fleet.Groups,
+                            account.Group
+                        )
+                    else
+                        account.Group =
+                            "Ungrouped"
+                    end
+                end
+            end
+
+            state.Fleet.Groups =
+                HolyMailNormalizeFleetGroups(
+                    state.Fleet.Groups
+                )
+
+            if state.Fleet.ActiveGroup ~= "All" then
+                local exists,
+                    correctedName =
+                    fleetGroupExists(
+                        state.Fleet.ActiveGroup
+                    )
+
+                state.Fleet.ActiveGroup =
+                    exists
+                    and correctedName
+                    or "All"
+            end
+
+            HOLY_MAIL_STATE.FleetAccounts =
+                HolyMailNormalizeFleetAccounts(
+                    state.Fleet.Accounts
+                )
+
+            HOLY_MAIL_STATE.FleetGroups =
+                HolyMailNormalizeFleetGroups(
+                    state.Fleet.Groups
+                )
+
+            HolyMailSaveSettings()
+
+            if type(refreshFleetPage)
+                == "function"
+            then
+                refreshFleetPage()
+            end
+        end
+
+    state.Fleet.EnabledAccounts =
+        function()
+            local output = {}
+
+            for _, record in ipairs(
+                state.Fleet.Accounts
+            ) do
+                local correctGroup =
+                    state.Fleet.ActiveGroup == "All"
+                    or record.Group
+                        == state.Fleet.ActiveGroup
+
+                if correctGroup
+                    and record.Enabled == true
+                then
+                    table.insert(
+                        output,
+                        record
+                    )
+                end
+            end
+
+            return output
+        end
+
+    local function fleetLastResult(
+        userId
+    )
+        for _, historyRecord in ipairs(
+            HOLY_MAIL_HISTORY.Records
+            or {}
+        ) do
+            if tostring(
+                historyRecord.Direction
+            ) == "Sent"
+                and tonumber(
+                    historyRecord.OtherUserId
+                ) == userId
+            then
+                local status =
+                    tostring(
+                        historyRecord.Status
+                        or "Unknown"
+                    )
+
+                local timestamp =
+                    tonumber(
+                        historyRecord.Timestamp
+                    )
+                    or 0
+
+                local formatted =
+                    timestamp > 0
+                    and os.date(
+                        "%d %b · %H:%M",
+                        timestamp
+                    )
+                    or "Unknown time"
+
+                return status
+                    .. " · "
+                    .. formatted,
+                    status
+            end
+        end
+
+        return "Never sent to",
+            "None"
+    end
+
+    local function fleetMoveAccount(
+        userId,
+        direction,
+        visibleAccounts
+    )
+        if state.RecipientChangesLocked() then
+            return
+        end
+
+        local visibleIndex
+
+        for index, record in ipairs(
+            visibleAccounts
+        ) do
+            if record.UserId == userId then
+                visibleIndex =
+                    index
+
+                break
+            end
+        end
+
+        local other =
+            visibleIndex
+            and visibleAccounts[
+                visibleIndex + direction
+            ]
+            or nil
+
+        local current =
+            fleetFindAccount(
+                userId
+            )
+
+        if not current
+            or not other
+        then
+            return
+        end
+
+        current.Priority,
+            other.Priority =
+            other.Priority,
+            current.Priority
+
+        state.Fleet.Commit()
+    end
+
+    refreshFleetPage =
+        function()
+            clearRows(
+                fleetGroupList,
+                fleetGroupLayout
+            )
+
+            clearRows(
+                fleetAccountList,
+                fleetAccountLayout
+            )
+
+            local total =
+                #state.Fleet.Accounts
+
+            local enabled = 0
+
+            for _, record in ipairs(
+                state.Fleet.Accounts
+            ) do
+                if record.Enabled then
+                    enabled +=
+                        1
+                end
+            end
+
+            fleetStats.Text =
+                tostring(enabled)
+                .. " / "
+                .. tostring(total)
+                .. " ENABLED"
+
+            local groupsToRender = {
+                "All",
+            }
+
+            for _, groupName in ipairs(
+                state.Fleet.Groups
+            ) do
+                table.insert(
+                    groupsToRender,
+                    groupName
+                )
+            end
+
+            for order, groupName in ipairs(
+                groupsToRender
+            ) do
+                local groupTotal = 0
+                local groupEnabled = 0
+
+                for _, account in ipairs(
+                    state.Fleet.Accounts
+                ) do
+                    if groupName == "All"
+                        or account.Group
+                            == groupName
+                    then
+                        groupTotal +=
+                            1
+
+                        if account.Enabled then
+                            groupEnabled +=
+                                1
+                        end
+                    end
+                end
+
+                local selected =
+                    state.Fleet.ActiveGroup
+                    == groupName
+
+                local groupButton =
+                    button(
+                        fleetGroupList,
+                        (
+                            groupName == "All"
+                            and "All Accounts"
+                            or groupName
+                        )
+                            .. "  ·  "
+                            .. tostring(
+                                groupEnabled
+                            )
+                            .. "/"
+                            .. tostring(
+                                groupTotal
+                            ),
+                        UDim2.new(
+                            1,
+                            -4,
+                            0,
+                            40
+                        ),
+                        UDim2.fromOffset(
+                            0,
+                            0
+                        ),
+                        selected
+                    )
+
+                groupButton.LayoutOrder =
+                    order
+
+                groupButton.TextSize =
+                    11
+
+                groupButton.TextXAlignment =
+                    Enum.TextXAlignment.Left
+
+                create(
+                    "UIPadding",
+                    {
+                        PaddingLeft =
+                            UDim.new(
+                                0,
+                                12
+                            ),
+
+                        PaddingRight =
+                            UDim.new(
+                                0,
+                                8
+                            ),
+                    },
+                    groupButton
+                )
+
+                groupButton.MouseButton1Click:Connect(function()
+                    state.Fleet.ActiveGroup =
+                        groupName
+
+                    state.Fleet.EditUserId =
+                        nil
+
+                    state.Fleet.EditOriginalName =
+                        ""
+
+                    fleetUsernameBox.Text =
+                        ""
+
+                    fleetLabelBox.Text =
+                        ""
+
+                    fleetSaveAccount.Text =
+                        "+ Add"
+
+                    refreshFleetPage()
+                end)
+            end
+
+            fleetDeleteGroup.Visible =
+                state.Fleet.ActiveGroup ~= "All"
+                and state.Fleet.ActiveGroup
+                    ~= "Ungrouped"
+
+            local routeName =
+                state.Fleet.ActiveGroup == "All"
+                and "All"
+                or state.Fleet.ActiveGroup
+
+            fleetLoadValue.Text =
+                "Load "
+                .. routeName
+                .. " · Target Each"
+
+            fleetLoadItems.Text =
+                "Load "
+                .. routeName
+                .. " · Pick Items"
+
+            local query =
+                HolyMailFilterKey(
+                    state.Fleet.Search
+                )
+
+            local visibleAccounts = {}
+
+            for _, record in ipairs(
+                state.Fleet.Accounts
+            ) do
+                local correctGroup =
+                    state.Fleet.ActiveGroup == "All"
+                    or record.Group
+                        == state.Fleet.ActiveGroup
+
+                local searchable =
+                    HolyMailFilterKey(
+                        record.Label
+                            .. " "
+                            .. record.Name
+                            .. " "
+                            .. tostring(
+                                record.UserId
+                            )
+                            .. " "
+                            .. record.Group
+                    )
+
+                if correctGroup
+                    and (
+                        query == ""
+                        or searchable:find(
+                            query,
+                            1,
+                            true
+                        )
+                    )
+                then
+                    table.insert(
+                        visibleAccounts,
+                        record
+                    )
+                end
+            end
+
+            fleetCount.Text =
+                tostring(
+                    #visibleAccounts
+                )
+                .. " shown · "
+                .. tostring(total)
+                .. " total"
+
+            if #visibleAccounts == 0 then
+                local empty =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                color.Field,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -4,
+                                    0,
+                                    80
+                                ),
+                        },
+                        fleetAccountList
+                    )
+
+                round(
+                    empty,
+                    12
+                )
+
+                text(
+                    empty,
+                    total == 0
+                        and "No Fleet accounts yet"
+                        or "No matching accounts",
+                    UDim2.new(
+                        1,
+                        -24,
+                        0,
+                        26
+                    ),
+                    UDim2.fromOffset(
+                        12,
+                        12
+                    ),
+                    13,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamSemibold
+                )
+
+                text(
+                    empty,
+                    total == 0
+                        and "Add one above or use Bulk Import."
+                        or "Try another group or search.",
+                    UDim2.new(
+                        1,
+                        -24,
+                        0,
+                        22
+                    ),
+                    UDim2.fromOffset(
+                        12,
+                        42
+                    ),
+                    11,
+                    color.Muted
+                )
+            end
+
+            for index, record in ipairs(
+                visibleAccounts
+            ) do
+                local lastResult,
+                    lastStatus =
+                    fleetLastResult(
+                        record.UserId
+                    )
+
+                local warning =
+                    lastStatus ~= "None"
+                    and lastStatus ~= "Sent"
+
+                local row =
+                    create(
+                        "Frame",
+                        {
+                            BackgroundColor3 =
+                                record.Enabled
+                                and color.Field
+                                or color.Card,
+
+                            Size =
+                                UDim2.new(
+                                    1,
+                                    -4,
+                                    0,
+                                    66
+                                ),
+
+                            LayoutOrder =
+                                index,
+                        },
+                        fleetAccountList
+                    )
+
+                round(
+                    row,
+                    11
+                )
+
+                outline(
+                    row,
+                    warning
+                        and color.Yellow
+                        or color.Border
+                )
+
+                local toggle =
+                    button(
+                        row,
+                        record.Enabled
+                            and "✓"
+                            or "○",
+                        UDim2.fromOffset(
+                            34,
+                            34
+                        ),
+                        UDim2.fromOffset(
+                            8,
+                            16
+                        ),
+                        record.Enabled
+                    )
+
+                toggle.TextSize =
+                    15
+
+                addAvatar(
+                    row,
+                    record.UserId,
+                    UDim2.fromOffset(
+                        38,
+                        38
+                    ),
+                    UDim2.fromOffset(
+                        50,
+                        14
+                    )
+                )
+
+                text(
+                    row,
+                    tostring(
+                        record.Label
+                        or record.Name
+                    ),
+                    UDim2.new(
+                        1,
+                        -274,
+                        0,
+                        20
+                    ),
+                    UDim2.fromOffset(
+                        96,
+                        7
+                    ),
+                    12,
+                    record.Enabled
+                        and color.Text
+                        or color.Muted,
+                    nil,
+                    Enum.Font.GothamSemibold
+                )
+
+                text(
+                    row,
+                    "@"
+                        .. record.Name
+                        .. " · "
+                        .. tostring(
+                            record.UserId
+                        ),
+                    UDim2.new(
+                        1,
+                        -274,
+                        0,
+                        17
+                    ),
+                    UDim2.fromOffset(
+                        96,
+                        27
+                    ),
+                    10,
+                    color.Muted
+                )
+
+                text(
+                    row,
+                    record.Group
+                        .. " · "
+                        .. lastResult,
+                    UDim2.new(
+                        1,
+                        -274,
+                        0,
+                        16
+                    ),
+                    UDim2.fromOffset(
+                        96,
+                        44
+                    ),
+                    9,
+                    warning
+                        and color.Yellow
+                        or color.Secondary
+                )
+
+                local upButton =
+                    button(
+                        row,
+                        "^",
+                        UDim2.fromOffset(
+                            28,
+                            32
+                        ),
+                        UDim2.new(
+                            1,
+                            -166,
+                            0,
+                            17
+                        ),
+                        false
+                    )
+
+                local downButton =
+                    button(
+                        row,
+                        "v",
+                        UDim2.fromOffset(
+                            28,
+                            32
+                        ),
+                        UDim2.new(
+                            1,
+                            -134,
+                            0,
+                            17
+                        ),
+                        false
+                    )
+
+                local editButton =
+                    button(
+                        row,
+                        "Edit",
+                        UDim2.fromOffset(
+                            56,
+                            32
+                        ),
+                        UDim2.new(
+                            1,
+                            -102,
+                            0,
+                            17
+                        ),
+                        false
+                    )
+
+                local deleteButton =
+                    button(
+                        row,
+                        "X",
+                        UDim2.fromOffset(
+                            30,
+                            32
+                        ),
+                        UDim2.new(
+                            1,
+                            -40,
+                            0,
+                            17
+                        ),
+                        false
+                    )
+
+                upButton.TextSize =
+                    11
+
+                downButton.TextSize =
+                    11
+
+                editButton.TextSize =
+                    10
+
+                deleteButton.TextSize =
+                    11
+
+                toggle.MouseButton1Click:Connect(function()
+                    if state.RecipientChangesLocked() then
+                        return
+                    end
+
+                    local account =
+                        fleetFindAccount(
+                            record.UserId
+                        )
+
+                    if account then
+                        account.Enabled =
+                            not account.Enabled
+
+                        state.Fleet.Commit()
+                    end
+                end)
+
+                upButton.MouseButton1Click:Connect(function()
+                    fleetMoveAccount(
+                        record.UserId,
+                        -1,
+                        visibleAccounts
+                    )
+                end)
+
+                downButton.MouseButton1Click:Connect(function()
+                    fleetMoveAccount(
+                        record.UserId,
+                        1,
+                        visibleAccounts
+                    )
+                end)
+
+                editButton.MouseButton1Click:Connect(function()
+                    if state.RecipientChangesLocked() then
+                        return
+                    end
+
+                    state.Fleet.EditUserId =
+                        record.UserId
+
+                    state.Fleet.EditOriginalName =
+                        record.Name
+
+                    state.Fleet.ActiveGroup =
+                        record.Group
+
+                    fleetUsernameBox.Text =
+                        record.Name
+
+                    fleetLabelBox.Text =
+                        record.Label
+
+                    fleetSaveAccount.Text =
+                        "Update"
+
+                    fleetStatus.Text =
+                        "Editing @"
+                        .. record.Name
+                        .. " in "
+                        .. record.Group
+                        .. "."
+
+                    fleetStatus.TextColor3 =
+                        color.Muted
+
+                    refreshFleetPage()
+                end)
+
+                deleteButton.MouseButton1Click:Connect(function()
+                    if state.RecipientChangesLocked() then
+                        return
+                    end
+
+                    showModal(
+                        "Remove Fleet account?",
+                        "@"
+                            .. record.Name
+                            .. " will be removed from Fleet. Existing delivery history will remain.",
+                        "Remove account",
+                        function()
+                            local _,
+                                accountIndex =
+                                fleetFindAccount(
+                                    record.UserId
+                                )
+
+                            if accountIndex then
+                                table.remove(
+                                    state.Fleet.Accounts,
+                                    accountIndex
+                                )
+                            end
+
+                            if state.Fleet.EditUserId
+                                == record.UserId
+                            then
+                                state.Fleet.EditUserId =
+                                    nil
+
+                                state.Fleet.EditOriginalName =
+                                    ""
+
+                                fleetUsernameBox.Text =
+                                    ""
+
+                                fleetLabelBox.Text =
+                                    ""
+
+                                fleetSaveAccount.Text =
+                                    "+ Add"
+                            end
+
+                            state.Fleet.Commit()
+                        end,
+                        false
+                    )
+                end)
+            end
+        end
+
+    state.Fleet.Refresh =
+        refreshFleetPage
+
+    fleetSearchBox:GetPropertyChangedSignal(
+        "Text"
+    ):Connect(function()
+        state.Fleet.Search =
+            fleetSearchBox.Text
+
+        refreshFleetPage()
+    end)
+
+    fleetGroupAdd.MouseButton1Click:Connect(function()
+        if state.RecipientChangesLocked() then
+            return
+        end
+
+        local groupName =
+            HolyMailRecipientText(
+                fleetGroupBox.Text,
+                24
+            )
+
+        if groupName == ""
+            or groupName:lower() == "all"
+        then
+            fleetGroupBox.Text =
+                ""
+
+            fleetGroupBox.PlaceholderText =
+                "Invalid group name"
+
+            return
+        end
+
+        local exists,
+            correctedName =
+            fleetGroupExists(
+                groupName
+            )
+
+        if exists then
+            state.Fleet.ActiveGroup =
+                correctedName
+
+            fleetGroupBox.Text =
+                ""
+
+            refreshFleetPage()
+
+            return
+        end
+
+        if #state.Fleet.Groups >= 20 then
+            fleetStatus.Text =
+                "The Fleet group limit is 20."
+
+            fleetStatus.TextColor3 =
+                color.Red
+
+            return
+        end
+
+        table.insert(
+            state.Fleet.Groups,
+            groupName
+        )
+
+        state.Fleet.ActiveGroup =
+            groupName
+
+        fleetGroupBox.Text =
+            ""
+
+        state.Fleet.Commit()
+
+        fleetStatus.Text =
+            groupName
+            .. " was created."
+
+        fleetStatus.TextColor3 =
+            color.Green
+    end)
+
+    fleetDeleteGroup.MouseButton1Click:Connect(function()
+        if state.RecipientChangesLocked()
+            or state.Fleet.ActiveGroup == "All"
+            or state.Fleet.ActiveGroup
+                == "Ungrouped"
+        then
+            return
+        end
+
+        local deletingGroup =
+            state.Fleet.ActiveGroup
+
+        showModal(
+            "Delete "
+                .. deletingGroup
+                .. "?",
+            "Accounts in this group will be moved to Ungrouped. No account or delivery history will be deleted.",
+            "Delete group",
+            function()
+                for _, account in ipairs(
+                    state.Fleet.Accounts
+                ) do
+                    if account.Group
+                        == deletingGroup
+                    then
+                        account.Group =
+                            "Ungrouped"
+                    end
+                end
+
+                for index, groupName in ipairs(
+                    state.Fleet.Groups
+                ) do
+                    if groupName == deletingGroup then
+                        table.remove(
+                            state.Fleet.Groups,
+                            index
+                        )
+
+                        break
+                    end
+                end
+
+                state.Fleet.ActiveGroup =
+                    "Ungrouped"
+
+                state.Fleet.Commit()
+            end,
+            false
+        )
+    end)
+
+    fleetSaveAccount.MouseButton1Click:Connect(function()
+        if state.RecipientChangesLocked() then
+            return
+        end
+
+        local raw =
+            HolyMailRecipientText(
+                fleetUsernameBox.Text,
+                80
+            )
+
+        if raw == "" then
+            fleetUsernameBox.PlaceholderText =
+                "Enter a username"
+
+            return
+        end
+
+        local resolveInput =
+            raw
+
+        if state.Fleet.EditUserId
+            and HolyMailFilterKey(
+                raw
+            ) == HolyMailFilterKey(
+                state.Fleet.EditOriginalName
+            )
+        then
+            resolveInput =
+                tostring(
+                    state.Fleet.EditUserId
+                )
+        end
+
+        fleetSaveAccount.Text =
+            "Checking..."
+
+        local userId,
+            username,
+            resolveError =
+            HolyMailResolveRecipient(
+                resolveInput
+            )
+
+        if not userId then
+            fleetStatus.Text =
+                tostring(
+                    resolveError
+                    or "Account could not be verified."
+                )
+
+            fleetStatus.TextColor3 =
+                color.Red
+
+            fleetSaveAccount.Text =
+                state.Fleet.EditUserId
+                and "Update"
+                or "+ Add"
+
+            return
+        end
+
+        local existing,
+            existingIndex =
+            fleetFindAccount(
+                userId
+            )
+
+        if existing
+            and userId
+                ~= state.Fleet.EditUserId
+        then
+            fleetStatus.Text =
+                "@"
+                .. username
+                .. " is already in Fleet."
+
+            fleetStatus.TextColor3 =
+                color.Yellow
+
+            fleetSaveAccount.Text =
+                state.Fleet.EditUserId
+                and "Update"
+                or "+ Add"
+
+            return
+        end
+
+        if not state.Fleet.EditUserId
+            and #state.Fleet.Accounts >= 100
+        then
+            fleetStatus.Text =
+                "The Fleet account limit is 100."
+
+            fleetStatus.TextColor3 =
+                color.Red
+
+            fleetSaveAccount.Text =
+                "+ Add"
+
+            return
+        end
+
+        local previous,
+            previousIndex =
+            state.Fleet.EditUserId
+            and fleetFindAccount(
+                state.Fleet.EditUserId
+            )
+            or nil
+
+        local label =
+            HolyMailRecipientText(
+                fleetLabelBox.Text,
+                36
+            )
+
+        if label == "" then
+            label =
+                username
+        end
+
+        local chosenGroup
+
+        if state.Fleet.ActiveGroup ~= "All" then
+            chosenGroup =
+                state.Fleet.ActiveGroup
+        elseif previous then
+            chosenGroup =
+                previous.Group
+        else
+            chosenGroup =
+                "Ungrouped"
+        end
+
+        local newRecord = {
+            UserId =
+                userId,
+
+            Name =
+                username,
+
+            Label =
+                label,
+
+            Group =
+                chosenGroup,
+
+            Enabled =
+                previous
+                and previous.Enabled
+                    ~= false
+                or true,
+
+            Priority =
+                previous
+                and previous.Priority
+                or (
+                    #state.Fleet.Accounts
+                    + 1
+                ),
+
+            AddedAt =
+                previous
+                and previous.AddedAt
+                or os.time(),
+        }
+
+        if previousIndex then
+            state.Fleet.Accounts[
+                previousIndex
+            ] =
+                newRecord
+        elseif existingIndex then
+            state.Fleet.Accounts[
+                existingIndex
+            ] =
+                newRecord
+        else
+            table.insert(
+                state.Fleet.Accounts,
+                newRecord
+            )
+        end
+
+        state.Fleet.EditUserId =
+            nil
+
+        state.Fleet.EditOriginalName =
+            ""
+
+        fleetUsernameBox.Text =
+            ""
+
+        fleetLabelBox.Text =
+            ""
+
+        fleetSaveAccount.Text =
+            "+ Add"
+
+        state.Fleet.Commit()
+
+        fleetStatus.Text =
+            "@"
+            .. username
+            .. " was saved to "
+            .. chosenGroup
+            .. "."
+
+        fleetStatus.TextColor3 =
+            color.Green
+    end)
+
+    state.Fleet.ShowImport =
+        function()
+            if state.RecipientChangesLocked()
+                or state.Fleet.ImportBusy
+            then
+                return
+            end
+
+            closeModal()
+
+            overlay.Visible =
+                true
+
+            local importGroup =
+                fleetSelectedGroup()
+
+            local importDraft = {}
+
+            local modal =
+                create(
+                    "Frame",
+                    {
+                        AnchorPoint =
+                            Vector2.new(
+                                0.5,
+                                0.5
+                            ),
+
+                        Position =
+                            UDim2.fromScale(
+                                0.5,
+                                0.5
+                            ),
+
+                        Size =
+                            UDim2.fromOffset(
+                                720,
+                                500
+                            ),
+
+                        BackgroundColor3 =
+                            color.Card,
+
+                        ZIndex =
+                            51,
+                    },
+                    overlay
+                )
+
+            round(
+                modal,
+                18
+            )
+
+            outline(
+                modal,
+                color.Border
+            )
+
+            local importTitle =
+                text(
+                    modal,
+                    "Bulk Import · "
+                        .. importGroup,
+                    UDim2.new(
+                        1,
+                        -86,
+                        0,
+                        28
+                    ),
+                    UDim2.fromOffset(
+                        20,
+                        16
+                    ),
+                    18,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamBold
+                )
+
+            importTitle.ZIndex =
+                52
+
+            local closeImport =
+                button(
+                    modal,
+                    "X",
+                    UDim2.fromOffset(
+                        40,
+                        40
+                    ),
+                    UDim2.new(
+                        1,
+                        -58,
+                        0,
+                        12
+                    ),
+                    false
+                )
+
+            closeImport.ZIndex =
+                53
+
+            local importBox =
+                box(
+                    modal,
+                    "One username or User ID per line",
+                    UDim2.new(
+                        1,
+                        -40,
+                        0,
+                        250
+                    ),
+                    UDim2.fromOffset(
+                        20,
+                        68
+                    )
+                )
+
+            importBox.MultiLine =
+                true
+
+            importBox.TextWrapped =
+                true
+
+            importBox.TextYAlignment =
+                Enum.TextYAlignment.Top
+
+            importBox.ZIndex =
+                52
+
+            local importStatus =
+                text(
+                    modal,
+                    "Paste your accounts, then press Validate. Nothing is added until you confirm.",
+                    UDim2.new(
+                        1,
+                        -40,
+                        0,
+                        82
+                    ),
+                    UDim2.fromOffset(
+                        20,
+                        330
+                    ),
+                    11,
+                    color.Muted
+                )
+
+            importStatus.TextWrapped =
+                true
+
+            importStatus.TextYAlignment =
+                Enum.TextYAlignment.Top
+
+            importStatus.ZIndex =
+                52
+
+            local validateButton =
+                button(
+                    modal,
+                    "Validate Accounts",
+                    UDim2.fromOffset(
+                        206,
+                        46
+                    ),
+                    UDim2.fromOffset(
+                        20,
+                        434
+                    ),
+                    false
+                )
+
+            local addVerifiedButton =
+                button(
+                    modal,
+                    "Add Verified",
+                    UDim2.fromOffset(
+                        454,
+                        46
+                    ),
+                    UDim2.fromOffset(
+                        246,
+                        434
+                    ),
+                    true
+                )
+
+            validateButton.ZIndex =
+                53
+
+            addVerifiedButton.ZIndex =
+                53
+
+            addVerifiedButton.Text =
+                "Add Verified · 0"
+
+            closeImport.MouseButton1Click:Connect(function()
+                if state.Fleet.ImportBusy then
+                    importStatus.Text =
+                        "Validation is still running."
+
+                    importStatus.TextColor3 =
+                        color.Yellow
+
+                    return
+                end
+
+                closeModal()
+            end)
+
+            validateButton.MouseButton1Click:Connect(function()
+                if state.Fleet.ImportBusy then
+                    return
+                end
+
+                local tokens = {}
+                local rawSeen = {}
+
+                for token in tostring(
+                    importBox.Text
+                ):gmatch(
+                    "[@%w_]+"
+                ) do
+                    token =
+                        token:gsub(
+                            "^@",
+                            ""
+                        )
+
+                    local key =
+                        HolyMailFilterKey(
+                            token
+                        )
+
+                    if key ~= ""
+                        and not rawSeen[key]
+                    then
+                        rawSeen[key] =
+                            true
+
+                        table.insert(
+                            tokens,
+                            token
+                        )
+                    end
+
+                    if #tokens >= 150 then
+                        break
+                    end
+                end
+
+                if #tokens == 0 then
+                    importStatus.Text =
+                        "No usernames or User IDs were found."
+
+                    importStatus.TextColor3 =
+                        color.Red
+
+                    return
+                end
+
+                state.Fleet.ImportBusy =
+                    true
+
+                importDraft =
+                    {}
+
+                validateButton.Text =
+                    "Validating 0/"
+                    .. tostring(
+                        #tokens
+                    )
+
+                addVerifiedButton.Text =
+                    "Add Verified · 0"
+
+                local existingMap = {}
+
+                for _, account in ipairs(
+                    state.Fleet.Accounts
+                ) do
+                    existingMap[
+                        account.UserId
+                    ] =
+                        true
+                end
+
+                task.spawn(function()
+                    local invalid = 0
+                    local duplicates = 0
+                    local resultSeen = {}
+
+                    for index, token in ipairs(
+                        tokens
+                    ) do
+                        if importStatus.Parent == nil then
+                            state.Fleet.ImportBusy =
+                                false
+
+                            return
+                        end
+
+                        validateButton.Text =
+                            "Validating "
+                            .. tostring(index)
+                            .. "/"
+                            .. tostring(
+                                #tokens
+                            )
+
+                        importStatus.Text =
+                            "Checking "
+                            .. tostring(token)
+                            .. "..."
+
+                        local userId,
+                            username =
+                            HolyMailResolveRecipient(
+                                token
+                            )
+
+                        if not userId then
+                            invalid +=
+                                1
+                        elseif existingMap[userId]
+                            or resultSeen[userId]
+                        then
+                            duplicates +=
+                                1
+                        else
+                            resultSeen[userId] =
+                                true
+
+                            table.insert(
+                                importDraft,
+                                {
+                                    UserId =
+                                        userId,
+
+                                    Name =
+                                        username,
+
+                                    Label =
+                                        username,
+
+                                    Group =
+                                        importGroup,
+
+                                    Enabled =
+                                        true,
+
+                                    Priority =
+                                        #state.Fleet.Accounts
+                                        + #importDraft
+                                        + 1,
+
+                                    AddedAt =
+                                        os.time(),
+                                }
+                            )
+                        end
+                    end
+
+                    state.Fleet.ImportBusy =
+                        false
+
+                    local capacity =
+                        math.max(
+                            0,
+                            100
+                            - #state.Fleet.Accounts
+                        )
+
+                    if #importDraft > capacity then
+                        while #importDraft
+                            > capacity
+                        do
+                            table.remove(
+                                importDraft
+                            )
+                        end
+                    end
+
+                    validateButton.Text =
+                        "Validate Again"
+
+                    addVerifiedButton.Text =
+                        "Add Verified · "
+                        .. tostring(
+                            #importDraft
+                        )
+
+                    importStatus.Text =
+                        tostring(
+                            #importDraft
+                        )
+                        .. " verified\n"
+                        .. tostring(invalid)
+                        .. " invalid\n"
+                        .. tostring(duplicates)
+                        .. " duplicate or already saved"
+
+                    if capacity <= 0 then
+                        importStatus.Text ..=
+                            "\nFleet is already at its 100-account limit."
+                    end
+
+                    importStatus.TextColor3 =
+                        #importDraft > 0
+                        and color.Green
+                        or color.Yellow
+                end)
+            end)
+
+            addVerifiedButton.MouseButton1Click:Connect(function()
+                if state.Fleet.ImportBusy
+                    or #importDraft == 0
+                then
+                    return
+                end
+
+                local added = 0
+
+                for _, account in ipairs(
+                    importDraft
+                ) do
+                    if #state.Fleet.Accounts >= 100 then
+                        break
+                    end
+
+                    local existing =
+                        fleetFindAccount(
+                            account.UserId
+                        )
+
+                    if not existing then
+                        table.insert(
+                            state.Fleet.Accounts,
+                            account
+                        )
+
+                        added +=
+                            1
+                    end
+                end
+
+                closeModal()
+
+                state.Fleet.Commit()
+
+                fleetStatus.Text =
+                    tostring(added)
+                    .. " accounts were added to "
+                    .. importGroup
+                    .. "."
+
+                fleetStatus.TextColor3 =
+                    added > 0
+                    and color.Green
+                    or color.Yellow
+            end)
+        end
+
+    fleetImportButton.MouseButton1Click:Connect(function()
+        state.Fleet.ShowImport()
+    end)
+
+    fleetLoadValue.MouseButton1Click:Connect(function()
+        if state.RecipientChangesLocked() then
+            fleetStatus.Text =
+                "Finish or safely end the current delivery first."
+
+            fleetStatus.TextColor3 =
+                color.Yellow
+
+            return
+        end
+
+        local target =
+            parseValue(
+                fleetTargetBox.Text
+            )
+
+        if not target then
+            fleetTargetBox.Text =
+                ""
+
+            fleetTargetBox.PlaceholderText =
+                "Enter a valid target"
+
+            return
+        end
+
+        local accounts =
+            state.Fleet.EnabledAccounts()
+
+        if #accounts == 0 then
+            fleetStatus.Text =
+                "This group has no enabled accounts."
+
+            fleetStatus.TextColor3 =
+                color.Red
+
+            return
+        end
+
+        local snapshots = {}
+
+        for _, account in ipairs(
+            accounts
+        ) do
+            table.insert(
+                snapshots,
+                {
+                    UserId =
+                        account.UserId,
+
+                    Name =
+                        account.Name,
+
+                    Target =
+                        target,
+                }
+            )
+        end
+
+        state.Recipients =
+            snapshots
+
+        state.Editing =
+            nil
+
+        state.Fleet.LoadedGroup =
+            state.Fleet.ActiveGroup
+
+        recipientBox.Text =
+            ""
+
+        valueBox.Text =
+            ""
+
+        addButton.Text =
+            "+ Add"
+
+        renderRecipients()
+
+        if type(
+            state.ApplyMailMode
+        ) == "function" then
+            state.ApplyMailMode(
+                "Value"
+            )
+        else
+            task.spawn(
+                rebuildPlan
+            )
+        end
+
+        if type(
+            state.ShowMainPage
+        ) == "function" then
+            state.ShowMainPage(
+                "Send"
+            )
+        end
+
+        messageText.Text =
+            tostring(
+                #snapshots
+            )
+            .. " Fleet accounts loaded at "
+            .. formatValue(
+                target
+            )
+            .. " each."
+
+        messageText.TextColor3 =
+            color.Secondary
+    end)
+
+    fleetLoadItems.MouseButton1Click:Connect(function()
+        if type(
+            state.Fleet.LoadIntoItems
+        ) == "function" then
+            state.Fleet.LoadIntoItems()
+        end
+    end)
+
+    state.Fleet.Commit()
 
     local inboxPage =
         create(
@@ -115506,6 +118030,7 @@ function HolyMailCreateHud()
 
         local validTabs = {
             Send = true,
+            Fleet = true,
             Inbox = true,
             History = true,
             Settings = true,
@@ -115529,6 +118054,10 @@ function HolyMailCreateHud()
         sendModeBar.Visible =
             expanded
             and tabName == "Send"
+
+        fleetPage.Visible =
+            expanded
+            and tabName == "Fleet"
 
         inboxPage.Visible =
             expanded
@@ -115567,6 +118096,11 @@ function HolyMailCreateHud()
                 state.MailMode == "Items"
                     and "Pick exact items"
                     or "Send fruits by value"
+        elseif tabName == "Fleet" then
+            subtitle.Text =
+                "Manage alt accounts"
+
+            refreshFleetPage()
         elseif tabName == "Inbox" then
             subtitle.Text =
                 "Claim incoming mail"
@@ -115591,6 +118125,9 @@ function HolyMailCreateHud()
         end
     end
 
+    state.ShowMainPage =
+        showMainPage
+
     state.TabBar =
         tabBar
 
@@ -115600,6 +118137,9 @@ function HolyMailCreateHud()
     state.PageFrames = {
         Send =
             content,
+
+        Fleet =
+            fleetPage,
 
         Inbox =
             inboxPage,
@@ -120907,6 +123447,98 @@ function HolyMailCreateHud()
             end)
         end
     end
+
+    state.ApplyMailMode =
+        applyMailMode
+
+    state.Fleet.LoadIntoItems =
+        function()
+            if state.RecipientChangesLocked() then
+                fleetStatus.Text =
+                    "Finish or safely end the current delivery first."
+
+                fleetStatus.TextColor3 =
+                    color.Yellow
+
+                return
+            end
+
+            local accounts =
+                state.Fleet.EnabledAccounts()
+
+            if #accounts == 0 then
+                fleetStatus.Text =
+                    "This group has no enabled accounts."
+
+                fleetStatus.TextColor3 =
+                    color.Red
+
+                return
+            end
+
+            local snapshots = {}
+
+            for _, account in ipairs(
+                accounts
+            ) do
+                table.insert(
+                    snapshots,
+                    {
+                        UserId =
+                            account.UserId,
+
+                        Name =
+                            account.Name,
+                    }
+                )
+            end
+
+            state.ExactRecipients =
+                snapshots
+
+            state.ExactQueues =
+                {}
+
+            state.ExactSelectedUserId =
+                snapshots[1]
+                and snapshots[1].UserId
+                or nil
+
+            state.Fleet.LoadedGroup =
+                state.Fleet.ActiveGroup
+
+            itemRecipientBox.Text =
+                ""
+
+            itemRecipientBox.PlaceholderText =
+                "Username or User ID"
+
+            itemRecipientAdd.Text =
+                "+ Add"
+
+            applyMailMode(
+                "Items"
+            )
+
+            if type(
+                state.ShowMainPage
+            ) == "function" then
+                state.ShowMainPage(
+                    "Send"
+                )
+            end
+
+            itemMessageText.Text =
+                tostring(
+                    #snapshots
+                )
+                .. " Fleet accounts loaded. Choose items for each recipient."
+
+            itemMessageText.TextColor3 =
+                color.Secondary
+
+            refreshExactItems()
+        end
 
     valueModeButton.MouseButton1Click:Connect(function()
         applyMailMode(
