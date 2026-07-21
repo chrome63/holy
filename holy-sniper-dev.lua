@@ -6489,7 +6489,7 @@ function HolyAccountProcessMailJob()
                         return packet:Fire(
                             batch.RecipientUserId,
                             batch.Payload,
-                            "Created from HOLY HUB"
+                            ""
                         )
                     end)
 
