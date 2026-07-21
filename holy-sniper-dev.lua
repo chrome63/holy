@@ -101155,6 +101155,9 @@ HOLY_MAIL_STATE = {
     FilterFruits = {},
     FilterMutations = {},
 
+    SavedRecipients = {},
+    RecentRecipients = {},
+
     TrackerDay = os.date("!%Y-%m-%d"),
     TrackerUsed = 0,
 }
@@ -101925,6 +101928,385 @@ function HolyMailFilterSelectionMap(
     return output
 end
 
+function HolyMailRecipientText(
+    value,
+    maximumLength
+)
+    local result =
+        tostring(
+            value or ""
+        )
+            :gsub(
+                "[%c]+",
+                ""
+            )
+            :gsub(
+                "^%s+",
+                ""
+            )
+            :gsub(
+                "%s+$",
+                ""
+            )
+
+    maximumLength =
+        math.max(
+            1,
+            math.floor(
+                tonumber(
+                    maximumLength
+                )
+                or 40
+            )
+        )
+
+    return result:sub(
+        1,
+        maximumLength
+    )
+end
+
+function HolyMailNormalizeRecipientRecords(
+    value,
+    maximum,
+    saved
+)
+    local output = {}
+    local seen = {}
+
+    maximum =
+        math.clamp(
+            math.floor(
+                tonumber(maximum)
+                    or 25
+            ),
+            1,
+            50
+        )
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for _, record in pairs(
+        value
+    ) do
+        if type(record) == "table" then
+            local userId =
+                math.floor(
+                    tonumber(
+                        record.UserId
+                            or record.Id
+                    )
+                    or 0
+                )
+
+            local username =
+                HolyMailRecipientText(
+                    record.Name
+                        or record.Username,
+                    32
+                )
+
+            if userId > 0
+                and userId
+                    ~= HOLY_MAIL_ACCOUNT_USER_ID
+                and username ~= ""
+                and not seen[userId]
+            then
+                seen[userId] =
+                    true
+
+                local lastUsedAt =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(
+                                record.LastUsedAt
+                            )
+                            or 0
+                        )
+                    )
+
+                local addedAt =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(
+                                record.AddedAt
+                            )
+                            or lastUsedAt
+                        )
+                    )
+
+                table.insert(
+                    output,
+                    {
+                        UserId =
+                            userId,
+
+                        Name =
+                            username,
+
+                        Label =
+                            saved == true
+                            and HolyMailRecipientText(
+                                record.Label
+                                    or username,
+                                36
+                            )
+                            or nil,
+
+                        Favorite =
+                            saved == true
+                            and record.Favorite == true
+                            or false,
+
+                        LastUsedAt =
+                            lastUsedAt,
+
+                        AddedAt =
+                            addedAt,
+                    }
+                )
+
+                if #output >= maximum then
+                    break
+                end
+            end
+        end
+    end
+
+    table.sort(
+        output,
+        function(left, right)
+            if saved == true
+                and left.Favorite
+                    ~= right.Favorite
+            then
+                return left.Favorite == true
+            end
+
+            if left.LastUsedAt
+                ~= right.LastUsedAt
+            then
+                return left.LastUsedAt
+                    > right.LastUsedAt
+            end
+
+            return tostring(
+                left.Label
+                    or left.Name
+            ):lower()
+                < tostring(
+                    right.Label
+                        or right.Name
+                ):lower()
+        end
+    )
+
+    return output
+end
+
+function HolyMailResolveRecipient(
+    value
+)
+    local raw =
+        HolyMailRecipientText(
+            value,
+            80
+        ):gsub(
+            "^@",
+            ""
+        )
+
+    if raw == "" then
+        return nil,
+            nil,
+            "Enter a username or User ID."
+    end
+
+    local userId
+    local username
+
+    local numeric =
+        tonumber(raw)
+
+    if numeric then
+        numeric =
+            math.floor(
+                numeric
+            )
+
+        local ok,
+            result =
+            pcall(
+                Players.GetNameFromUserIdAsync,
+                Players,
+                numeric
+            )
+
+        if ok
+            and type(result) == "string"
+        then
+            userId =
+                numeric
+
+            username =
+                result
+        end
+    else
+        local ok,
+            result =
+            pcall(
+                Players.GetUserIdFromNameAsync,
+                Players,
+                raw
+            )
+
+        if ok then
+            userId =
+                math.floor(
+                    tonumber(result)
+                        or 0
+                )
+
+            local nameOk,
+                currentName =
+                pcall(
+                    Players.GetNameFromUserIdAsync,
+                    Players,
+                    userId
+                )
+
+            username =
+                nameOk
+                and currentName
+                or raw
+        end
+    end
+
+    if not userId
+        or userId <= 0
+        or type(username) ~= "string"
+        or username == ""
+    then
+        return nil,
+            nil,
+            "Recipient not found."
+    end
+
+    if userId
+        == HOLY_MAIL_ACCOUNT_USER_ID
+    then
+        return nil,
+            nil,
+            "You cannot save your own account."
+    end
+
+    return userId,
+        username,
+        nil
+end
+
+function HolyMailTouchRecipient(
+    userId,
+    username
+)
+    userId =
+        math.floor(
+            tonumber(userId)
+                or 0
+        )
+
+    username =
+        HolyMailRecipientText(
+            username,
+            32
+        )
+
+    if userId <= 0
+        or userId
+            == HOLY_MAIL_ACCOUNT_USER_ID
+        or username == ""
+    then
+        return false
+    end
+
+    local usedAt =
+        os.time()
+
+    local saved =
+        HolyMailNormalizeRecipientRecords(
+            HOLY_MAIL_STATE.SavedRecipients,
+            25,
+            true
+        )
+
+    for _, record in ipairs(
+        saved
+    ) do
+        if record.UserId == userId then
+            record.Name =
+                username
+
+            record.LastUsedAt =
+                usedAt
+
+            break
+        end
+    end
+
+    local recent = {
+        {
+            UserId =
+                userId,
+
+            Name =
+                username,
+
+            LastUsedAt =
+                usedAt,
+
+            AddedAt =
+                usedAt,
+        },
+    }
+
+    for _, record in ipairs(
+        HolyMailNormalizeRecipientRecords(
+            HOLY_MAIL_STATE.RecentRecipients,
+            8,
+            false
+        )
+    ) do
+        if record.UserId ~= userId then
+            table.insert(
+                recent,
+                record
+            )
+        end
+    end
+
+    HOLY_MAIL_STATE.SavedRecipients =
+        HolyMailNormalizeRecipientRecords(
+            saved,
+            25,
+            true
+        )
+
+    HOLY_MAIL_STATE.RecentRecipients =
+        HolyMailNormalizeRecipientRecords(
+            recent,
+            8,
+            false
+        )
+
+    HolyMailSaveSettings()
+
+    return true
+end
+
 function HolyMailSetHudScale(value)
     local formattedScale =
         HolyMailNormalizeScale(value)
@@ -102061,6 +102443,20 @@ function HolyMailSaveSettings()
         FilterMutations =
             HolyMailNormalizeFilterSelection(
                 HOLY_MAIL_STATE.FilterMutations
+            ),
+
+        SavedRecipients =
+            HolyMailNormalizeRecipientRecords(
+                HOLY_MAIL_STATE.SavedRecipients,
+                25,
+                true
+            ),
+
+        RecentRecipients =
+            HolyMailNormalizeRecipientRecords(
+                HOLY_MAIL_STATE.RecentRecipients,
+                8,
+                false
             ),
 
         HudPosition =
@@ -102219,6 +102615,24 @@ function HolyMailLoadSettings()
             data.FilterMutations
             or HOLY_MAIL_STATE.FilterMutations
             or {}
+        )
+
+    HOLY_MAIL_STATE.SavedRecipients =
+        HolyMailNormalizeRecipientRecords(
+            data.SavedRecipients
+                or HOLY_MAIL_STATE.SavedRecipients
+                or {},
+            25,
+            true
+        )
+
+    HOLY_MAIL_STATE.RecentRecipients =
+        HolyMailNormalizeRecipientRecords(
+            data.RecentRecipients
+                or HOLY_MAIL_STATE.RecentRecipients
+                or {},
+            8,
+            false
         )
 
     HOLY_MAIL_STATE.TrackerDay =
@@ -103937,16 +104351,14 @@ function HolyMailCreateHud()
             routeCard,
             "0 recipients",
             UDim2.fromOffset(
-                100,
+                84,
                 20
             ),
-            UDim2.new(
-                1,
-                -172,
-                0,
+            UDim2.fromOffset(
+                172,
                 9
             ),
-            10,
+            9,
             color.Muted,
             Enum.TextXAlignment.Right
         )
@@ -104764,6 +105176,28 @@ function HolyMailCreateHud()
                 ),
         },
 
+        SavedRecipients = {
+            Records =
+                HolyMailNormalizeRecipientRecords(
+                    HOLY_MAIL_STATE.SavedRecipients,
+                    25,
+                    true
+                ),
+
+            Recent =
+                HolyMailNormalizeRecipientRecords(
+                    HOLY_MAIL_STATE.RecentRecipients,
+                    8,
+                    false
+                ),
+
+            ValueButton =
+                nil,
+
+            ItemButton =
+                nil,
+        },
+
         ValueSession =
             nil,
 
@@ -104776,6 +105210,86 @@ function HolyMailCreateHud()
 
     HOLY_MAIL_RUNTIME.DeliveryState =
         state
+
+    state.RecipientChangesLocked =
+        function()
+            if state.Running
+                or state.Busy
+            then
+                return true
+            end
+
+            if type(
+                state.ValueSession
+            ) == "table"
+                and state.ValueSession.Status
+                    ~= "Complete"
+            then
+                return true
+            end
+
+            if type(
+                state.ExactSession
+            ) == "table"
+                and state.ExactSession.Status
+                    ~= "Complete"
+            then
+                return true
+            end
+
+            return false
+        end
+
+    state.SavedRecipients.ValueButton =
+        button(
+            routeCard,
+            "Saved",
+            UDim2.fromOffset(
+                92,
+                25
+            ),
+            UDim2.fromOffset(
+                264,
+                6
+            ),
+            false
+        )
+
+    state.SavedRecipients.ValueButton.TextSize =
+        8
+
+    state.SavedRecipients.UpdateButtons =
+        function()
+            local count =
+                #HolyMailNormalizeRecipientRecords(
+                    HOLY_MAIL_STATE.SavedRecipients,
+                    25,
+                    true
+                )
+
+            local caption =
+                "Saved ("
+                .. tostring(
+                    count
+                )
+                .. ")"
+
+            if typeof(
+                state.SavedRecipients.ValueButton
+            ) == "Instance" then
+                state.SavedRecipients.ValueButton.Text =
+                    caption
+            end
+
+            if typeof(
+                state.SavedRecipients.ItemButton
+            ) == "Instance" then
+                state.SavedRecipients.ItemButton.Text =
+                    caption
+            end
+        end
+
+    state.SavedRecipients.UpdateButtons()
 
     local function setStatus(
         value,
@@ -106123,7 +106637,7 @@ function HolyMailCreateHud()
 
         clearButton.Visible =
             #state.Recipients > 0
-            and not state.Running
+            and not state.RecipientChangesLocked()
 
         if #state.Recipients == 0 then
             local empty =
@@ -106351,7 +106865,7 @@ function HolyMailCreateHud()
                 10
 
             up.MouseButton1Click:Connect(function()
-                if state.Running
+                if state.RecipientChangesLocked()
                     or index <= 1
                 then
                     return
@@ -106367,7 +106881,7 @@ function HolyMailCreateHud()
             end)
 
             down.MouseButton1Click:Connect(function()
-                if state.Running
+                if state.RecipientChangesLocked()
                     or index >= #state.Recipients
                 then
                     return
@@ -106383,7 +106897,7 @@ function HolyMailCreateHud()
             end)
 
             edit.MouseButton1Click:Connect(function()
-                if state.Running then
+                if state.RecipientChangesLocked() then
                     return
                 end
 
@@ -106403,7 +106917,7 @@ function HolyMailCreateHud()
             end)
 
             remove.MouseButton1Click:Connect(function()
-                if state.Running then
+                if state.RecipientChangesLocked() then
                     return
                 end
 
@@ -107664,6 +108178,1282 @@ function HolyMailCreateHud()
             end)
         end
     end
+
+    state.SavedRecipients.Commit =
+        function(
+            records,
+            recent
+        )
+            HOLY_MAIL_STATE.SavedRecipients =
+                HolyMailNormalizeRecipientRecords(
+                    records,
+                    25,
+                    true
+                )
+
+            HOLY_MAIL_STATE.RecentRecipients =
+                HolyMailNormalizeRecipientRecords(
+                    recent,
+                    8,
+                    false
+                )
+
+            state.SavedRecipients.Records =
+                HOLY_MAIL_STATE.SavedRecipients
+
+            state.SavedRecipients.Recent =
+                HOLY_MAIL_STATE.RecentRecipients
+
+            HolyMailSaveSettings()
+            state.SavedRecipients.UpdateButtons()
+        end
+
+    state.SavedRecipients.Show =
+        function(
+            targetBox
+        )
+            if state.RecipientChangesLocked() then
+                HolyNotify(
+                    "HOLY Mail",
+                    "Finish or safely end the paused delivery before changing recipients.",
+                    4
+                )
+
+                return
+            end
+
+            if typeof(targetBox) ~= "Instance"
+                or not targetBox:IsA(
+                    "TextBox"
+                )
+            then
+                targetBox =
+                    recipientBox
+            end
+
+            local draft = {
+                Records =
+                    HolyMailNormalizeRecipientRecords(
+                        HOLY_MAIL_STATE.SavedRecipients,
+                        25,
+                        true
+                    ),
+
+                Recent =
+                    HolyMailNormalizeRecipientRecords(
+                        HOLY_MAIL_STATE.RecentRecipients,
+                        8,
+                        false
+                    ),
+
+                Search = "",
+                EditUserId = nil,
+                EditOriginalName = "",
+                Favorite = false,
+            }
+
+            closeModal()
+
+            overlay.Visible =
+                true
+
+            local modal =
+                create(
+                    "Frame",
+                    {
+                        AnchorPoint =
+                            Vector2.new(
+                                0.5,
+                                0.5
+                            ),
+
+                        Position =
+                            UDim2.fromScale(
+                                0.5,
+                                0.5
+                            ),
+
+                        Size =
+                            UDim2.fromOffset(
+                                660,
+                                548
+                            ),
+
+                        BackgroundColor3 =
+                            color.Card,
+
+                        ZIndex =
+                            51,
+                    },
+                    overlay
+                )
+
+            round(
+                modal,
+                18
+            )
+
+            outline(
+                modal,
+                color.Border
+            )
+
+            local heading =
+                text(
+                    modal,
+                    "Saved Recipients",
+                    UDim2.new(
+                        1,
+                        -90,
+                        0,
+                        28
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        15
+                    ),
+                    18,
+                    color.Text,
+                    nil,
+                    Enum.Font.GothamBold
+                )
+
+            heading.ZIndex =
+                52
+
+            local subtitle =
+                text(
+                    modal,
+                    "Contacts use verified UserIds, so username changes will not break them.",
+                    UDim2.new(
+                        1,
+                        -90,
+                        0,
+                        20
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        46
+                    ),
+                    9,
+                    color.Muted
+                )
+
+            subtitle.ZIndex =
+                52
+
+            local closeButton =
+                button(
+                    modal,
+                    "X",
+                    UDim2.fromOffset(
+                        38,
+                        34
+                    ),
+                    UDim2.new(
+                        1,
+                        -56,
+                        0,
+                        14
+                    ),
+                    false
+                )
+
+            closeButton.ZIndex =
+                53
+
+            closeButton.MouseButton1Click:Connect(
+                closeModal
+            )
+
+            local searchBox =
+                box(
+                    modal,
+                    "Search labels, usernames, or User IDs",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        40
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        78
+                    )
+                )
+
+            searchBox.ZIndex =
+                53
+
+            local contactStatus =
+                text(
+                    modal,
+                    "",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        18
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        119
+                    ),
+                    9,
+                    color.Muted,
+                    Enum.TextXAlignment.Right,
+                    Enum.Font.GothamMedium
+                )
+
+            contactStatus.ZIndex =
+                52
+
+            local contactList =
+                create(
+                    "ScrollingFrame",
+                    {
+                        BackgroundColor3 =
+                            color.Field,
+
+                        BorderSizePixel =
+                            0,
+
+                        Size =
+                            UDim2.new(
+                                1,
+                                -36,
+                                0,
+                                294
+                            ),
+
+                        Position =
+                            UDim2.fromOffset(
+                                18,
+                                139
+                            ),
+
+                        CanvasSize =
+                            UDim2.fromOffset(
+                                0,
+                                0
+                            ),
+
+                        AutomaticCanvasSize =
+                            Enum.AutomaticSize.Y,
+
+                        ScrollingDirection =
+                            Enum.ScrollingDirection.Y,
+
+                        ScrollBarThickness =
+                            3,
+
+                        ScrollBarImageColor3 =
+                            color.Border,
+
+                        ClipsDescendants =
+                            true,
+
+                        ZIndex =
+                            52,
+                    },
+                    modal
+                )
+
+            round(
+                contactList,
+                11
+            )
+
+            outline(
+                contactList,
+                color.Border
+            )
+
+            local contactLayout =
+                create(
+                    "UIListLayout",
+                    {
+                        Padding =
+                            UDim.new(
+                                0,
+                                5
+                            ),
+
+                        SortOrder =
+                            Enum.SortOrder.LayoutOrder,
+                    },
+                    contactList
+                )
+
+            create(
+                "UIPadding",
+                {
+                    PaddingTop =
+                        UDim.new(
+                            0,
+                            6
+                        ),
+
+                    PaddingBottom =
+                        UDim.new(
+                            0,
+                            6
+                        ),
+
+                    PaddingLeft =
+                        UDim.new(
+                            0,
+                            6
+                        ),
+
+                    PaddingRight =
+                        UDim.new(
+                            0,
+                            6
+                        ),
+                },
+                contactList
+            )
+
+            local labelBox =
+                box(
+                    modal,
+                    "Label, e.g. Storage Alt",
+                    UDim2.fromOffset(
+                        176,
+                        40
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        445
+                    )
+                )
+
+            local usernameBox =
+                box(
+                    modal,
+                    "Username or User ID",
+                    UDim2.fromOffset(
+                        240,
+                        40
+                    ),
+                    UDim2.fromOffset(
+                        202,
+                        445
+                    )
+                )
+
+            local favoriteDraftButton =
+                button(
+                    modal,
+                    "☆ Favorite",
+                    UDim2.fromOffset(
+                        92,
+                        40
+                    ),
+                    UDim2.fromOffset(
+                        450,
+                        445
+                    ),
+                    false
+                )
+
+            local saveContactButton =
+                button(
+                    modal,
+                    "Save",
+                    UDim2.fromOffset(
+                        92,
+                        40
+                    ),
+                    UDim2.fromOffset(
+                        550,
+                        445
+                    ),
+                    true
+                )
+
+            labelBox.ZIndex =
+                53
+
+            usernameBox.ZIndex =
+                53
+
+            favoriteDraftButton.ZIndex =
+                53
+
+            saveContactButton.ZIndex =
+                53
+
+            local managerStatus =
+                text(
+                    modal,
+                    "Enter a label and Roblox username to save a new contact.",
+                    UDim2.new(
+                        1,
+                        -36,
+                        0,
+                        34
+                    ),
+                    UDim2.fromOffset(
+                        18,
+                        496
+                    ),
+                    9,
+                    color.Muted,
+                    Enum.TextXAlignment.Left,
+                    Enum.Font.GothamMedium
+                )
+
+            managerStatus.TextWrapped =
+                true
+
+            managerStatus.ZIndex =
+                52
+
+            local currentInput =
+                HolyMailRecipientText(
+                    targetBox.Text,
+                    80
+                )
+
+            if currentInput ~= "" then
+                usernameBox.Text =
+                    currentInput
+            end
+
+            draft.UpdateFavorite =
+                function()
+                    favoriteDraftButton.Text =
+                        draft.Favorite
+                                and "★ Favorite"
+                            or "☆ Favorite"
+
+                    favoriteDraftButton.BackgroundColor3 =
+                        draft.Favorite
+                                and color.Accent
+                            or color.Field
+                end
+
+            draft.ResetEditor =
+                function()
+                    draft.EditUserId =
+                        nil
+
+                    draft.EditOriginalName =
+                        ""
+
+                    draft.Favorite =
+                        false
+
+                    labelBox.Text =
+                        ""
+
+                    usernameBox.Text =
+                        ""
+
+                    saveContactButton.Text =
+                        "Save"
+
+                    draft.UpdateFavorite()
+                end
+
+            draft.Matches =
+                function(
+                    record
+                )
+                    local query =
+                        HolyMailFilterKey(
+                            draft.Search
+                        )
+
+                    if query == "" then
+                        return true
+                    end
+
+                    local searchable =
+                        HolyMailFilterKey(
+                            tostring(
+                                record.Label
+                                    or ""
+                            )
+                            .. " "
+                            .. tostring(
+                                record.Name
+                                    or ""
+                            )
+                            .. " "
+                            .. tostring(
+                                record.UserId
+                                    or ""
+                            )
+                        )
+
+                    return searchable:find(
+                        query,
+                        1,
+                        true
+                    ) ~= nil
+                end
+
+            draft.Render =
+                function()
+                    clearRows(
+                        contactList,
+                        contactLayout
+                    )
+
+                    draft.Records =
+                        HolyMailNormalizeRecipientRecords(
+                            draft.Records,
+                            25,
+                            true
+                        )
+
+                    draft.Recent =
+                        HolyMailNormalizeRecipientRecords(
+                            draft.Recent,
+                            8,
+                            false
+                        )
+
+                    local savedMap = {}
+                    local visibleSaved = 0
+                    local visibleRecent = 0
+                    local layoutOrder = 0
+
+                    for _, record in ipairs(
+                        draft.Records
+                    ) do
+                        savedMap[
+                            record.UserId
+                        ] =
+                            true
+                    end
+
+                    draft.AddSection =
+                        function(
+                            caption
+                        )
+                            layoutOrder +=
+                                1
+
+                            local section =
+                                text(
+                                    contactList,
+                                    caption,
+                                    UDim2.new(
+                                        1,
+                                        -4,
+                                        0,
+                                        24
+                                    ),
+                                    UDim2.fromOffset(
+                                        0,
+                                        0
+                                    ),
+                                    9,
+                                    color.Muted,
+                                    Enum.TextXAlignment.Left,
+                                    Enum.Font.GothamBold
+                                )
+
+                            section.LayoutOrder =
+                                layoutOrder
+
+                            section.ZIndex =
+                                53
+
+                            create(
+                                "UIPadding",
+                                {
+                                    PaddingLeft =
+                                        UDim.new(
+                                            0,
+                                            6
+                                        ),
+                                },
+                                section
+                            )
+                        end
+
+                    draft.AddRow =
+                        function(
+                            record,
+                            recent
+                        )
+                            layoutOrder +=
+                                1
+
+                            local row =
+                                create(
+                                    "Frame",
+                                    {
+                                        BackgroundColor3 =
+                                            color.Card,
+
+                                        Size =
+                                            UDim2.new(
+                                                1,
+                                                -4,
+                                                0,
+                                                62
+                                            ),
+
+                                        LayoutOrder =
+                                            layoutOrder,
+
+                                        ZIndex =
+                                            53,
+                                    },
+                                    contactList
+                                )
+
+                            round(
+                                row,
+                                10
+                            )
+
+                            outline(
+                                row,
+                                record.Favorite
+                                        and color.Accent
+                                    or color.Border
+                            )
+
+                            local avatar =
+                                addAvatar(
+                                    row,
+                                    record.UserId,
+                                    UDim2.fromOffset(
+                                        38,
+                                        38
+                                    ),
+                                    UDim2.fromOffset(
+                                        10,
+                                        12
+                                    )
+                                )
+
+                            avatar.ZIndex =
+                                54
+
+                            local favoriteButton =
+                                button(
+                                    row,
+                                    record.Favorite
+                                            and "★"
+                                            or "☆",
+                                    UDim2.fromOffset(
+                                        32,
+                                        32
+                                    ),
+                                    UDim2.fromOffset(
+                                        55,
+                                        15
+                                    ),
+                                    record.Favorite == true
+                                )
+
+                            favoriteButton.ZIndex =
+                                54
+
+                            favoriteButton.Visible =
+                                not recent
+
+                            local displayLabel =
+                                text(
+                                    row,
+                                    recent
+                                            and (
+                                                "@"
+                                                .. record.Name
+                                            )
+                                            or tostring(
+                                                record.Label
+                                                    or record.Name
+                                            ),
+                                    UDim2.new(
+                                        1,
+                                        -310,
+                                        0,
+                                        21
+                                    ),
+                                    UDim2.fromOffset(
+                                        96,
+                                        8
+                                    ),
+                                    10,
+                                    color.Text,
+                                    Enum.TextXAlignment.Left,
+                                    Enum.Font.GothamSemibold
+                                )
+
+                            displayLabel.ZIndex =
+                                54
+
+                            local identity =
+                                text(
+                                    row,
+                                    recent
+                                        and (
+                                            "Recently used · "
+                                            .. tostring(
+                                                record.UserId
+                                            )
+                                        )
+                                        or (
+                                            "@"
+                                            .. record.Name
+                                            .. " · "
+                                            .. tostring(
+                                                record.UserId
+                                            )
+                                        ),
+                                    UDim2.new(
+                                        1,
+                                        -310,
+                                        0,
+                                        18
+                                    ),
+                                    UDim2.fromOffset(
+                                        96,
+                                        33
+                                    ),
+                                    8,
+                                    color.Muted
+                                )
+
+                            identity.ZIndex =
+                                54
+
+                            local useButton =
+                                button(
+                                    row,
+                                    "Use",
+                                    UDim2.fromOffset(
+                                        60,
+                                        34
+                                    ),
+                                    UDim2.new(
+                                        1,
+                                        -184,
+                                        0,
+                                        14
+                                    ),
+                                    true
+                                )
+
+                            local manageButton =
+                                button(
+                                    row,
+                                    recent
+                                        and "Save"
+                                        or "Edit",
+                                    UDim2.fromOffset(
+                                        54,
+                                        34
+                                    ),
+                                    UDim2.new(
+                                        1,
+                                        -116,
+                                        0,
+                                        14
+                                    ),
+                                    false
+                                )
+
+                            local deleteButton =
+                                button(
+                                    row,
+                                    "X",
+                                    UDim2.fromOffset(
+                                        42,
+                                        34
+                                    ),
+                                    UDim2.new(
+                                        1,
+                                        -54,
+                                        0,
+                                        14
+                                    ),
+                                    false
+                                )
+
+                            useButton.ZIndex =
+                                54
+
+                            manageButton.ZIndex =
+                                54
+
+                            deleteButton.ZIndex =
+                                54
+
+                            useButton.TextSize =
+                                9
+
+                            manageButton.TextSize =
+                                8
+
+                            deleteButton.TextSize =
+                                10
+
+                            deleteButton.Visible =
+                                not recent
+
+                            useButton.MouseButton1Click:Connect(function()
+                                if state.RecipientChangesLocked() then
+                                    return
+                                end
+
+                                useButton.Text =
+                                    "Checking"
+
+                                local userId,
+                                    username,
+                                    resolveError =
+                                    HolyMailResolveRecipient(
+                                        tostring(
+                                            record.UserId
+                                        )
+                                    )
+
+                                if not userId then
+                                    managerStatus.Text =
+                                        tostring(
+                                            resolveError
+                                                or "Recipient could not be verified."
+                                        )
+
+                                    managerStatus.TextColor3 =
+                                        color.Red
+
+                                    useButton.Text =
+                                        "Use"
+
+                                    return
+                                end
+
+                                targetBox.Text =
+                                    username
+
+                                HolyMailTouchRecipient(
+                                    userId,
+                                    username
+                                )
+
+                                closeModal()
+                            end)
+
+                            favoriteButton.MouseButton1Click:Connect(function()
+                                if recent
+                                    or state.RecipientChangesLocked()
+                                then
+                                    return
+                                end
+
+                                for _, savedRecord in ipairs(
+                                    draft.Records
+                                ) do
+                                    if savedRecord.UserId
+                                        == record.UserId
+                                    then
+                                        savedRecord.Favorite =
+                                            not savedRecord.Favorite
+
+                                        break
+                                    end
+                                end
+
+                                state.SavedRecipients.Commit(
+                                    draft.Records,
+                                    draft.Recent
+                                )
+
+                                draft.Render()
+                            end)
+
+                            manageButton.MouseButton1Click:Connect(function()
+                                draft.EditUserId =
+                                    recent
+                                    and nil
+                                    or record.UserId
+
+                                draft.EditOriginalName =
+                                    recent
+                                    and ""
+                                    or record.Name
+
+                                draft.Favorite =
+                                    recent
+                                    and false
+                                    or record.Favorite == true
+
+                                labelBox.Text =
+                                    recent
+                                    and record.Name
+                                    or tostring(
+                                        record.Label
+                                            or record.Name
+                                    )
+
+                                usernameBox.Text =
+                                    record.Name
+
+                                saveContactButton.Text =
+                                    recent
+                                        and "Save"
+                                        or "Update"
+
+                                draft.UpdateFavorite()
+
+                                managerStatus.Text =
+                                    recent
+                                        and "Choose a label, then save this recent recipient."
+                                        or "Edit the label, username, or favorite status."
+
+                                managerStatus.TextColor3 =
+                                    color.Muted
+                            end)
+
+                            deleteButton.MouseButton1Click:Connect(function()
+                                if recent
+                                    or state.RecipientChangesLocked()
+                                then
+                                    return
+                                end
+
+                                for index,
+                                    savedRecord in ipairs(
+                                    draft.Records
+                                ) do
+                                    if savedRecord.UserId
+                                        == record.UserId
+                                    then
+                                        table.remove(
+                                            draft.Records,
+                                            index
+                                        )
+
+                                        break
+                                    end
+                                end
+
+                                if draft.EditUserId
+                                    == record.UserId
+                                then
+                                    draft.ResetEditor()
+                                end
+
+                                state.SavedRecipients.Commit(
+                                    draft.Records,
+                                    draft.Recent
+                                )
+
+                                draft.Render()
+                            end)
+                        end
+
+                    draft.AddSection(
+                        "SAVED RECIPIENTS"
+                    )
+
+                    for _, record in ipairs(
+                        draft.Records
+                    ) do
+                        if draft.Matches(
+                            record
+                        ) then
+                            visibleSaved +=
+                                1
+
+                            draft.AddRow(
+                                record,
+                                false
+                            )
+                        end
+                    end
+
+                    draft.AddSection(
+                        "RECENT"
+                    )
+
+                    for _, record in ipairs(
+                        draft.Recent
+                    ) do
+                        if not savedMap[
+                            record.UserId
+                        ]
+                            and draft.Matches(
+                                record
+                            )
+                        then
+                            visibleRecent +=
+                                1
+
+                            draft.AddRow(
+                                record,
+                                true
+                            )
+                        end
+                    end
+
+                    if visibleSaved <= 0
+                        and visibleRecent <= 0
+                    then
+                        layoutOrder +=
+                            1
+
+                        local empty =
+                            text(
+                                contactList,
+                                "No matching saved or recent recipients.",
+                                UDim2.new(
+                                    1,
+                                    -4,
+                                    0,
+                                    80
+                                ),
+                                UDim2.fromOffset(
+                                    0,
+                                    0
+                                ),
+                                10,
+                                color.Muted,
+                                Enum.TextXAlignment.Center,
+                                Enum.Font.GothamMedium
+                            )
+
+                        empty.LayoutOrder =
+                            layoutOrder
+
+                        empty.ZIndex =
+                            53
+                    end
+
+                    contactStatus.Text =
+                        tostring(
+                            #draft.Records
+                        )
+                        .. " / 25 saved · "
+                        .. tostring(
+                            visibleRecent
+                        )
+                        .. " recent shown"
+                end
+
+            searchBox:GetPropertyChangedSignal(
+                "Text"
+            ):Connect(function()
+                draft.Search =
+                    searchBox.Text
+
+                draft.Render()
+            end)
+
+            favoriteDraftButton.MouseButton1Click:Connect(function()
+                draft.Favorite =
+                    not draft.Favorite
+
+                draft.UpdateFavorite()
+            end)
+
+            saveContactButton.MouseButton1Click:Connect(function()
+                if state.RecipientChangesLocked() then
+                    return
+                end
+
+                local raw =
+                    HolyMailRecipientText(
+                        usernameBox.Text,
+                        80
+                    )
+
+                local resolveInput =
+                    raw
+
+                if draft.EditUserId
+                    and HolyMailFilterKey(
+                        raw
+                    ) == HolyMailFilterKey(
+                        draft.EditOriginalName
+                    )
+                then
+                    resolveInput =
+                        tostring(
+                            draft.EditUserId
+                        )
+                end
+
+                saveContactButton.Text =
+                    "Checking"
+
+                local userId,
+                    username,
+                    resolveError =
+                    HolyMailResolveRecipient(
+                        resolveInput
+                    )
+
+                if not userId then
+                    managerStatus.Text =
+                        tostring(
+                            resolveError
+                                or "Recipient could not be verified."
+                        )
+
+                    managerStatus.TextColor3 =
+                        color.Red
+
+                    saveContactButton.Text =
+                        draft.EditUserId
+                            and "Update"
+                            or "Save"
+
+                    return
+                end
+
+                local duplicateIndex
+                local editingIndex
+
+                for index, record in ipairs(
+                    draft.Records
+                ) do
+                    if record.UserId == userId then
+                        duplicateIndex =
+                            index
+                    end
+
+                    if draft.EditUserId
+                        and record.UserId
+                            == draft.EditUserId
+                    then
+                        editingIndex =
+                            index
+                    end
+                end
+
+                if duplicateIndex
+                    and duplicateIndex
+                        ~= editingIndex
+                then
+                    managerStatus.Text =
+                        "That UserId is already saved."
+
+                    managerStatus.TextColor3 =
+                        color.Yellow
+
+                    saveContactButton.Text =
+                        draft.EditUserId
+                            and "Update"
+                            or "Save"
+
+                    return
+                end
+
+                if not editingIndex
+                    and #draft.Records >= 25
+                then
+                    managerStatus.Text =
+                        "The saved-recipient limit is 25."
+
+                    managerStatus.TextColor3 =
+                        color.Red
+
+                    saveContactButton.Text =
+                        "Save"
+
+                    return
+                end
+
+                local label =
+                    HolyMailRecipientText(
+                        labelBox.Text,
+                        36
+                    )
+
+                if label == "" then
+                    label =
+                        username
+                end
+
+                local previous =
+                    editingIndex
+                    and draft.Records[
+                        editingIndex
+                    ]
+                    or nil
+
+                local record = {
+                    UserId =
+                        userId,
+
+                    Name =
+                        username,
+
+                    Label =
+                        label,
+
+                    Favorite =
+                        draft.Favorite == true,
+
+                    LastUsedAt =
+                        previous
+                        and previous.LastUsedAt
+                        or 0,
+
+                    AddedAt =
+                        previous
+                        and previous.AddedAt
+                        or os.time(),
+                }
+
+                if editingIndex then
+                    draft.Records[
+                        editingIndex
+                    ] =
+                        record
+                else
+                    table.insert(
+                        draft.Records,
+                        record
+                    )
+                end
+
+                state.SavedRecipients.Commit(
+                    draft.Records,
+                    draft.Recent
+                )
+
+                draft.Records =
+                    HolyMailNormalizeRecipientRecords(
+                        HOLY_MAIL_STATE.SavedRecipients,
+                        25,
+                        true
+                    )
+
+                draft.ResetEditor()
+
+                managerStatus.Text =
+                    "@"
+                    .. username
+                    .. " was saved."
+
+                managerStatus.TextColor3 =
+                    color.Green
+
+                draft.Render()
+            end)
+
+            state.SavedRecipients.ValueButton.MouseButton1Click:Connect(function()
+                state.SavedRecipients.Show(
+                    recipientBox
+                )
+            end)
+
+            draft.UpdateFavorite()
+            draft.Render()
+        end
 
     state.Filters.Show =
         function()
@@ -111148,9 +112938,7 @@ function HolyMailCreateHud()
         protectedCall(
             "Add recipient",
             function()
-                if state.Running
-                    or state.Busy
-                then
+                if state.RecipientChangesLocked() then
                     return
                 end
 
@@ -111289,6 +113077,11 @@ function HolyMailCreateHud()
                     )
                 end
 
+                HolyMailTouchRecipient(
+                    userId,
+                    username
+                )
+
                 state.Editing =
                     nil
 
@@ -111359,7 +113152,7 @@ function HolyMailCreateHud()
     end)
 
     clearButton.MouseButton1Click:Connect(function()
-        if state.Running
+        if state.RecipientChangesLocked()
             or #state.Recipients == 0
         then
             return
@@ -113962,19 +115755,37 @@ function HolyMailCreateHud()
             itemRecipientCard,
             "0 recipients",
             UDim2.fromOffset(
-                130,
+                124,
                 20
             ),
-            UDim2.new(
-                1,
-                -144,
-                0,
+            UDim2.fromOffset(
+                170,
                 9
             ),
-            10,
+            9,
             color.Muted,
             Enum.TextXAlignment.Right
         )
+
+    state.SavedRecipients.ItemButton =
+        button(
+            itemRecipientCard,
+            "Saved",
+            UDim2.fromOffset(
+                110,
+                25
+            ),
+            UDim2.fromOffset(
+                306,
+                6
+            ),
+            false
+        )
+
+    state.SavedRecipients.ItemButton.TextSize =
+        8
+
+    state.SavedRecipients.UpdateButtons()
 
     local itemRecipientBox =
         box(
@@ -114004,6 +115815,12 @@ function HolyMailCreateHud()
             ),
             true
         )
+
+    state.SavedRecipients.ItemButton.MouseButton1Click:Connect(function()
+        state.SavedRecipients.Show(
+            itemRecipientBox
+        )
+    end)
 
     local itemRecipientList =
         create(
@@ -116505,7 +118322,7 @@ function HolyMailCreateHud()
                     10
 
                 useButton.MouseButton1Click:Connect(function()
-                    if state.Running then
+                    if state.RecipientChangesLocked() then
                         return
                     end
 
@@ -116518,7 +118335,7 @@ function HolyMailCreateHud()
                 end)
 
                 removeButton.MouseButton1Click:Connect(function()
-                    if state.Running then
+                    if state.RecipientChangesLocked() then
                         return
                     end
 
@@ -117521,7 +119338,7 @@ function HolyMailCreateHud()
         end
 
     local function addExactRecipient()
-        if state.Running then
+        if state.RecipientChangesLocked() then
             return
         end
 
@@ -117628,6 +119445,11 @@ function HolyMailCreateHud()
                 state.ExactSelectedUserId =
                     userId
 
+                HolyMailTouchRecipient(
+                    userId,
+                    username
+                )
+
                 itemRecipientBox.Text =
                     ""
 
@@ -117655,6 +119477,11 @@ function HolyMailCreateHud()
 
         state.ExactSelectedUserId =
             userId
+
+        HolyMailTouchRecipient(
+            userId,
+            username
+        )
 
         itemRecipientBox.Text =
             ""
