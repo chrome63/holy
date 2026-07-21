@@ -104329,38 +104329,22 @@ function HolyMailCreateHud()
             )
         )
 
-    text(
-        routeCard,
-        "RECIPIENTS",
-        UDim2.fromOffset(
-            150,
-            20
-        ),
-        UDim2.fromOffset(
-            14,
-            9
-        ),
-        10,
-        color.Muted,
-        nil,
-        Enum.Font.GothamBold
-    )
-
     local routeCount =
         text(
             routeCard,
-            "0 recipients",
+            "RECIPIENTS · 0 ADDED",
             UDim2.fromOffset(
-                84,
+                218,
                 20
             ),
             UDim2.fromOffset(
-                172,
+                14,
                 9
             ),
-            9,
-            color.Muted,
-            Enum.TextXAlignment.Right
+            11,
+            color.Secondary,
+            nil,
+            Enum.Font.GothamBold
         )
 
     local clearButton =
@@ -104368,20 +104352,23 @@ function HolyMailCreateHud()
             routeCard,
             "Clear",
             UDim2.fromOffset(
-                54,
-                25
+                62,
+                29
             ),
             UDim2.new(
                 1,
-                -66,
+                -76,
                 0,
-                6
+                4
             ),
             false
         )
 
     clearButton.TextSize =
-        9
+        12
+
+    clearButton.TextColor3 =
+        color.Muted
 
     clearButton.Visible =
         false
@@ -104585,7 +104572,7 @@ function HolyMailCreateHud()
         true
 
     fruitsButton.TextSize =
-        9
+        12
 
     local calculateButton =
         button(
@@ -105243,20 +105230,23 @@ function HolyMailCreateHud()
     state.SavedRecipients.ValueButton =
         button(
             routeCard,
-            "Saved",
+            "★ Saved 0",
             UDim2.fromOffset(
-                92,
-                25
+                104,
+                29
             ),
             UDim2.fromOffset(
-                264,
-                6
+                242,
+                4
             ),
             false
         )
 
     state.SavedRecipients.ValueButton.TextSize =
-        8
+        13
+
+    state.SavedRecipients.ValueButton.TextColor3 =
+        color.Text
 
     state.SavedRecipients.UpdateButtons =
         function()
@@ -105268,17 +105258,46 @@ function HolyMailCreateHud()
                 )
 
             local caption =
-                "Saved ("
+                "★ Saved "
                 .. tostring(
                     count
                 )
-                .. ")"
 
             if typeof(
                 state.SavedRecipients.ValueButton
             ) == "Instance" then
                 state.SavedRecipients.ValueButton.Text =
                     caption
+
+                state.SavedRecipients.ValueButton.TextColor3 =
+                    color.Text
+
+                state.SavedRecipients.ValueButton.BackgroundColor3 =
+                    count > 0
+                        and color.Hover
+                        or color.Field
+
+                local savedStroke =
+                    state.SavedRecipients.ValueButton:FindFirstChildOfClass(
+                        "UIStroke"
+                    )
+
+                if savedStroke then
+                    savedStroke.Color =
+                        count > 0
+                            and color.Accent
+                            or color.Border
+
+                    savedStroke.Transparency =
+                        count > 0
+                            and 0.05
+                            or 0.18
+
+                    savedStroke.Thickness =
+                        count > 0
+                            and 1.35
+                            or 1.15
+                end
             end
 
             if typeof(
@@ -105286,6 +105305,36 @@ function HolyMailCreateHud()
             ) == "Instance" then
                 state.SavedRecipients.ItemButton.Text =
                     caption
+
+                state.SavedRecipients.ItemButton.TextColor3 =
+                    color.Text
+
+                state.SavedRecipients.ItemButton.BackgroundColor3 =
+                    count > 0
+                        and color.Hover
+                        or color.Field
+
+                local savedStroke =
+                    state.SavedRecipients.ItemButton:FindFirstChildOfClass(
+                        "UIStroke"
+                    )
+
+                if savedStroke then
+                    savedStroke.Color =
+                        count > 0
+                            and color.Accent
+                            or color.Border
+
+                    savedStroke.Transparency =
+                        count > 0
+                            and 0.05
+                            or 0.18
+
+                    savedStroke.Thickness =
+                        count > 0
+                            and 1.35
+                            or 1.15
+                end
             end
         end
 
@@ -106626,14 +106675,11 @@ function HolyMailCreateHud()
         )
 
         routeCount.Text =
-            tostring(
+            "RECIPIENTS · "
+            .. tostring(
                 #state.Recipients
             )
-            .. (
-                #state.Recipients == 1
-                    and " recipient"
-                    or " recipients"
-            )
+            .. " ADDED"
 
         clearButton.Visible =
             #state.Recipients > 0
@@ -106780,8 +106826,8 @@ function HolyMailCreateHud()
                     56,
                     31
                 ),
-                9,
-                color.Muted
+                12,
+                color.Secondary
             )
 
             local up =
@@ -106859,7 +106905,7 @@ function HolyMailCreateHud()
                 11
 
             edit.TextSize =
-                8
+                12
 
             remove.TextSize =
                 10
@@ -107686,8 +107732,8 @@ function HolyMailCreateHud()
                                 x,
                                 43
                             ),
-                            8,
-                            color.Muted,
+                            10,
+                            color.Secondary,
                             nil,
                             Enum.Font.GothamBold
                         )
@@ -107782,7 +107828,7 @@ function HolyMailCreateHud()
                         )
 
                     viewButton.TextSize =
-                        9
+                        12
 
                     viewButton.TextColor3 =
                         #entry.Fruits > 0
@@ -115733,57 +115779,70 @@ function HolyMailCreateHud()
             )
         )
 
-    text(
-        itemRecipientCard,
-        "RECIPIENTS",
-        UDim2.fromOffset(
-            150,
-            20
-        ),
-        UDim2.fromOffset(
-            14,
-            9
-        ),
-        10,
-        color.Muted,
-        nil,
-        Enum.Font.GothamBold
-    )
-
     local itemRecipientCount =
         text(
             itemRecipientCard,
-            "0 recipients",
+            "RECIPIENTS · 0 ADDED",
             UDim2.fromOffset(
-                124,
+                218,
                 20
             ),
             UDim2.fromOffset(
-                170,
+                14,
                 9
             ),
-            9,
-            color.Muted,
-            Enum.TextXAlignment.Right
+            11,
+            color.Secondary,
+            nil,
+            Enum.Font.GothamBold
         )
+
+    state.ExactClearButton =
+        button(
+            itemRecipientCard,
+            "Clear",
+            UDim2.fromOffset(
+                62,
+                29
+            ),
+            UDim2.new(
+                1,
+                -76,
+                0,
+                4
+            ),
+            false
+        )
+
+    state.ExactClearButton.TextSize =
+        12
+
+    state.ExactClearButton.TextColor3 =
+        color.Muted
+
+    state.ExactClearButton.Visible =
+        false
 
     state.SavedRecipients.ItemButton =
         button(
             itemRecipientCard,
-            "Saved",
+            "★ Saved 0",
             UDim2.fromOffset(
-                110,
-                25
+                104,
+                29
             ),
             UDim2.fromOffset(
-                306,
-                6
+                242,
+                4
             ),
             false
         )
 
     state.SavedRecipients.ItemButton.TextSize =
-        8
+        13
+
+    state.SavedRecipients.ItemButton.TextColor3 =
+        color.Text
 
     state.SavedRecipients.UpdateButtons()
 
@@ -115921,8 +115980,8 @@ function HolyMailCreateHud()
                 0,
                 9
             ),
-            10,
-            color.Muted,
+            12,
+            color.Secondary,
             Enum.TextXAlignment.Right
         )
 
@@ -116092,8 +116151,8 @@ function HolyMailCreateHud()
                 0,
                 9
             ),
-            10,
-            color.Muted,
+            12,
+            color.Secondary,
             Enum.TextXAlignment.Right
         )
 
@@ -118085,14 +118144,15 @@ function HolyMailCreateHud()
             )
 
             itemRecipientCount.Text =
-                tostring(
+                "RECIPIENTS · "
+                .. tostring(
                     #state.ExactRecipients
                 )
-                .. (
-                    #state.ExactRecipients == 1
-                        and " recipient"
-                        or " recipients"
-                )
+                .. " ADDED"
+
+            state.ExactClearButton.Visible =
+                #state.ExactRecipients > 0
+                and not state.RecipientChangesLocked()
 
             if #state.ExactRecipients == 0 then
                 local empty =
@@ -118273,10 +118333,10 @@ function HolyMailCreateHud()
                         56,
                         31
                     ),
-                    9,
+                    12,
                     selected
                             and color.Accent
-                        or color.Muted
+                        or color.Secondary
                 )
 
                 local useButton =
@@ -118316,7 +118376,7 @@ function HolyMailCreateHud()
                     )
 
                 useButton.TextSize =
-                    8
+                    12
 
                 removeButton.TextSize =
                     10
@@ -119134,9 +119194,9 @@ function HolyMailCreateHud()
                         56,
                         31
                     ),
-                    9,
+                    12,
                     record.Supported
-                            and color.Muted
+                            and color.Secondary
                         or color.Red
                 )
 
@@ -119179,9 +119239,7 @@ function HolyMailCreateHud()
                     )
 
                 addItemButton.TextSize =
-                    record.Supported
-                            and 9
-                        or 8
+                    12
 
                 addItemButton.Active =
                     record.Supported
@@ -119496,6 +119554,46 @@ function HolyMailCreateHud()
         renderExactItems()
         updateExactSummary()
     end
+
+    state.ExactClearButton.MouseButton1Click:Connect(function()
+        if state.RecipientChangesLocked()
+            or #state.ExactRecipients == 0
+        then
+            return
+        end
+
+        showModal(
+            "Clear everyone?",
+            "This removes every Pick Items recipient and every item selected for them. Your inventory will not be changed.",
+            "Clear all",
+            function()
+                if state.RecipientChangesLocked() then
+                    return
+                end
+
+                state.ExactRecipients = {}
+
+                state.ExactQueues = {}
+
+                state.ExactSelectedUserId =
+                    nil
+
+                itemRecipientBox.Text =
+                    ""
+
+                itemRecipientBox.PlaceholderText =
+                    "Username or User ID"
+
+                itemRecipientAdd.Text =
+                    "+ Add"
+
+                renderExactRecipients()
+                renderExactItems()
+                updateExactSummary()
+            end,
+            false
+        )
+    end)
 
     local function buildExactRoutes()
         scanExactItems()
