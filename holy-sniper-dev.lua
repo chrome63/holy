@@ -1868,6 +1868,17 @@ local HOLY_ACCOUNT_RUNTIME = {
     PairingBusy = false,
     HeartbeatBusy = false,
 
+    InventoryBusy = false,
+    InventoryStatus = "Waiting for account connection",
+    InventoryFingerprint = "",
+    InventoryLastScanClock = 0,
+    InventoryLastUpload = 0,
+    InventoryEggCatalog = nil,
+
+    InventoryFruitCount = 0,
+    InventoryEggCount = 0,
+    InventoryItemRows = 0,
+
     Interval =
         HOLY_ACCOUNT_HEARTBEAT_INTERVAL,
 
@@ -4420,6 +4431,30 @@ function HolyAccountClearInvalidToken()
     HOLY_ACCOUNT_RUNTIME.NeedsMigration =
         false
 
+    HOLY_ACCOUNT_RUNTIME.InventoryBusy =
+        false
+
+    HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+        "Waiting for account connection"
+
+    HOLY_ACCOUNT_RUNTIME.InventoryFingerprint =
+        ""
+
+    HOLY_ACCOUNT_RUNTIME.InventoryLastScanClock =
+        0
+
+    HOLY_ACCOUNT_RUNTIME.InventoryLastUpload =
+        0
+
+    HOLY_ACCOUNT_RUNTIME.InventoryFruitCount =
+        0
+
+    HOLY_ACCOUNT_RUNTIME.InventoryEggCount =
+        0
+
+    HOLY_ACCOUNT_RUNTIME.InventoryItemRows =
+        0
+
     HOLY_ACCOUNT_ENVIRONMENT.HOLY_ACCOUNT_TOKEN =
         nil
 
@@ -4657,6 +4692,1177 @@ function HolyAccountRequest(
         nil
 end
 
+function HolyAccountInventoryCleanName(value)
+
+    local result =
+        tostring(
+            value
+            or ""
+        )
+
+    result =
+        result:gsub(
+            "%s*%[%s*[xX]%d+%s*%]%s*$",
+            ""
+        )
+
+    result =
+        result:gsub(
+            "%s+[xX]%d+%s*$",
+            ""
+        )
+
+    result =
+        result:gsub(
+            "^%s+",
+            ""
+        )
+
+    result =
+        result:gsub(
+            "%s+$",
+            ""
+        )
+
+    return result
+end
+
+function HolyAccountInventoryKey(value)
+
+    return HolyAccountInventoryCleanName(
+        value
+    )
+        :lower()
+        :gsub(
+            "[%s%p_]",
+            ""
+        )
+end
+
+function HolyAccountInventorySafeId(value)
+
+    local result =
+        tostring(
+            value
+            or ""
+        )
+            :gsub(
+                "^%s+",
+                ""
+            )
+            :gsub(
+                "%s+$",
+                ""
+            )
+            :gsub(
+                "[^%w%._:%-]",
+                "_"
+            )
+            :gsub(
+                "_+",
+                "_"
+            )
+
+    result =
+        result:sub(
+            1,
+            150
+        )
+
+    if result == "" then
+        return nil
+    end
+
+    return result
+end
+
+function HolyAccountInventoryFirstText(...)
+
+    for index = 1, select("#", ...) do
+
+        local value =
+            select(
+                index,
+                ...
+            )
+
+        if type(value) == "string" then
+
+            local cleaned =
+                HolyAccountInventoryCleanName(
+                    value
+                )
+
+            if cleaned ~= "" then
+
+                return cleaned
+            end
+        end
+    end
+
+    return ""
+end
+
+function HolyAccountInventoryReadFavorite(item)
+
+    if typeof(item) ~= "Instance" then
+        return false
+    end
+
+    return item:GetAttribute(
+        "IsFavorite"
+    ) == true
+        or item:GetAttribute(
+            "Favorite"
+        ) == true
+        or item:GetAttribute(
+            "Favorited"
+        ) == true
+end
+
+function HolyAccountInventoryReadCount(item)
+
+    if typeof(item) ~= "Instance" then
+        return 1
+    end
+
+    local count =
+        tonumber(
+            item:GetAttribute(
+                "Count"
+            )
+            or item:GetAttribute(
+                "Amount"
+            )
+            or item:GetAttribute(
+                "Quantity"
+            )
+            or item:GetAttribute(
+                "Stack"
+            )
+            or item:GetAttribute(
+                "Uses"
+            )
+        )
+        or 1
+
+    return math.clamp(
+        math.floor(
+            count
+        ),
+        1,
+        1000000000
+    )
+end
+
+function HolyAccountInventoryReadWeight(
+    item,
+    attributes
+)
+
+    attributes =
+        type(attributes) == "table"
+        and attributes
+        or {}
+
+    local weight =
+        tonumber(
+            attributes.WeightKg
+            or attributes.WeightKG
+            or attributes.Weight
+            or attributes.Mass
+        )
+
+    if not weight
+    and typeof(item) == "Instance" then
+
+        weight =
+            tonumber(
+                tostring(
+                    item.Name
+                ):match(
+                    "([%d%.]+)%s*[Kk][Gg]"
+                )
+            )
+    end
+
+    if not weight
+    or weight <= 0
+    or weight > 1000000000 then
+
+        return nil
+    end
+
+    return weight
+end
+
+function HolyAccountInventoryLoadEggCatalog()
+
+    if type(
+        HOLY_ACCOUNT_RUNTIME.InventoryEggCatalog
+    ) == "table" then
+
+        return HOLY_ACCOUNT_RUNTIME
+            .InventoryEggCatalog
+    end
+
+    local catalog = {}
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local eggModule =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "EggData"
+        )
+
+    if eggModule
+    and eggModule:IsA(
+        "ModuleScript"
+    ) then
+
+        local requireOk,
+            eggData =
+            pcall(
+                require,
+                eggModule
+            )
+
+        if requireOk == true
+        and type(eggData) == "table" then
+
+            local function walk(
+                value,
+                depth,
+                seen
+            )
+
+                if type(value) ~= "table"
+                or depth > 6
+                or seen[value] then
+
+                    return
+                end
+
+                seen[value] =
+                    true
+
+                local name =
+                    HolyAccountInventoryFirstText(
+                        value.EggName,
+                        value.ItemName,
+                        value.DisplayName,
+                        value.Name
+                    )
+
+                if name ~= "" then
+
+                    catalog[
+                        HolyAccountInventoryKey(
+                            name
+                        )
+                    ] =
+                        true
+                end
+
+                for _, child in pairs(
+                    value
+                ) do
+
+                    if type(child) == "table" then
+
+                        walk(
+                            child,
+                            depth + 1,
+                            seen
+                        )
+                    end
+                end
+            end
+
+            walk(
+                eggData,
+                0,
+                {}
+            )
+        end
+    end
+
+    HOLY_ACCOUNT_RUNTIME.InventoryEggCatalog =
+        catalog
+
+    return catalog
+end
+
+function HolyAccountBuildMailInventory()
+
+    local items = {}
+
+    local groupedEggs = {}
+    local usedInstances = {}
+    local usedFruitIds = {}
+
+    local fruitCount = 0
+    local eggCount = 0
+
+    local eggCatalog =
+        HolyAccountInventoryLoadEggCatalog()
+
+    local roots = {
+        {
+            Instance =
+                LocalPlayer.Character,
+
+            Name =
+                "character",
+        },
+
+        {
+            Instance =
+                LocalPlayer:FindFirstChildOfClass(
+                    "Backpack"
+                ),
+
+            Name =
+                "backpack",
+        },
+    }
+
+    for _, rootData in ipairs(
+        roots
+    ) do
+
+        local root =
+            rootData.Instance
+
+        if typeof(root) == "Instance" then
+
+            for _, item in ipairs(
+                root:GetChildren()
+            ) do
+
+                if not usedInstances[item]
+                and (
+                    item:IsA(
+                        "Tool"
+                    )
+                    or item:IsA(
+                        "Configuration"
+                    )
+                ) then
+
+                    usedInstances[item] =
+                        true
+
+                    local attributes =
+                        item:GetAttributes()
+
+                    local favorite =
+                        HolyAccountInventoryReadFavorite(
+                            item
+                        )
+
+                    if attributes.HarvestedFruit == true then
+
+                        local rawItemId =
+                            HolyAccountInventoryFirstText(
+                                attributes.Id,
+                                attributes.FruitId,
+                                attributes.FruitID,
+                                attributes.UUID,
+                                attributes.Guid
+                            )
+
+                        local clientItemId =
+                            HolyAccountInventorySafeId(
+                                rawItemId
+                            )
+
+                        if clientItemId
+                        and not usedFruitIds[
+                            clientItemId
+                        ] then
+
+                            usedFruitIds[
+                                clientItemId
+                            ] =
+                                true
+
+                            local name =
+                                HolyAccountInventoryFirstText(
+                                    attributes.FruitName,
+                                    attributes.Fruit,
+                                    attributes.ItemName,
+                                    item.Name
+                                )
+
+                            name =
+                                name:sub(
+                                    1,
+                                    100
+                                )
+
+                            if name == "" then
+
+                                name =
+                                    "Unknown Fruit"
+                            end
+
+                            local mutation =
+                                HolyAccountInventoryFirstText(
+                                    attributes.Mutation,
+                                    attributes.Mutations
+                                )
+
+                            local variant =
+                                HolyAccountInventoryFirstText(
+                                    attributes.FruitVariant,
+                                    attributes.Variant
+                                )
+
+                            if mutation == ""
+                            and variant ~= "" then
+
+                                mutation =
+                                    variant
+
+                                variant =
+                                    ""
+                            end
+
+                            if mutation == "" then
+
+                                mutation =
+                                    "Normal"
+                            end
+
+                            mutation =
+                                mutation:sub(
+                                    1,
+                                    240
+                                )
+
+                            variant =
+                                variant:sub(
+                                    1,
+                                    80
+                                )
+
+                            local icon = ""
+
+                            if item:IsA(
+                                "Tool"
+                            ) then
+
+                                icon =
+                                    tostring(
+                                        item.TextureId
+                                        or ""
+                                    )
+                            end
+
+                            table.insert(
+                                items,
+                                {
+                                    client_item_id =
+                                        clientItemId,
+
+                                    category =
+                                        "fruit",
+
+                                    name =
+                                        name,
+
+                                    variant =
+                                        variant,
+
+                                    mutation =
+                                        mutation,
+
+                                    weight =
+                                        HolyAccountInventoryReadWeight(
+                                            item,
+                                            attributes
+                                        ),
+
+                                    quantity =
+                                        1,
+
+                                    is_favorited =
+                                        favorite,
+
+                                    is_mailable =
+                                        true,
+
+                                    metadata = {
+                                        mail_category =
+                                            "HarvestedFruits",
+
+                                        mail_item_key =
+                                            rawItemId,
+
+                                        source =
+                                            rootData.Name,
+
+                                        source_name =
+                                            tostring(
+                                                item.Name
+                                            ),
+
+                                        icon =
+                                            icon,
+
+                                        unique =
+                                            true,
+                                    },
+                                }
+                            )
+
+                            fruitCount +=
+                                1
+                        end
+                    else
+
+                        local mainCategory =
+                            HolyAccountInventoryFirstText(
+                                attributes.MainCategory,
+                                attributes.Category
+                            )
+
+                        local mainKey =
+                            HolyAccountInventoryKey(
+                                mainCategory
+                            )
+
+                        local eggName =
+                            HolyAccountInventoryFirstText(
+                                attributes.Egg,
+                                attributes.EggName,
+                                attributes.ItemName,
+                                item.Name
+                            )
+
+                        local eggKey =
+                            HolyAccountInventoryKey(
+                                eggName
+                            )
+
+                        local isEgg =
+                            mainKey == "egg"
+                            or mainKey == "eggs"
+                            or attributes.Egg ~= nil
+                            or attributes.EggName ~= nil
+                            or eggCatalog[
+                                eggKey
+                            ] == true
+
+                        if isEgg
+                        and eggName ~= ""
+                        and eggKey ~= "" then
+
+                            local group =
+                                groupedEggs[
+                                    eggKey
+                                ]
+
+                            if not group then
+
+                                local icon = ""
+
+                                if item:IsA(
+                                    "Tool"
+                                ) then
+
+                                    icon =
+                                        tostring(
+                                            item.TextureId
+                                            or ""
+                                        )
+                                end
+
+                                group = {
+                                    Name =
+                                        eggName:sub(
+                                            1,
+                                            100
+                                        ),
+
+                                    Quantity =
+                                        0,
+
+                                    Favorite =
+                                        false,
+
+                                    Icon =
+                                        icon,
+
+                                    SourceName =
+                                        tostring(
+                                            item.Name
+                                        ),
+                                }
+
+                                groupedEggs[
+                                    eggKey
+                                ] =
+                                    group
+                            end
+
+                            local quantity =
+                                HolyAccountInventoryReadCount(
+                                    item
+                                )
+
+                            group.Quantity =
+                                math.clamp(
+                                    group.Quantity
+                                    + quantity,
+                                    1,
+                                    1000000000
+                                )
+
+                            group.Favorite =
+                                group.Favorite
+                                or favorite
+
+                            eggCount +=
+                                quantity
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for eggKey, egg in pairs(
+        groupedEggs
+    ) do
+
+        local clientItemId =
+            HolyAccountInventorySafeId(
+                "egg:"
+                .. eggKey
+            )
+
+        if clientItemId then
+
+            table.insert(
+                items,
+                {
+                    client_item_id =
+                        clientItemId,
+
+                    category =
+                        "egg",
+
+                    name =
+                        egg.Name,
+
+                    variant =
+                        "",
+
+                    mutation =
+                        "",
+
+                    quantity =
+                        egg.Quantity,
+
+                    is_favorited =
+                        egg.Favorite == true,
+
+                    is_mailable =
+                        true,
+
+                    metadata = {
+                        mail_category =
+                            "Eggs",
+
+                        mail_item_key =
+                            egg.Name,
+
+                        source =
+                            "backpack",
+
+                        source_name =
+                            egg.SourceName,
+
+                        icon =
+                            egg.Icon,
+
+                        unique =
+                            false,
+                    },
+                }
+            )
+        end
+    end
+
+    table.sort(
+        items,
+        function(left, right)
+
+            return tostring(
+                left.client_item_id
+            ) < tostring(
+                right.client_item_id
+            )
+        end
+    )
+
+    local fingerprintParts = {}
+
+    for _, item in ipairs(
+        items
+    ) do
+
+        table.insert(
+            fingerprintParts,
+            table.concat(
+                {
+                    tostring(
+                        item.client_item_id
+                    ),
+
+                    tostring(
+                        item.category
+                    ),
+
+                    tostring(
+                        item.name
+                    ),
+
+                    tostring(
+                        item.variant
+                        or ""
+                    ),
+
+                    tostring(
+                        item.mutation
+                        or ""
+                    ),
+
+                    tostring(
+                        item.weight
+                        or ""
+                    ),
+
+                    tostring(
+                        item.quantity
+                        or 1
+                    ),
+
+                    item.is_favorited == true
+                        and "1"
+                        or "0",
+                },
+                "\30"
+            )
+        )
+    end
+
+    return items,
+        table.concat(
+            fingerprintParts,
+            "\31"
+        ),
+        {
+            FruitCount =
+                fruitCount,
+
+            EggCount =
+                eggCount,
+
+            ItemRows =
+                #items,
+        }
+end
+
+function HolyAccountInventoryDescription(
+    summary
+)
+
+    summary =
+        type(summary) == "table"
+        and summary
+        or {}
+
+    return tostring(
+        math.max(
+            0,
+            math.floor(
+                tonumber(
+                    summary.FruitCount
+                )
+                or 0
+            )
+        )
+    )
+        .. " fruits · "
+        .. tostring(
+            math.max(
+                0,
+                math.floor(
+                    tonumber(
+                        summary.EggCount
+                    )
+                    or 0
+                )
+            )
+        )
+        .. " eggs"
+end
+
+function HolyAccountInventoryFriendlyError(
+    value
+)
+
+    local code =
+        HolyCleanText(
+            value
+            or "inventory_sync_failed"
+        )
+
+    local messages = {
+        inventory_item_limit_exceeded =
+            "This account has more inventory rows than the service currently supports.",
+
+        body_too_large =
+            "This inventory snapshot is too large to upload.",
+
+        invalid_inventory_item_id =
+            "One inventory item had an invalid ID.",
+
+        duplicate_inventory_item_id =
+            "Two inventory items returned the same ID.",
+
+        invalid_inventory_category =
+            "An inventory category was rejected.",
+
+        invalid_inventory_item_name =
+            "An inventory item had an invalid name.",
+
+        invalid_inventory_item_quantity =
+            "An inventory stack returned an invalid amount.",
+
+        inventory_snapshot_failed =
+            "The HOLY account service could not save this inventory snapshot.",
+
+        account_identity_mismatch =
+            "This saved login belongs to another Roblox account.",
+
+        account_token_required =
+            "The saved account login is missing.",
+
+        invalid_account_token =
+            "The saved account login is invalid.",
+
+        account_token_revoked =
+            "The saved account login was revoked.",
+
+        account_unlinked =
+            "This Roblox account is no longer linked.",
+    }
+
+    return messages[
+        code
+    ]
+        or HolyAccountFriendlyError(
+            code
+        )
+end
+
+function HolyAccountSendMailInventory(
+    force,
+    notifyUser
+)
+
+    if HOLY_ACCOUNT_RUNTIME.InventoryBusy == true then
+
+        return false
+    end
+
+    local token =
+        HOLY_ACCOUNT_RUNTIME.Token
+
+    if HolyAccountTokenValid(
+        token
+    ) ~= true then
+
+        HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+            "Waiting for account connection"
+
+        HolyAccountRefreshUI()
+
+        return false
+    end
+
+    HOLY_ACCOUNT_RUNTIME.InventoryBusy =
+        true
+
+    HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+        "Scanning fruits and eggs..."
+
+    HolyAccountRefreshUI()
+
+    local scanOk,
+        items,
+        fingerprint,
+        summary =
+        pcall(
+            HolyAccountBuildMailInventory
+        )
+
+    if scanOk ~= true
+    or type(items) ~= "table"
+    or type(fingerprint) ~= "string"
+    or type(summary) ~= "table" then
+
+        HOLY_ACCOUNT_RUNTIME.InventoryBusy =
+            false
+
+        HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+            "Inventory scan failed"
+
+        HolyAccountRefreshUI()
+
+        if notifyUser == true then
+
+            HolyNotify(
+                "HOLY Inventory",
+                "Could not scan this account's fruits and eggs.",
+                6
+            )
+        end
+
+        return false
+    end
+
+    if #items > 5000 then
+
+        HOLY_ACCOUNT_RUNTIME.InventoryBusy =
+            false
+
+        HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+            "Too many inventory rows to upload"
+
+        HolyAccountRefreshUI()
+
+        if notifyUser == true then
+
+            HolyNotify(
+                "HOLY Inventory",
+                "This account has more than 5,000 fruit and egg inventory rows.",
+                7
+            )
+        end
+
+        return false
+    end
+
+    local now =
+        os.time()
+
+    local unchanged =
+        fingerprint
+        == HOLY_ACCOUNT_RUNTIME
+            .InventoryFingerprint
+
+    local recentlyUploaded =
+        HOLY_ACCOUNT_RUNTIME
+            .InventoryLastUpload > 0
+        and now
+            - HOLY_ACCOUNT_RUNTIME
+                .InventoryLastUpload
+            < 300
+
+    if force ~= true
+    and unchanged
+    and recentlyUploaded then
+
+        HOLY_ACCOUNT_RUNTIME.InventoryBusy =
+            false
+
+        HOLY_ACCOUNT_RUNTIME.InventoryFruitCount =
+            summary.FruitCount
+
+        HOLY_ACCOUNT_RUNTIME.InventoryEggCount =
+            summary.EggCount
+
+        HOLY_ACCOUNT_RUNTIME.InventoryItemRows =
+            summary.ItemRows
+
+        HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+            HolyAccountInventoryDescription(
+                summary
+            )
+            .. " synced"
+
+        HolyAccountRefreshUI()
+
+        return true
+    end
+
+    HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+        "Uploading "
+        .. HolyAccountInventoryDescription(
+            summary
+        )
+        .. "..."
+
+    HolyAccountRefreshUI()
+
+    local statusCode,
+        data,
+        requestError =
+        HolyAccountRequest(
+            "/api/account/mail/inventory",
+            "POST",
+            {
+                roblox_user_id =
+                    tostring(
+                        LocalPlayer.UserId
+                    ),
+
+                revision =
+                    tostring(
+                        LocalPlayer.UserId
+                    )
+                    .. "-"
+                    .. tostring(
+                        now
+                    )
+                    .. "-"
+                    .. tostring(
+                        #items
+                    ),
+
+                captured_at =
+                    now,
+
+                items =
+                    items,
+            },
+            token
+        )
+
+    HOLY_ACCOUNT_RUNTIME.InventoryBusy =
+        false
+
+    if statusCode == 200
+    and type(data) == "table"
+    and data.ok == true then
+
+        HOLY_ACCOUNT_RUNTIME.InventoryFingerprint =
+            fingerprint
+
+        HOLY_ACCOUNT_RUNTIME.InventoryLastUpload =
+            now
+
+        HOLY_ACCOUNT_RUNTIME.InventoryFruitCount =
+            summary.FruitCount
+
+        HOLY_ACCOUNT_RUNTIME.InventoryEggCount =
+            summary.EggCount
+
+        HOLY_ACCOUNT_RUNTIME.InventoryItemRows =
+            summary.ItemRows
+
+        HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+            HolyAccountInventoryDescription(
+                summary
+            )
+            .. " synced"
+
+        HolyAccountRefreshUI()
+
+        if notifyUser == true then
+
+            HolyNotify(
+                "HOLY Inventory",
+                "Uploaded "
+                .. HolyAccountInventoryDescription(
+                    summary
+                )
+                .. " to HOLY HUB.",
+                5
+            )
+        end
+
+        return true
+    end
+
+    local message =
+        requestError
+        or HolyAccountInventoryFriendlyError(
+            type(data) == "table"
+            and data.error
+            or "inventory_sync_failed"
+        )
+
+    HOLY_ACCOUNT_RUNTIME.InventoryStatus =
+        "Sync failed: "
+        .. tostring(
+            message
+        )
+
+    HolyAccountRefreshUI()
+
+    if notifyUser == true then
+
+        HolyNotify(
+            "HOLY Inventory",
+            message,
+            7
+        )
+    end
+
+    return false
+end
+
+function HolyAccountQueueMailInventorySync(
+    force,
+    notifyUser
+)
+
+    if HOLY_ACCOUNT_RUNTIME.InventoryBusy == true then
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if force ~= true
+    and now
+        - (
+            tonumber(
+                HOLY_ACCOUNT_RUNTIME
+                    .InventoryLastScanClock
+            )
+            or 0
+        )
+        < 10 then
+
+        return false
+    end
+
+    HOLY_ACCOUNT_RUNTIME.InventoryLastScanClock =
+        now
+
+    task.spawn(function()
+
+        HolyAccountSendMailInventory(
+            force,
+            notifyUser
+        )
+    end)
+
+    return true
+end
+
 function HolyAccountRefreshUI()
 
     local ui =
@@ -4735,6 +5941,33 @@ function HolyAccountRefreshUI()
                 HOLY_ACCOUNT_RUNTIME.Message
                 or ""
             )
+        )
+    end
+
+    if ui.InventoryLabel
+    and type(ui.InventoryLabel.SetText) == "function" then
+
+        ui.InventoryLabel:SetText(
+            "Inventory: "
+            .. tostring(
+                HOLY_ACCOUNT_RUNTIME.InventoryStatus
+                or "Waiting for account connection"
+            )
+        )
+    end
+
+    local inventoryDisabled =
+        HolyAccountTokenValid(
+            HOLY_ACCOUNT_RUNTIME.Token
+        ) ~= true
+        or HOLY_ACCOUNT_RUNTIME.InventoryBusy == true
+        or HOLY_ACCOUNT_RUNTIME.PairingBusy == true
+
+    if ui.SyncInventoryButton
+    and type(ui.SyncInventoryButton.SetDisabled) == "function" then
+
+        ui.SyncInventoryButton:SetDisabled(
+            inventoryDisabled
         )
     end
 
@@ -4899,6 +6132,11 @@ function HolyAccountSendHeartbeat(notifyUser)
         end
 
         HolyAccountRefreshUI()
+
+        HolyAccountQueueMailInventorySync(
+            false,
+            false
+        )
 
         if notifyUser == true then
 
@@ -143541,6 +144779,33 @@ HOLY_ACCOUNT_RUNTIME.UI.RefreshButton =
         Tooltip =
             "Immediately verifies the saved account login and refreshes Online status.",
     })
+
+HOLY_ACCOUNT_RUNTIME.UI.InventoryLabel =
+    SettingsAccountBox:AddLabel(
+        "Inventory: Waiting for account connection"
+    )
+
+HOLY_ACCOUNT_RUNTIME.UI.SyncInventoryButton =
+    SettingsAccountBox:AddButton({
+        Text =
+            "Sync Inventory Now",
+
+        Func =
+            function()
+
+                HolyAccountQueueMailInventorySync(
+                    true,
+                    true
+                )
+            end,
+
+        Tooltip =
+            "Scans this account's fruits and eggs and uploads the latest inventory to HOLY HUB. Nothing is mailed.",
+    })
+
+SettingsAccountBox:AddLabel(
+    "Inventory automatically syncs after account heartbeats and whenever its contents change."
+)
 
 SettingsAccountBox:AddLabel(
     "Your private account token is never shown in the interface or console."
