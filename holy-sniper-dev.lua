@@ -1649,7 +1649,7 @@ local HOLY_ACCOUNT_HEARTBEAT_INTERVAL =
     20
 
 local HOLY_ACCOUNT_MAIL_JOB_INTERVAL =
-    3
+    1
 
 local HOLY_ACCOUNT_MAIL_CONFIRM_TIMEOUT =
     10
@@ -6505,7 +6505,7 @@ function HolyAccountProcessMailJob()
                     activeClaimId = ""
 
                     HolyAccountMailJobSetStatus(
-                        "Delivery paused because its result is uncertain"
+                        "Delivery failed because its result was uncertain"
                     )
 
                     return
@@ -6529,7 +6529,7 @@ function HolyAccountProcessMailJob()
                         activeClaimId = ""
 
                         HolyAccountMailJobSetStatus(
-                            "Mail accepted; confirmation paused for safety"
+                            "Mail was accepted, but inventory removal could not be confirmed"
                         )
 
                         return
@@ -6595,7 +6595,7 @@ function HolyAccountProcessMailJob()
                     activeClaimId = ""
 
                     HolyAccountMailJobSetStatus(
-                        "Mailbox cooldown; retrying safely"
+                        "Mailbox cooldown; create a new delivery after the cooldown"
                     )
 
                     return
