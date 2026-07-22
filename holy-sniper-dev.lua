@@ -1887,7 +1887,7 @@ local HOLY_ACCOUNT_RUNTIME = {
     InventoryFingerprint = "",
     InventoryLastScanClock = 0,
     InventoryLastUpload = 0,
-    InventoryEggCatalog = nil,
+    InventoryCatalogs = nil,
 
     InventoryFruitCount = 0,
     InventoryEggCount = 0,
@@ -4910,144 +4910,810 @@ function HolyAccountInventoryReadWeight(
     return weight
 end
 
-function HolyAccountInventoryLoadEggCatalog()
+function HolyAccountInventoryWalkCatalog(
+    value,
+    callback,
+    depth,
+    seen,
+    sourceKey
+)
+
+    if type(value) ~= "table"
+    or depth > 7
+    or seen[value] then
+        return
+    end
+
+    seen[value] = true
+
+    callback(
+        value,
+        sourceKey
+    )
+
+    for key, child in pairs(value) do
+
+        if type(child) == "table" then
+
+            HolyAccountInventoryWalkCatalog(
+                child,
+                callback,
+                depth + 1,
+                seen,
+                key
+            )
+        end
+    end
+end
+
+function HolyAccountInventoryLoadCatalogs()
 
     if type(
-        HOLY_ACCOUNT_RUNTIME.InventoryEggCatalog
+        HOLY_ACCOUNT_RUNTIME.InventoryCatalogs
     ) == "table" then
 
         return HOLY_ACCOUNT_RUNTIME
-            .InventoryEggCatalog
+            .InventoryCatalogs
     end
 
-    local catalog = {}
+    local catalogs = {
+        Seeds = {},
+        SeedPacks = {},
+        Eggs = {},
+        Gear = {},
+        Props = {},
+        Crates = {},
+        Pets = {},
+    }
 
     local sharedModules =
         ReplicatedStorage:FindFirstChild(
             "SharedModules"
         )
 
-    local eggModule =
-        sharedModules
-        and sharedModules:FindFirstChild(
-            "EggData"
-        )
+    local function loadModule(
+        moduleName,
+        target,
+        fields
+    )
 
-    if eggModule
-    and eggModule:IsA(
-        "ModuleScript"
-    ) then
+        if not sharedModules then
+            return
+        end
 
-        local requireOk,
-            eggData =
+        local module =
+            sharedModules:FindFirstChild(
+                moduleName
+            )
+
+        if not module
+        or not module:IsA(
+            "ModuleScript"
+        ) then
+            return
+        end
+
+        local ok, data =
             pcall(
                 require,
-                eggModule
+                module
             )
 
-        if requireOk == true
-        and type(eggData) == "table" then
+        if ok ~= true
+        or type(data) ~= "table" then
+            return
+        end
 
-            local function walk(
-                value,
-                depth,
-                seen
-            )
+        HolyAccountInventoryWalkCatalog(
+            data,
+            function(row, sourceKey)
 
-                if type(value) ~= "table"
-                or depth > 6
-                or seen[value] then
+                local values = {}
 
-                    return
+                for _, field in ipairs(fields) do
+
+                    table.insert(
+                        values,
+                        row[field]
+                    )
                 end
 
-                seen[value] =
-                    true
+                if type(sourceKey) == "string" then
+
+                    table.insert(
+                        values,
+                        sourceKey
+                    )
+                end
 
                 local name =
                     HolyAccountInventoryFirstText(
-                        value.EggName,
-                        value.ItemName,
-                        value.DisplayName,
-                        value.Name
+                        table.unpack(
+                            values
+                        )
                     )
 
-                if name ~= "" then
+                local key =
+                    HolyAccountInventoryKey(
+                        name
+                    )
 
-                    catalog[
-                        HolyAccountInventoryKey(
-                            name
-                        )
-                    ] =
-                        true
+                if key ~= "" then
+                    target[key] = row
                 end
+            end,
+            0,
+            {},
+            nil
+        )
+    end
 
-                for _, child in pairs(
-                    value
-                ) do
+    loadModule(
+        "SeedData",
+        catalogs.Seeds,
+        {
+            "SeedName",
+            "ItemName",
+            "DisplayName",
+            "Name",
+        }
+    )
 
-                    if type(child) == "table" then
+    loadModule(
+        "SeedPackData",
+        catalogs.SeedPacks,
+        {
+            "SeedPackName",
+            "PackName",
+            "ItemName",
+            "DisplayName",
+            "Name",
+        }
+    )
 
-                        walk(
-                            child,
-                            depth + 1,
-                            seen
+    loadModule(
+        "EggData",
+        catalogs.Eggs,
+        {
+            "EggName",
+            "ItemName",
+            "DisplayName",
+            "Name",
+        }
+    )
+
+    loadModule(
+        "GearShopData",
+        catalogs.Gear,
+        {
+            "ItemName",
+            "DisplayName",
+            "Name",
+        }
+    )
+
+    loadModule(
+        "PropData",
+        catalogs.Props,
+        {
+            "PropName",
+            "ItemName",
+            "DisplayName",
+            "Name",
+        }
+    )
+
+    loadModule(
+        "CrateData",
+        catalogs.Crates,
+        {
+            "CrateName",
+            "ItemName",
+            "DisplayName",
+            "Name",
+        }
+    )
+
+    loadModule(
+        "PetData",
+        catalogs.Pets,
+        {
+            "DisplayName",
+            "PetName",
+            "ItemName",
+            "Name",
+        }
+    )
+
+    if sharedModules then
+
+        local crateFolder =
+            sharedModules:FindFirstChild(
+                "CrateData"
+            )
+
+        if crateFolder
+        and not crateFolder:IsA(
+            "ModuleScript"
+        ) then
+
+            for _, child in ipairs(
+                crateFolder:GetChildren()
+            ) do
+
+                if child:IsA(
+                    "ModuleScript"
+                ) then
+
+                    local row = {
+                        CrateName = child.Name,
+                    }
+
+                    local ok, data =
+                        pcall(
+                            require,
+                            child
                         )
+
+                    if ok == true
+                    and type(data) == "table" then
+                        row = data
                     end
+
+                    catalogs.Crates[
+                        HolyAccountInventoryKey(
+                            child.Name
+                        )
+                    ] = row
                 end
             end
-
-            walk(
-                eggData,
-                0,
-                {}
-            )
         end
     end
 
-    HOLY_ACCOUNT_RUNTIME.InventoryEggCatalog =
-        catalog
+    if type(
+        HolySniperGetPetData
+    ) == "function" then
 
-    return catalog
+        local ok, petData =
+            pcall(
+                HolySniperGetPetData
+            )
+
+        if ok == true
+        and type(petData) == "table" then
+
+            for sourceKey, row in pairs(
+                petData
+            ) do
+
+                if type(row) == "table" then
+
+                    local name =
+                        HolyAccountInventoryFirstText(
+                            row.DisplayName,
+                            row.PetName,
+                            row.ItemName,
+                            row.Name,
+                            type(sourceKey) == "string"
+                                and sourceKey
+                                or nil
+                        )
+
+                    local key =
+                        HolyAccountInventoryKey(
+                            name
+                        )
+
+                    if key ~= "" then
+                        catalogs.Pets[key] = row
+                    end
+                end
+            end
+        end
+    end
+
+    HOLY_ACCOUNT_RUNTIME.InventoryCatalogs =
+        catalogs
+
+    return catalogs
+end
+
+function HolyAccountInventoryReadIcon(item)
+
+    if typeof(item) ~= "Instance" then
+        return ""
+    end
+
+    local icon =
+        HolyAccountInventoryFirstText(
+            item:GetAttribute("IMG"),
+            item:GetAttribute("Image"),
+            item:GetAttribute("Icon"),
+            item:GetAttribute("TextureId"),
+            item:IsA("Tool")
+                and item.TextureId
+                or nil
+        )
+
+    return icon:sub(
+        1,
+        240
+    )
+end
+
+function HolyAccountInventoryClassify(
+    item,
+    catalogs
+)
+
+    if typeof(item) ~= "Instance"
+    or not (
+        item:IsA("Tool")
+        or item:IsA("Configuration")
+    ) then
+        return nil
+    end
+
+    local attributes =
+        item:GetAttributes()
+
+    local favorite =
+        HolyAccountInventoryReadFavorite(
+            item
+        )
+
+    if attributes.HarvestedFruit == true then
+
+        local itemKey =
+            HolyAccountInventoryFirstText(
+                attributes.Id,
+                attributes.FruitId,
+                attributes.FruitID,
+                attributes.UUID,
+                attributes.Guid
+            )
+
+        if itemKey == "" then
+            return nil
+        end
+
+        local name =
+            HolyAccountInventoryFirstText(
+                attributes.FruitName,
+                attributes.Fruit,
+                attributes.ItemName,
+                item.Name
+            )
+
+        local mutation =
+            HolyAccountInventoryFirstText(
+                attributes.Mutation,
+                attributes.Mutations
+            )
+
+        local variant =
+            HolyAccountInventoryFirstText(
+                attributes.FruitVariant,
+                attributes.Variant
+            )
+
+        if mutation == ""
+        and variant ~= "" then
+            mutation = variant
+            variant = ""
+        end
+
+        return {
+            WebCategory = "fruit",
+            MailCategory = "HarvestedFruits",
+            IdPrefix = "fruit",
+            ItemKey = itemKey,
+            Name = name ~= "" and name or "Unknown Fruit",
+            Variant = variant,
+            Mutation = mutation ~= "" and mutation or "Normal",
+            Weight = HolyAccountInventoryReadWeight(
+                item,
+                attributes
+            ),
+            Quantity = 1,
+            Favorite = favorite,
+            Supported = true,
+            Unique = true,
+        }
+    end
+
+    local petId =
+        HolyAccountInventoryFirstText(
+            attributes.PetId,
+            attributes.PetID
+        )
+
+    local petName =
+        HolyAccountInventoryFirstText(
+            attributes.Pet,
+            attributes.PetName
+        )
+
+    if petId ~= ""
+    and petName ~= "" then
+
+        local size =
+            HolyAccountInventoryFirstText(
+                attributes.Size,
+                attributes.PetSize,
+                attributes.SizeName
+            )
+
+        local variant =
+            HolyAccountInventoryFirstText(
+                attributes.Variant,
+                attributes.PetType,
+                attributes.TypeName
+            )
+
+        if size == "Normal" then
+            size = ""
+        end
+
+        if variant == "Normal" then
+            variant = ""
+        end
+
+        return {
+            WebCategory = "pet",
+            MailCategory = "Pets",
+            IdPrefix = "pet",
+            ItemKey = petId,
+            Name = petName,
+            Variant = size,
+            Mutation = variant ~= "" and variant or (
+                size == ""
+                and "Normal"
+                or ""
+            ),
+            Quantity = 1,
+            Favorite = favorite,
+            Supported = true,
+            Unique = true,
+        }
+    end
+
+    local mainCategory =
+        HolyAccountInventoryFirstText(
+            attributes.MainCategory,
+            attributes.Category
+        )
+
+    local itemType =
+        HolyAccountInventoryFirstText(
+            attributes.ItemType,
+            attributes.Type
+        )
+
+    local mainKey =
+        HolyAccountInventoryKey(
+            mainCategory
+        )
+
+    local typeKey =
+        HolyAccountInventoryKey(
+            itemType
+        )
+
+    local name =
+        HolyAccountInventoryFirstText(
+            attributes.Egg,
+            attributes.EggName,
+            attributes.PropName,
+            attributes.SeedPackName,
+            attributes.SeedName,
+            attributes.Seed,
+            attributes.GearName,
+            attributes.ItemName,
+            item.Name
+        )
+
+    local nameKey =
+        HolyAccountInventoryKey(
+            name
+        )
+
+    if name == ""
+    or nameKey == "" then
+        return nil
+    end
+
+    local quantity =
+        HolyAccountInventoryReadCount(
+            item
+        )
+
+    local isEgg =
+        mainKey == "egg"
+        or mainKey == "eggs"
+        or attributes.Egg ~= nil
+        or attributes.EggName ~= nil
+        or catalogs.Eggs[nameKey] ~= nil
+
+    if isEgg then
+        return {
+            WebCategory = "egg",
+            MailCategory = "Eggs",
+            IdPrefix = "egg",
+            ItemKey = name,
+            Name = name,
+            Variant = "",
+            Mutation = "",
+            Quantity = quantity,
+            Favorite = favorite,
+            Supported = true,
+            Unique = false,
+        }
+    end
+
+    local isSeedPack =
+        mainKey:find(
+            "seedpack",
+            1,
+            true
+        ) ~= nil
+        or typeKey:find(
+            "seedpack",
+            1,
+            true
+        ) ~= nil
+        or catalogs.SeedPacks[nameKey] ~= nil
+
+    if isSeedPack then
+        return {
+            WebCategory = "gear",
+            MailCategory = "SeedPacks",
+            IdPrefix = "seedpack",
+            ItemKey = name,
+            Name = name,
+            Variant = "",
+            Mutation = "Seed Pack",
+            Quantity = quantity,
+            Favorite = favorite,
+            Supported = true,
+            Unique = false,
+        }
+    end
+
+    local isSeed =
+        mainKey == "seed"
+        or mainKey == "seeds"
+        or catalogs.Seeds[nameKey] ~= nil
+
+    if isSeed then
+        return {
+            WebCategory = "seed",
+            MailCategory = "Seeds",
+            IdPrefix = "seed",
+            ItemKey = name,
+            Name = name,
+            Variant = "",
+            Mutation = "Seed",
+            Quantity = quantity,
+            Favorite = favorite,
+            Supported = true,
+            Unique = false,
+        }
+    end
+
+    local isCrate =
+        catalogs.Crates[nameKey] ~= nil
+        or mainKey:find(
+            "crate",
+            1,
+            true
+        ) ~= nil
+        or typeKey:find(
+            "crate",
+            1,
+            true
+        ) ~= nil
+
+    if isCrate then
+        return {
+            WebCategory = "prop",
+            MailCategory = "",
+            IdPrefix = "crate",
+            ItemKey = name,
+            Name = name,
+            Variant = "",
+            Mutation = "Crate · Not ready",
+            Quantity = quantity,
+            Favorite = favorite,
+            Supported = false,
+            Unique = false,
+        }
+    end
+
+    local isProp =
+        mainKey:find(
+            "prop",
+            1,
+            true
+        ) ~= nil
+        or catalogs.Props[nameKey] ~= nil
+
+    if isProp then
+        return {
+            WebCategory = "prop",
+            MailCategory = "Props",
+            IdPrefix = "prop",
+            ItemKey = name,
+            Name = name,
+            Variant = "",
+            Mutation = "Prop",
+            Quantity = quantity,
+            Favorite = favorite,
+            Supported = true,
+            Unique = false,
+        }
+    end
+
+    local gearData =
+        catalogs.Gear[nameKey]
+
+    local gearType =
+        HolyAccountInventoryFirstText(
+            attributes.ItemType,
+            gearData
+                and gearData.ItemType,
+            name
+        )
+
+    local gearKey =
+        HolyAccountInventoryKey(
+            gearType
+        )
+
+    local gearKinds = {
+        {
+            Match = "wateringcan",
+            MailCategory = "WateringCans",
+            IdPrefix = "wateringcan",
+            Detail = "Watering Can",
+        },
+        {
+            Match = "trowel",
+            MailCategory = "Trowels",
+            IdPrefix = "trowel",
+            Detail = "Trowel",
+        },
+        {
+            Match = "sprinkler",
+            MailCategory = "Sprinklers",
+            IdPrefix = "sprinkler",
+            Detail = "Sprinkler",
+        },
+    }
+
+    for _, gearKind in ipairs(
+        gearKinds
+    ) do
+
+        if gearKey:find(
+            gearKind.Match,
+            1,
+            true
+        ) then
+            return {
+                WebCategory = "gear",
+                MailCategory = gearKind.MailCategory,
+                IdPrefix = gearKind.IdPrefix,
+                ItemKey = name,
+                Name = name,
+                Variant = "",
+                Mutation = gearKind.Detail,
+                Quantity = quantity,
+                Favorite = favorite,
+                Supported = true,
+                Unique = false,
+            }
+        end
+    end
+
+    if gearData ~= nil
+    or mainKey:find(
+        "gear",
+        1,
+        true
+    ) ~= nil then
+        return {
+            WebCategory = "gear",
+            MailCategory = "",
+            IdPrefix = "gear",
+            ItemKey = name,
+            Name = name,
+            Variant = "",
+            Mutation = "Gear · Not ready",
+            Quantity = quantity,
+            Favorite = favorite,
+            Supported = false,
+            Unique = false,
+        }
+    end
+
+    return nil
 end
 
 function HolyAccountBuildMailInventory()
 
     local items = {}
-
-    local groupedEggs = {}
+    local grouped = {}
     local usedInstances = {}
-    local usedFruitIds = {}
+    local usedUniqueIds = {}
 
-    local fruitCount = 0
-    local eggCount = 0
+    local summary = {
+        FruitCount = 0,
+        SeedCount = 0,
+        GearCount = 0,
+        PropCount = 0,
+        PetCount = 0,
+        EggCount = 0,
+        ItemRows = 0,
+    }
 
-    local eggCatalog =
-        HolyAccountInventoryLoadEggCatalog()
+    local summaryFields = {
+        fruit = "FruitCount",
+        seed = "SeedCount",
+        gear = "GearCount",
+        prop = "PropCount",
+        pet = "PetCount",
+        egg = "EggCount",
+    }
+
+    local catalogs =
+        HolyAccountInventoryLoadCatalogs()
 
     local roots = {
         {
-            Instance =
-                LocalPlayer.Character,
-
-            Name =
-                "character",
+            Instance = LocalPlayer.Character,
+            Name = "character",
         },
-
         {
             Instance =
                 LocalPlayer:FindFirstChildOfClass(
                     "Backpack"
                 ),
-
-            Name =
-                "backpack",
+            Name = "backpack",
         },
     }
 
-    for _, rootData in ipairs(
-        roots
-    ) do
+    local function makeItem(
+        record,
+        clientItemId,
+        quantity,
+        sourceName,
+        source,
+        icon
+    )
+
+        return {
+            client_item_id = clientItemId,
+            category = record.WebCategory,
+            name = tostring(record.Name):sub(1, 100),
+            variant = tostring(record.Variant or ""):sub(1, 80),
+            mutation = tostring(record.Mutation or ""):sub(1, 240),
+            weight = record.Weight,
+            quantity = quantity,
+            is_favorited = record.Favorite == true,
+            is_mailable = record.Supported == true,
+            metadata = {
+                mail_category = record.MailCategory,
+                mail_item_key = record.ItemKey,
+                source = source,
+                source_name = sourceName,
+                icon = icon,
+                unique = record.Unique == true,
+            },
+        }
+    end
+
+    for _, rootData in ipairs(roots) do
 
         local root =
             rootData.Instance
@@ -5058,277 +5724,107 @@ function HolyAccountBuildMailInventory()
                 root:GetChildren()
             ) do
 
-                if not usedInstances[item]
-                and (
-                    item:IsA(
-                        "Tool"
-                    )
-                    or item:IsA(
-                        "Configuration"
-                    )
-                ) then
+                if not usedInstances[item] then
 
-                    usedInstances[item] =
-                        true
+                    usedInstances[item] = true
 
-                    local attributes =
-                        item:GetAttributes()
-
-                    local favorite =
-                        HolyAccountInventoryReadFavorite(
-                            item
+                    local record =
+                        HolyAccountInventoryClassify(
+                            item,
+                            catalogs
                         )
 
-                    if attributes.HarvestedFruit == true then
+                    if record then
 
-                        local rawItemId =
-                            HolyAccountInventoryFirstText(
-                                attributes.Id,
-                                attributes.FruitId,
-                                attributes.FruitID,
-                                attributes.UUID,
-                                attributes.Guid
+                        local quantity =
+                            math.clamp(
+                                math.floor(
+                                    tonumber(record.Quantity)
+                                    or 1
+                                ),
+                                1,
+                                1000000000
                             )
 
-                        local clientItemId =
-                            HolyAccountInventorySafeId(
-                                rawItemId
-                            )
+                        local summaryField =
+                            summaryFields[
+                                record.WebCategory
+                            ]
 
-                        if clientItemId
-                        and not usedFruitIds[
-                            clientItemId
-                        ] then
-
-                            usedFruitIds[
-                                clientItemId
-                            ] =
-                                true
-
-                            local name =
-                                HolyAccountInventoryFirstText(
-                                    attributes.FruitName,
-                                    attributes.Fruit,
-                                    attributes.ItemName,
-                                    item.Name
-                                )
-
-                            name =
-                                name:sub(
-                                    1,
-                                    100
-                                )
-
-                            if name == "" then
-
-                                name =
-                                    "Unknown Fruit"
-                            end
-
-                            local mutation =
-                                HolyAccountInventoryFirstText(
-                                    attributes.Mutation,
-                                    attributes.Mutations
-                                )
-
-                            local variant =
-                                HolyAccountInventoryFirstText(
-                                    attributes.FruitVariant,
-                                    attributes.Variant
-                                )
-
-                            if mutation == ""
-                            and variant ~= "" then
-
-                                mutation =
-                                    variant
-
-                                variant =
-                                    ""
-                            end
-
-                            if mutation == "" then
-
-                                mutation =
-                                    "Normal"
-                            end
-
-                            mutation =
-                                mutation:sub(
-                                    1,
-                                    240
-                                )
-
-                            variant =
-                                variant:sub(
-                                    1,
-                                    80
-                                )
-
-                            local icon = ""
-
-                            if item:IsA(
-                                "Tool"
-                            ) then
-
-                                icon =
-                                    tostring(
-                                        item.TextureId
-                                        or ""
-                                    )
-                            end
-
-                            table.insert(
-                                items,
-                                {
-                                    client_item_id =
-                                        clientItemId,
-
-                                    category =
-                                        "fruit",
-
-                                    name =
-                                        name,
-
-                                    variant =
-                                        variant,
-
-                                    mutation =
-                                        mutation,
-
-                                    weight =
-                                        HolyAccountInventoryReadWeight(
-                                            item,
-                                            attributes
-                                        ),
-
-                                    quantity =
-                                        1,
-
-                                    is_favorited =
-                                        favorite,
-
-                                    is_mailable =
-                                        true,
-
-                                    metadata = {
-                                        mail_category =
-                                            "HarvestedFruits",
-
-                                        mail_item_key =
-                                            rawItemId,
-
-                                        source =
-                                            rootData.Name,
-
-                                        source_name =
-                                            tostring(
-                                                item.Name
-                                            ),
-
-                                        icon =
-                                            icon,
-
-                                        unique =
-                                            true,
-                                    },
-                                }
-                            )
-
-                            fruitCount +=
-                                1
+                        if summaryField then
+                            summary[summaryField] =
+                                summary[summaryField]
+                                + quantity
                         end
-                    else
 
-                        local mainCategory =
-                            HolyAccountInventoryFirstText(
-                                attributes.MainCategory,
-                                attributes.Category
+                        local icon =
+                            HolyAccountInventoryReadIcon(
+                                item
                             )
 
-                        local mainKey =
-                            HolyAccountInventoryKey(
-                                mainCategory
-                            )
+                        if record.Unique == true then
 
-                        local eggName =
-                            HolyAccountInventoryFirstText(
-                                attributes.Egg,
-                                attributes.EggName,
-                                attributes.ItemName,
-                                item.Name
-                            )
+                            local rawClientId =
+                                record.WebCategory == "fruit"
+                                and record.ItemKey
+                                or (
+                                    record.IdPrefix
+                                    .. ":"
+                                    .. record.ItemKey
+                                )
 
-                        local eggKey =
-                            HolyAccountInventoryKey(
-                                eggName
-                            )
+                            local clientItemId =
+                                HolyAccountInventorySafeId(
+                                    rawClientId
+                                )
 
-                        local isEgg =
-                            mainKey == "egg"
-                            or mainKey == "eggs"
-                            or attributes.Egg ~= nil
-                            or attributes.EggName ~= nil
-                            or eggCatalog[
-                                eggKey
-                            ] == true
+                            if clientItemId
+                            and not usedUniqueIds[
+                                clientItemId
+                            ] then
 
-                        if isEgg
-                        and eggName ~= ""
-                        and eggKey ~= "" then
+                                usedUniqueIds[
+                                    clientItemId
+                                ] = true
+
+                                table.insert(
+                                    items,
+                                    makeItem(
+                                        record,
+                                        clientItemId,
+                                        1,
+                                        tostring(item.Name),
+                                        rootData.Name,
+                                        icon
+                                    )
+                                )
+                            end
+                        else
+
+                            local groupKey =
+                                record.IdPrefix
+                                .. ":"
+                                .. HolyAccountInventoryKey(
+                                    record.ItemKey
+                                )
 
                             local group =
-                                groupedEggs[
-                                    eggKey
-                                ]
+                                grouped[groupKey]
 
                             if not group then
 
-                                local icon = ""
-
-                                if item:IsA(
-                                    "Tool"
-                                ) then
-
-                                    icon =
-                                        tostring(
-                                            item.TextureId
-                                            or ""
-                                        )
-                                end
-
                                 group = {
-                                    Name =
-                                        eggName:sub(
-                                            1,
-                                            100
-                                        ),
-
-                                    Quantity =
-                                        0,
-
-                                    Favorite =
-                                        false,
-
-                                    Icon =
-                                        icon,
-
-                                    SourceName =
-                                        tostring(
-                                            item.Name
-                                        ),
+                                    Record = record,
+                                    Quantity = 0,
+                                    Favorite = false,
+                                    SourceName = tostring(item.Name),
+                                    Source = rootData.Name,
+                                    Icon = icon,
                                 }
 
-                                groupedEggs[
-                                    eggKey
-                                ] =
+                                grouped[groupKey] =
                                     group
                             end
-
-                            local quantity =
-                                HolyAccountInventoryReadCount(
-                                    item
-                                )
 
                             group.Quantity =
                                 math.clamp(
@@ -5340,10 +5836,12 @@ function HolyAccountBuildMailInventory()
 
                             group.Favorite =
                                 group.Favorite
-                                or favorite
+                                or record.Favorite == true
 
-                            eggCount +=
-                                quantity
+                            if group.Icon == ""
+                            and icon ~= "" then
+                                group.Icon = icon
+                            end
                         end
                     end
                 end
@@ -5351,65 +5849,28 @@ function HolyAccountBuildMailInventory()
         end
     end
 
-    for eggKey, egg in pairs(
-        groupedEggs
-    ) do
+    for groupKey, group in pairs(grouped) do
 
         local clientItemId =
             HolyAccountInventorySafeId(
-                "egg:"
-                .. eggKey
+                groupKey
             )
 
         if clientItemId then
 
+            group.Record.Favorite =
+                group.Favorite
+
             table.insert(
                 items,
-                {
-                    client_item_id =
-                        clientItemId,
-
-                    category =
-                        "egg",
-
-                    name =
-                        egg.Name,
-
-                    variant =
-                        "",
-
-                    mutation =
-                        "",
-
-                    quantity =
-                        egg.Quantity,
-
-                    is_favorited =
-                        egg.Favorite == true,
-
-                    is_mailable =
-                        true,
-
-                    metadata = {
-                        mail_category =
-                            "Eggs",
-
-                        mail_item_key =
-                            egg.Name,
-
-                        source =
-                            "backpack",
-
-                        source_name =
-                            egg.SourceName,
-
-                        icon =
-                            egg.Icon,
-
-                        unique =
-                            false,
-                    },
-                }
+                makeItem(
+                    group.Record,
+                    clientItemId,
+                    group.Quantity,
+                    group.SourceName,
+                    group.Source,
+                    group.Icon
+                )
             )
         end
     end
@@ -5428,70 +5889,35 @@ function HolyAccountBuildMailInventory()
 
     local fingerprintParts = {}
 
-    for _, item in ipairs(
-        items
-    ) do
+    for _, item in ipairs(items) do
 
         table.insert(
             fingerprintParts,
             table.concat(
                 {
-                    tostring(
-                        item.client_item_id
-                    ),
-
-                    tostring(
-                        item.category
-                    ),
-
-                    tostring(
-                        item.name
-                    ),
-
-                    tostring(
-                        item.variant
-                        or ""
-                    ),
-
-                    tostring(
-                        item.mutation
-                        or ""
-                    ),
-
-                    tostring(
-                        item.weight
-                        or ""
-                    ),
-
-                    tostring(
-                        item.quantity
-                        or 1
-                    ),
-
-                    item.is_favorited == true
-                        and "1"
-                        or "0",
+                    tostring(item.client_item_id),
+                    tostring(item.category),
+                    tostring(item.name),
+                    tostring(item.variant or ""),
+                    tostring(item.mutation or ""),
+                    tostring(item.weight or ""),
+                    tostring(item.quantity or 1),
+                    item.is_favorited == true and "1" or "0",
+                    item.is_mailable == true and "1" or "0",
                 },
                 "\30"
             )
         )
     end
 
+    summary.ItemRows = #items
+
     return items,
         table.concat(
             fingerprintParts,
             "\31"
         ),
-        {
-            FruitCount =
-                fruitCount,
-
-            EggCount =
-                eggCount,
-
-            ItemRows =
-                #items,
-        }
+        summary
 end
 
 function HolyAccountInventoryDescription(
@@ -5503,31 +5929,61 @@ function HolyAccountInventoryDescription(
         and summary
         or {}
 
-    return tostring(
-        math.max(
-            0,
-            math.floor(
-                tonumber(
-                    summary.FruitCount
-                )
-                or 0
-            )
-        )
-    )
-        .. " fruits · "
-        .. tostring(
-            math.max(
-                0,
-                math.floor(
-                    tonumber(
-                        summary.EggCount
+    local parts = {}
+
+    local rows = {
+        {
+            Field = "FruitCount",
+            Label = "fruits",
+        },
+        {
+            Field = "SeedCount",
+            Label = "seeds",
+        },
+        {
+            Field = "GearCount",
+            Label = "gear",
+        },
+        {
+            Field = "PropCount",
+            Label = "props",
+        },
+        {
+            Field = "PetCount",
+            Label = "pets",
+        },
+        {
+            Field = "EggCount",
+            Label = "eggs",
+        },
+    }
+
+    for _, row in ipairs(rows) do
+
+        table.insert(
+            parts,
+            tostring(
+                math.max(
+                    0,
+                    math.floor(
+                        tonumber(
+                            summary[row.Field]
+                        )
+                        or 0
                     )
-                    or 0
                 )
             )
+            .. " "
+            .. row.Label
         )
-        .. " eggs"
+    end
+
+    return table.concat(
+        parts,
+        " · "
+    )
 end
+
 
 function HolyAccountInventoryFriendlyError(
     value
@@ -5617,7 +6073,7 @@ function HolyAccountSendMailInventory(
         true
 
     HOLY_ACCOUNT_RUNTIME.InventoryStatus =
-        "Scanning fruits and eggs..."
+        "Scanning mail inventory..."
 
     HolyAccountRefreshUI()
 
@@ -5646,7 +6102,7 @@ function HolyAccountSendMailInventory(
 
             HolyNotify(
                 "HOLY Inventory",
-                "Could not scan this account's fruits and eggs.",
+                "Could not scan this account's mail inventory.",
                 6
             )
         end
@@ -5668,7 +6124,7 @@ function HolyAccountSendMailInventory(
 
             HolyNotify(
                 "HOLY Inventory",
-                "This account has more than 5,000 fruit and egg inventory rows.",
+                "This account has more than 5,000 mail inventory rows.",
                 7
             )
         end
@@ -6009,6 +6465,18 @@ function HolyAccountMailJobBuildBatch(job)
         Total = 0,
     }
 
+    local supportedCategories = {
+        HarvestedFruits = true,
+        Seeds = true,
+        SeedPacks = true,
+        WateringCans = true,
+        Trowels = true,
+        Sprinklers = true,
+        Props = true,
+        Pets = true,
+        Eggs = true,
+    }
+
     for _, jobItem in ipairs(job.items) do
 
         if type(jobItem) ~= "table" then
@@ -6082,8 +6550,9 @@ function HolyAccountMailJobBuildBatch(job)
                 or jobItem.mail_item_key
             )
 
-        if category ~= "HarvestedFruits"
-        and category ~= "Eggs" then
+        if supportedCategories[
+            category
+        ] ~= true then
 
             return nil,
                 "One selected item has an unsupported mail category",
@@ -123017,9 +123486,13 @@ function HolyMailCreateHud()
         elseif record.Group == "Gear" then
             icon =
                 firstOwnedIcon(
-                    catalogs.Gear[
-                        nameKey
-                    ]
+                    record.Category == "SeedPacks"
+                        and catalogs.SeedPacks[
+                            nameKey
+                        ]
+                        or catalogs.Gear[
+                            nameKey
+                        ]
                 )
         elseif record.Group == "Props" then
             icon =
@@ -123409,7 +123882,7 @@ function HolyMailCreateHud()
         then
             return {
                 Group =
-                    "Seeds",
+                    "Gear",
 
                 Category =
                     "SeedPacks",
@@ -145639,7 +146112,7 @@ HOLY_ACCOUNT_RUNTIME.UI.SyncInventoryButton =
             end,
 
         Tooltip =
-            "Scans this account's fruits and eggs and uploads the latest inventory to HOLY HUB. Nothing is mailed.",
+            "Scans this account's fruits, seeds, gear, props, pets, and eggs and uploads the latest inventory to HOLY HUB. Nothing is mailed.",
     })
 
 SettingsAccountBox:AddLabel(
