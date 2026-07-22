@@ -5218,24 +5218,566 @@ function HolyAccountInventoryLoadCatalogs()
     return catalogs
 end
 
-function HolyAccountInventoryReadIcon(item)
+local HOLY_ACCOUNT_INVENTORY_IMAGE_FIELDS = {
+    "IMG",
+    "Icon",
+    "Image",
+    "ImageId",
+    "ImageID",
+    "IconId",
+    "IconID",
+    "DisplayImage",
+    "DisplayIcon",
+    "ShopImage",
+    "Thumbnail",
+    "ThumbnailId",
+    "ThumbnailImage",
+    "Texture",
+    "TextureId",
+    "TextureID",
+    "FruitImage",
+    "FruitIcon",
+    "SeedImage",
+    "SeedIcon",
+    "SeedPackImage",
+    "SeedPackIcon",
+    "PackImage",
+    "EggImage",
+    "EggIcon",
+    "PetImage",
+    "PetIcon",
+    "PropImage",
+    "PropIcon",
+    "CrateImage",
+    "CrateIcon",
+}
 
-    if typeof(item) ~= "Instance" then
+function HolyAccountInventoryCoerceIcon(
+    value
+)
+
+    if typeof(value) == "Instance" then
+
+        if value:IsA(
+            "StringValue"
+        )
+        or value:IsA(
+            "NumberValue"
+        )
+        or value:IsA(
+            "IntValue"
+        ) then
+
+            value =
+                value.Value
+
+        elseif value:IsA(
+            "ImageLabel"
+        )
+        or value:IsA(
+            "ImageButton"
+        ) then
+
+            value =
+                value.Image
+
+        elseif value:IsA(
+            "Decal"
+        )
+        or value:IsA(
+            "Texture"
+        ) then
+
+            value =
+                value.Texture
+
+        elseif value:IsA(
+            "Tool"
+        ) then
+
+            value =
+                value.TextureId
+
+        else
+
+            return ""
+        end
+    end
+
+    if type(value) == "number" then
+
+        if value <= 0 then
+            return ""
+        end
+
+        return "rbxassetid://"
+            .. tostring(
+                math.floor(
+                    value
+                )
+            )
+    end
+
+    if type(value) ~= "string" then
         return ""
     end
 
-    local icon =
-        HolyAccountInventoryFirstText(
-            item:GetAttribute("IMG"),
-            item:GetAttribute("Image"),
-            item:GetAttribute("Icon"),
-            item:GetAttribute("TextureId"),
-            item:IsA("Tool")
-                and item.TextureId
-                or nil
+    local result =
+        value:gsub(
+            "^%s+",
+            ""
+        ):gsub(
+            "%s+$",
+            ""
         )
 
-    return icon:sub(
+    if result == "" then
+        return ""
+    end
+
+    if result:match(
+        "^%d+$"
+    ) then
+
+        return "rbxassetid://"
+            .. result
+    end
+
+    return result
+end
+
+function HolyAccountInventoryGetImageResolver(
+    catalogs
+)
+
+    if type(catalogs) ~= "table" then
+        return nil
+    end
+
+    if catalogs.__ImageResolverChecked == true then
+
+        return type(
+            catalogs.__ImageResolver
+        ) == "table"
+            and catalogs.__ImageResolver
+            or nil
+    end
+
+    catalogs.__ImageResolverChecked =
+        true
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local imageModule =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "ImageAssetId"
+        )
+
+    if imageModule
+    and imageModule:IsA(
+        "ModuleScript"
+    ) then
+
+        local ok,
+            result =
+            pcall(
+                require,
+                imageModule
+            )
+
+        if ok == true
+        and type(result) == "table" then
+
+            catalogs.__ImageResolver =
+                result
+        end
+    end
+
+    return type(
+        catalogs.__ImageResolver
+    ) == "table"
+        and catalogs.__ImageResolver
+        or nil
+end
+
+function HolyAccountInventoryNormalizeIcon(
+    value,
+    catalogs
+)
+
+    local direct =
+        HolyAccountInventoryCoerceIcon(
+            value
+        )
+
+    local imageAssetId =
+        HolyAccountInventoryGetImageResolver(
+            catalogs
+        )
+
+    local resolver =
+        type(imageAssetId) == "table"
+        and imageAssetId.ResolveForDisplay
+        or nil
+
+    if type(resolver) == "function" then
+
+        local candidates = {
+            value,
+        }
+
+        if direct ~= "" then
+
+            table.insert(
+                candidates,
+                direct
+            )
+        end
+
+        for _, candidate in ipairs(
+            candidates
+        ) do
+
+            local ok,
+                result =
+                pcall(
+                    resolver,
+                    candidate
+                )
+
+            if ok ~= true then
+
+                ok,
+                result =
+                    pcall(
+                        resolver,
+                        imageAssetId,
+                        candidate
+                    )
+            end
+
+            if ok == true then
+
+                local resolved =
+                    HolyAccountInventoryCoerceIcon(
+                        result
+                    )
+
+                if resolved ~= "" then
+                    return resolved
+                end
+            end
+        end
+    end
+
+    return direct
+end
+
+function HolyAccountInventoryReadIconCandidate(
+    value,
+    catalogs,
+    seen
+)
+
+    local valueType =
+        typeof(
+            value
+        )
+
+    if valueType == "Instance" then
+
+        local direct =
+            HolyAccountInventoryNormalizeIcon(
+                value,
+                catalogs
+            )
+
+        if direct ~= "" then
+            return direct
+        end
+
+        for _, fieldName in ipairs(
+            HOLY_ACCOUNT_INVENTORY_IMAGE_FIELDS
+        ) do
+
+            local attribute =
+                value:GetAttribute(
+                    fieldName
+                )
+
+            if attribute ~= nil then
+
+                local resolved =
+                    HolyAccountInventoryNormalizeIcon(
+                        attribute,
+                        catalogs
+                    )
+
+                if resolved ~= "" then
+                    return resolved
+                end
+            end
+        end
+
+        for _, descendant in ipairs(
+            value:GetDescendants()
+        ) do
+
+            local descendantName =
+                HolyAccountInventoryKey(
+                    descendant.Name
+                )
+
+            local looksLikeImage =
+                descendantName:find(
+                    "image",
+                    1,
+                    true
+                ) ~= nil
+                or descendantName:find(
+                    "icon",
+                    1,
+                    true
+                ) ~= nil
+                or descendantName:find(
+                    "texture",
+                    1,
+                    true
+                ) ~= nil
+
+            if looksLikeImage then
+
+                local resolved =
+                    HolyAccountInventoryNormalizeIcon(
+                        descendant,
+                        catalogs
+                    )
+
+                if resolved ~= "" then
+                    return resolved
+                end
+            end
+        end
+
+        return ""
+    end
+
+    if valueType ~= "table" then
+
+        return HolyAccountInventoryNormalizeIcon(
+            value,
+            catalogs
+        )
+    end
+
+    seen =
+        seen or {}
+
+    if seen[value] then
+        return ""
+    end
+
+    seen[value] =
+        true
+
+    for _, fieldName in ipairs(
+        HOLY_ACCOUNT_INVENTORY_IMAGE_FIELDS
+    ) do
+
+        local fieldValue =
+            value[fieldName]
+
+        if fieldValue ~= nil then
+
+            local resolved =
+                HolyAccountInventoryReadIconCandidate(
+                    fieldValue,
+                    catalogs,
+                    seen
+                )
+
+            if resolved ~= "" then
+                return resolved
+            end
+        end
+    end
+
+    return ""
+end
+
+function HolyAccountInventoryFirstIcon(
+    catalogs,
+    ...
+)
+
+    for index = 1, select(
+        "#",
+        ...
+    ) do
+
+        local resolved =
+            HolyAccountInventoryReadIconCandidate(
+                select(
+                    index,
+                    ...
+                ),
+                catalogs
+            )
+
+        if resolved ~= "" then
+            return resolved
+        end
+    end
+
+    return ""
+end
+
+function HolyAccountInventoryReadIcon(
+    item,
+    record,
+    catalogs
+)
+
+    if typeof(item) ~= "Instance"
+    or type(record) ~= "table"
+    or type(catalogs) ~= "table" then
+
+        return ""
+    end
+
+    local nameKey =
+        HolyAccountInventoryKey(
+            record.Name
+        )
+
+    local category =
+        tostring(
+            record.WebCategory
+            or ""
+        ):lower()
+
+    local icon =
+        ""
+
+    if category == "fruit" then
+
+        local seedData =
+            catalogs.Seeds[
+                nameKey
+            ]
+
+        icon =
+            HolyAccountInventoryFirstIcon(
+                catalogs,
+                seedData
+                    and seedData.FruitImage,
+                seedData
+                    and seedData.FruitIcon,
+                seedData
+            )
+
+    elseif category == "seed" then
+
+        local seedData =
+            catalogs.Seeds[
+                nameKey
+            ]
+
+        icon =
+            HolyAccountInventoryFirstIcon(
+                catalogs,
+                seedData
+                    and seedData.SeedImage,
+                seedData
+                    and seedData.SeedIcon,
+                seedData
+            )
+
+    elseif category == "gear" then
+
+        if record.MailCategory == "SeedPacks" then
+
+            icon =
+                HolyAccountInventoryFirstIcon(
+                    catalogs,
+                    catalogs.SeedPacks[
+                        nameKey
+                    ]
+                )
+
+        else
+
+            icon =
+                HolyAccountInventoryFirstIcon(
+                    catalogs,
+                    catalogs.Gear[
+                        nameKey
+                    ]
+                )
+        end
+
+    elseif category == "prop" then
+
+        icon =
+            HolyAccountInventoryFirstIcon(
+                catalogs,
+                catalogs.Props[
+                    nameKey
+                ],
+                catalogs.Crates[
+                    nameKey
+                ]
+            )
+
+    elseif category == "egg" then
+
+        icon =
+            HolyAccountInventoryFirstIcon(
+                catalogs,
+                catalogs.Eggs[
+                    nameKey
+                ]
+            )
+
+    elseif category == "pet" then
+
+        icon =
+            HolyAccountInventoryFirstIcon(
+                catalogs,
+                catalogs.Pets[
+                    nameKey
+                ]
+            )
+    end
+
+    if icon == "" then
+
+        icon =
+            HolyAccountInventoryFirstIcon(
+                catalogs,
+                item:GetAttribute(
+                    "IMG"
+                ),
+                item:GetAttribute(
+                    "Image"
+                ),
+                item:GetAttribute(
+                    "Icon"
+                ),
+                item:GetAttribute(
+                    "TextureId"
+                ),
+                item
+            )
+    end
+
+    return tostring(
+        icon
+    ):sub(
         1,
         240
     )
@@ -5759,7 +6301,9 @@ function HolyAccountBuildMailInventory()
 
                         local icon =
                             HolyAccountInventoryReadIcon(
-                                item
+                                item,
+                                record,
+                                catalogs
                             )
 
                         if record.Unique == true then
@@ -5904,6 +6448,11 @@ function HolyAccountBuildMailInventory()
                     tostring(item.quantity or 1),
                     item.is_favorited == true and "1" or "0",
                     item.is_mailable == true and "1" or "0",
+                    tostring(
+                        type(item.metadata) == "table"
+                        and item.metadata.icon
+                        or ""
+                    ),
                 },
                 "\30"
             )
