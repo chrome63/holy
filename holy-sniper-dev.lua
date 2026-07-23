@@ -4910,6 +4910,77 @@ function HolyAccountInventoryReadWeight(
     return weight
 end
 
+function HolyAccountInventoryReadFruitValue(
+    item,
+    record
+)
+
+    if typeof(item) ~= "Instance"
+    or type(record) ~= "table"
+    or record.WebCategory ~= "fruit" then
+
+        return ""
+    end
+
+    local value =
+        nil
+
+    if item:IsA("Tool")
+    and type(HolyVisualReadFruitTool) == "function" then
+
+        local ok,
+            row =
+            pcall(function()
+
+                return HolyVisualReadFruitTool(
+                    item,
+                    0
+                )
+            end)
+
+        if ok == true
+        and type(row) == "table" then
+
+            value =
+                tonumber(
+                    row.Value
+                )
+        end
+    end
+
+    if value == nil
+    or value <= 0 then
+
+        value =
+            tonumber(
+                item:GetAttribute(
+                    "Value"
+                )
+                or item:GetAttribute(
+                    "SellValue"
+                )
+                or item:GetAttribute(
+                    "Price"
+                )
+            )
+    end
+
+    if value == nil
+    or value <= 0
+    or value ~= value
+    or value == math.huge then
+
+        return ""
+    end
+
+    return string.format(
+        "%.0f",
+        math.floor(
+            value + 0.5
+        )
+    )
+end
+
 function HolyAccountInventoryWalkCatalog(
     value,
     callback,
@@ -6231,7 +6302,8 @@ function HolyAccountBuildMailInventory()
         quantity,
         sourceName,
         source,
-        icon
+        icon,
+        itemValue
     )
 
         return {
@@ -6244,6 +6316,9 @@ function HolyAccountBuildMailInventory()
             quantity = quantity,
             is_favorited = record.Favorite == true,
             is_mailable = record.Supported == true,
+            item_value = itemValue ~= ""
+                and itemValue
+                or nil,
             metadata = {
                 mail_category = record.MailCategory,
                 mail_item_key = record.ItemKey,
@@ -6251,6 +6326,9 @@ function HolyAccountBuildMailInventory()
                 source_name = sourceName,
                 icon = icon,
                 unique = record.Unique == true,
+                item_value = itemValue ~= ""
+                    and itemValue
+                    or nil,
             },
         }
     end
@@ -6306,6 +6384,12 @@ function HolyAccountBuildMailInventory()
                                 catalogs
                             )
 
+                        local itemValue =
+                            HolyAccountInventoryReadFruitValue(
+                                item,
+                                record
+                            )
+
                         if record.Unique == true then
 
                             local rawClientId =
@@ -6339,7 +6423,8 @@ function HolyAccountBuildMailInventory()
                                         1,
                                         tostring(item.Name),
                                         rootData.Name,
-                                        icon
+                                        icon,
+                                        itemValue
                                     )
                                 )
                             end
@@ -6451,6 +6536,11 @@ function HolyAccountBuildMailInventory()
                     tostring(
                         type(item.metadata) == "table"
                         and item.metadata.icon
+                        or ""
+                    ),
+                    tostring(
+                        type(item.metadata) == "table"
+                        and item.metadata.item_value
                         or ""
                     ),
                 },
