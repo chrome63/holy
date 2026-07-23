@@ -7566,7 +7566,13 @@ function HolyAccountMailJobReport(
     if statusCode == 409
     and type(data) == "table"
     and data.error == "mail_claim_not_found" then
-        return true
+
+        if result ~= "sent" then
+            return true
+        end
+
+        return false,
+            "Fleet has not recorded the accepted delivery yet."
     end
 
     return false,
