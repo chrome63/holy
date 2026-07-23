@@ -7641,10 +7641,6 @@ function HolyAccountMailJobRetryPendingReport()
 
     HOLY_ACCOUNT_RUNTIME.MailJobPendingReport = nil
 
-    if wasSent then
-        HolyAccountQueueMailInventorySync(true, false)
-    end
-
     HolyAccountMailJobSetStatus(
         wasSent
         and "Previous delivery reported successfully"
@@ -7878,23 +7874,6 @@ function HolyAccountProcessMailJob()
 
                     HolyAccountMailJobRecordAccepted()
 
-                    if not HolyAccountMailJobWaitForRemoval(batch) then
-
-                        HolyAccountMailJobSubmitResult(
-                            activeClaimId,
-                            "uncertain",
-                            "Server accepted the mail, but inventory removal was not confirmed"
-                        )
-
-                        activeClaimId = ""
-
-                        HolyAccountMailJobSetStatus(
-                            "Mail was accepted, but inventory removal could not be confirmed"
-                        )
-
-                        return
-                    end
-
                     local reported =
                         HolyAccountMailJobSubmitResult(
                             activeClaimId,
@@ -7903,13 +7882,6 @@ function HolyAccountProcessMailJob()
                         )
 
                     activeClaimId = ""
-
-                    if reported then
-                        HolyAccountQueueMailInventorySync(
-                            true,
-                            false
-                        )
-                    end
 
                     HolyAccountMailJobSetStatus(
                         reported
@@ -8323,7 +8295,16 @@ function HolyAccountSendHeartbeat(notifyUser)
 
         HolyAccountRefreshUI()
 
-        if HOLY_ACCOUNT_RUNTIME.MailJobBusy ~= true then
+        if HOLY_ACCOUNT_RUNTIME.MailJobBusy ~= true
+        and os.clock()
+            >= (
+                tonumber(
+                    HOLY_ACCOUNT_RUNTIME
+                        .MailJobNextSendClock
+                )
+                or 0
+            )
+            + 2 then
 
             HolyAccountQueueMailInventorySync(
                 false,
