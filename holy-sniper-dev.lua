@@ -6487,7 +6487,12 @@ function HolyAccountInventoryClassify(
     return nil
 end
 
-function HolyAccountBuildMailInventory()
+function HolyAccountBuildMailInventory(
+    lightweight
+)
+
+    lightweight =
+        lightweight == true
 
     local items = {}
     local grouped = {}
@@ -6612,14 +6617,18 @@ function HolyAccountBuildMailInventory()
                         end
 
                         local icon =
-                            HolyAccountInventoryReadIcon(
+                            lightweight
+                            and ""
+                            or HolyAccountInventoryReadIcon(
                                 item,
                                 record,
                                 catalogs
                             )
 
                         local itemValue =
-                            HolyAccountInventoryReadFruitValue(
+                            lightweight
+                            and ""
+                            or HolyAccountInventoryReadFruitValue(
                                 item,
                                 record
                             )
@@ -7252,8 +7261,14 @@ end
 
 function HolyAccountMailJobLocalInventory()
 
-    local ok, items =
-        pcall(HolyAccountBuildMailInventory)
+    local ok,
+        items =
+        pcall(function()
+
+            return HolyAccountBuildMailInventory(
+                true
+            )
+        end)
 
     if not ok
     or type(items) ~= "table" then
@@ -7269,10 +7284,13 @@ function HolyAccountMailJobLocalInventory()
         if type(item) == "table" then
 
             local id =
-                HolyCleanText(item.client_item_id)
+                HolyCleanText(
+                    item.client_item_id
+                )
 
             if id ~= "" then
-                itemMap[id] = item
+                itemMap[id] =
+                    item
             end
         end
     end
@@ -8305,10 +8323,13 @@ function HolyAccountSendHeartbeat(notifyUser)
 
         HolyAccountRefreshUI()
 
-        HolyAccountQueueMailInventorySync(
-            false,
-            false
-        )
+        if HOLY_ACCOUNT_RUNTIME.MailJobBusy ~= true then
+
+            HolyAccountQueueMailInventorySync(
+                false,
+                false
+            )
+        end
 
         if notifyUser == true then
 
