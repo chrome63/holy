@@ -4925,8 +4925,92 @@ function HolyAccountInventoryReadFruitValue(
     local value =
         nil
 
-    if item:IsA("Tool")
-    and type(HolyVisualReadFruitTool) == "function" then
+    local info =
+        nil
+
+    if type(
+        HolyFruitAutomationReadToolInfo
+    ) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyFruitAutomationReadToolInfo(
+                    item
+                )
+            end)
+
+        if ok == true
+        and type(result) == "table" then
+
+            info =
+                result
+        end
+    end
+
+    if type(info) ~= "table"
+    and type(
+        HolyFruitAutomationReadCommonFruitInfo
+    ) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyFruitAutomationReadCommonFruitInfo(
+                    item,
+                    record.Name
+                )
+            end)
+
+        if ok == true
+        and type(result) == "table" then
+
+            result.Tool =
+                item
+
+            result.Instance =
+                item
+
+            info =
+                result
+        end
+    end
+
+    if type(info) == "table"
+    and type(
+        HolyFruitAutomationCalculateInfoValue
+    ) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyFruitAutomationCalculateInfoValue(
+                    info
+                )
+            end)
+
+        if ok == true then
+
+            value =
+                tonumber(
+                    result
+                    or info.ValueNumber
+                    or info.Value
+                )
+        end
+    end
+
+    if (
+        value == nil
+        or value <= 0
+    )
+    and item:IsA("Tool")
+    and type(
+        HolyVisualReadFruitTool
+    ) == "function" then
 
         local ok,
             row =
@@ -4963,6 +5047,156 @@ function HolyAccountInventoryReadFruitValue(
                     "Price"
                 )
             )
+    end
+
+    if (
+        value == nil
+        or value <= 0
+    )
+    and type(
+        HolyVisualCalculateFruitValue
+    ) == "function" then
+
+        local attributes =
+            item:GetAttributes()
+
+        local fruitName =
+            tostring(
+                (
+                    type(info) == "table"
+                    and (
+                        info.FruitName
+                        or info.Name
+                        or info.DisplayName
+                    )
+                )
+                or record.Name
+                or item.Name
+            )
+
+        if type(
+            HolyFruitAutomationCleanDisplayName
+        ) == "function" then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return HolyFruitAutomationCleanDisplayName(
+                        fruitName
+                    )
+                end)
+
+            if ok == true
+            and tostring(result or "") ~= "" then
+
+                fruitName =
+                    tostring(result)
+            end
+        end
+
+        local rawMutation =
+            tostring(
+                record.Mutation
+                or attributes.Mutation
+                or attributes.Mutations
+                or attributes.Variant
+                or ""
+            )
+
+        if type(info) == "table"
+        and type(
+            HolyFruitAutomationBuildMutationText
+        ) == "function" then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return HolyFruitAutomationBuildMutationText(
+                        info
+                    )
+                end)
+
+            if ok == true
+            and tostring(result or "") ~= "" then
+
+                rawMutation =
+                    tostring(result)
+            end
+        end
+
+        local weight =
+            tonumber(
+                record.Weight
+                or attributes.WeightKg
+                or attributes.WeightKG
+                or attributes.Weight
+                or attributes.Mass
+            )
+            or 0
+
+        local sizeMultiplier =
+            tonumber(
+                attributes.SizeMultiplier
+                or attributes.SizeMulti
+                or attributes.ScaleMultiplier
+                or attributes.ScaleMulti
+                or attributes.Scale
+                or attributes.SizeScale
+            )
+
+        if sizeMultiplier == nil
+        or sizeMultiplier <= 0 then
+
+            sizeMultiplier =
+                math.max(
+                    0.01,
+                    weight
+                )
+        end
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyVisualCalculateFruitValue(
+                    item,
+                    {
+                        Tool =
+                            item,
+
+                        Name =
+                            fruitName,
+
+                        RawName =
+                            tostring(item.Name),
+
+                        RawMutation =
+                            rawMutation,
+
+                        Weight =
+                            weight,
+
+                        SizeMultiplier =
+                            sizeMultiplier,
+
+                        Index =
+                            0,
+                    }
+                )
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result > 0 then
+
+            value =
+                result
+        end
     end
 
     if value == nil
@@ -73693,7 +73927,7 @@ function HolyVisualCalculateFruitValue(tool, row)
 
             if ok == true
             and result ~= nil
-            and result >= 0 then
+            and result > 0 then
 
                 value =
                     result
@@ -110520,7 +110754,7 @@ function HolyMailCreateHud()
 
                 if ok
                     and tonumber(result)
-                    and tonumber(result) >= 0
+                    and tonumber(result) > 0
                 then
                     calculated =
                         tonumber(result)
